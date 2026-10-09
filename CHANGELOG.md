@@ -9,7 +9,7 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-## [0.1.0] - 2026-10-07
+## [0.1.0] - 2026-10-09
 
 The first release.
 
