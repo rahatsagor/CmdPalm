@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <title>CmdPalm</title>
+  <desc>A Command key on a touch surface, with a fingertip contact at its upper corner.</desc>
+  <defs>
+    <linearGradient id="background" x1="64" y1="0" x2="464" y2="512" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFB45F"/>
+      <stop offset="0.48" stop-color="#F9813D"/>
+      <stop offset="1" stop-color="#CF4F28"/>
+    </linearGradient>
+    <radialGradient id="light" cx="0" cy="0" r="1" gradientTransform="translate(148 82) rotate(52) scale(394 360)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFE0A9" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#FFE0A9" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="surface" x1="163" y1="118" x2="344" y2="410" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFEF8"/>
+      <stop offset="0.6" stop-color="#FFF3DF"/>
+      <stop offset="1" stop-color="#F2D4AD"/>
+    </linearGradient>
+    <linearGradient id="command" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#DA6733"/>
+      <stop offset="1" stop-color="#BA3F20"/>
+    </linearGradient>
+    <linearGradient id="touch" x1="333" y1="114" x2="375" y2="158" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFAA55"/>
+      <stop offset="1" stop-color="#EC682E"/>
+    </linearGradient>
+    <filter id="lift" x="72" y="50" width="376" height="446" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="18" stdDeviation="14" flood-color="#762B1B" flood-opacity="0.24"/>
+      <feDropShadow dx="0" dy="3" stdDeviation="2" flood-color="#A94425" flood-opacity="0.2"/>
+    </filter>
+    <filter id="contact" x="293" y="79" width="119" height="120" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="5" stdDeviation="4" flood-color="#A43C1F" flood-opacity="0.2"/>
+    </filter>
+  </defs>
+  <g id="background-shape">
+    <rect width="512" height="512" rx="114" fill="url(#background)"/>
+    <rect width="512" height="512" rx="114" fill="url(#light)"/>
+    <rect x="1" y="1" width="510" height="510" rx="113" stroke="#FFF1D7" stroke-opacity="0.17" stroke-width="2"/>
+  </g>
+  <g transform="rotate(-9 256 256)">
+    <g filter="url(#lift)">
+      <rect x="147" y="105" width="218" height="302" rx="52" fill="#EFD0A6"/>
+      <rect x="147" y="101" width="218" height="302" rx="52" fill="url(#surface)"/>
+      <rect x="149" y="103" width="214" height="298" rx="50" stroke="#FFFFFF" stroke-opacity="0.66" stroke-width="3"/>
+      <rect x="163" y="117" width="186" height="270" rx="37" stroke="#D6A677" stroke-opacity="0.28" stroke-width="2"/>
+      <path d="M234 137H278" stroke="#D69860" stroke-opacity="0.5" stroke-width="7" stroke-linecap="round"/>
+      <g transform="translate(256 272) scale(2.2) translate(-50 -50)" stroke="url(#command)" stroke-width="7.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M40 30V70M60 30V70M30 40H70M30 60H70"/>
+        <path d="M40 30A10 10 0 1 0 30 40M60 30A10 10 0 1 1 70 40M40 70A10 10 0 1 1 30 60M60 70A10 10 0 1 0 70 60"/>
+      </g>
+    </g>
+    <circle cx="352" cy="139" r="43" stroke="#FFF9ED" stroke-opacity="0.42" stroke-width="3"/>
+    <g filter="url(#contact)">
+      <circle cx="352" cy="139" r="31" fill="url(#touch)" stroke="#FFF9ED" stroke-width="9"/>
+      <circle cx="343" cy="129" r="8" fill="#FFE2AF" fill-opacity="0.45"/>
+    </g>
+  </g>
+</svg>

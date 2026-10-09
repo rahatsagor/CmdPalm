@@ -1,0 +1,18 @@
+[workspace]
+resolver = "3"
+members = ["core", "tools/uniffi-bindgen"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.90"
+license = "AGPL-3.0-only"
+repository = "https://github.com/rahatsagor/CmdPalm"
+
+[profile.release]
+codegen-units = 1
+lto = "thin"
+opt-level = 3
+panic = "unwind"
+debug = "line-tables-only"
+strip = "debuginfo"

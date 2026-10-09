@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security problem
+    url: https://github.com/rahatsagor/CmdPalm/security/advisories/new
+    about: Please report vulnerabilities privately, not in a public issue.
+  - name: Setup help
+    url: https://github.com/rahatsagor/CmdPalm#troubleshooting
+    about: Answers to common problems with installing and connecting.

@@ -1,0 +1,180 @@
+name: Release
+
+# Push a tag like v1.2.0 after adding a `## [1.2.0]` section to CHANGELOG.md.
+#
+# Repository settings (Settings → Secrets and variables → Actions):
+#   SPARKLE_PUBLIC_KEY         variable, required: Sparkle EdDSA public key
+#   SPARKLE_PRIVATE_KEY        secret, required: matching private key
+#   SIGNING_IDENTITY_P12       secret, required: from
+#   SIGNING_IDENTITY_PASSWORD  secret               scripts/make-signing-identity.sh --export
+#   HOMEBREW_TAP_TOKEN         secret, optional: write access to rahatsagor/homebrew-tap
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  checks:
+    name: Validate release
+    uses: ./.github/workflows/ci.yml
+
+  release:
+    needs: checks
+    # Use the released compiler, not a beta, on GitHub's Xcode 27 preview image.
+    runs-on: xcode-27
+    timeout-minutes: 40
+    permissions:
+      contents: write
+    env:
+      HAS_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN != '' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install release tools
+        run: |
+          brew update
+          brew install xcodegen openssl@3
+          brew upgrade xcodegen openssl@3
+          echo "$(brew --prefix openssl@3)/bin" >> "$GITHUB_PATH"
+
+      - name: Check release settings
+        id: version
+        env:
+          SPARKLE_PUBLIC_KEY: ${{ vars.SPARKLE_PUBLIC_KEY }}
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+          P12: ${{ secrets.SIGNING_IDENTITY_P12 }}
+          P12_PASSWORD: ${{ secrets.SIGNING_IDENTITY_PASSWORD }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          python3 scripts/release_notes.py check "$VERSION"
+          python3 scripts/release_notes.py check-keys
+          if [[ -z "$P12" || -z "$P12_PASSWORD" ]]; then
+            echo "::error::Set both SIGNING_IDENTITY_P12 and SIGNING_IDENTITY_PASSWORD repository secrets"
+            exit 1
+          fi
+          python3 scripts/release_notes.py notes "$VERSION" > "$RUNNER_TEMP/notes.md"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
+        with:
+          xcode-version: latest-stable
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
+        with:
+          toolchain: stable
+          targets: aarch64-apple-darwin
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: latest
+      - name: Import signing identity
+        env:
+          P12: ${{ secrets.SIGNING_IDENTITY_P12 }}
+          P12_PASSWORD: ${{ secrets.SIGNING_IDENTITY_PASSWORD }}
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -hex 24)"
+          echo "$P12" | base64 --decode > "$RUNNER_TEMP/identity.p12"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 3600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/identity.p12" -k "$KEYCHAIN" -P "$P12_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
+          rm "$RUNNER_TEMP/identity.p12"
+          echo "CMDPALM_KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
+          echo "CMDPALM_SIGN_IDENTITY=CmdPalm Self-Signed" >> "$GITHUB_ENV"
+
+      - name: Build
+        env:
+          CMDPALM_UPDATE_KEY: ${{ vars.SPARKLE_PUBLIC_KEY }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: scripts/build-app.sh --version "$VERSION"
+
+      - name: Package
+        run: scripts/package.sh
+
+      - name: Appcast
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          SIGN_UPDATE=build/DerivedData/SourcePackages/artifacts/sparkle/Sparkle/bin/sign_update
+          python3 scripts/release_notes.py appcast "$VERSION" "dist/CmdPalm-$VERSION.zip" dist/appcast.xml
+          # The app requires a signed feed (SURequireSignedFeed).
+          printf '%s' "$SPARKLE_PRIVATE_KEY" | "$SIGN_UPDATE" --ed-key-file - dist/appcast.xml
+          printf '%s' "$SPARKLE_PRIVATE_KEY" | "$SIGN_UPDATE" --verify --ed-key-file - dist/appcast.xml
+
+      - name: Verify release files
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          cp "dist/CmdPalm-$VERSION.dmg" dist/CmdPalm.dmg
+          unzip -tq "dist/CmdPalm-$VERSION.zip"
+          hdiutil verify "dist/CmdPalm-$VERSION.dmg"
+          cd dist
+          shasum -a 256 "CmdPalm-$VERSION.zip" "CmdPalm-$VERSION.dmg" CmdPalm.dmg appcast.xml > SHA256SUMS
+          shasum -a 256 -c SHA256SUMS
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          # Upload every file to a draft before making downloads discoverable.
+          gh release create "$GITHUB_REF_NAME" --verify-tag --draft \
+            --title "CmdPalm $VERSION" \
+            --notes-file "$RUNNER_TEMP/notes.md" \
+            "dist/CmdPalm-$VERSION.zip" \
+            "dist/CmdPalm-$VERSION.dmg" \
+            dist/CmdPalm.dmg \
+            dist/appcast.xml \
+            dist/SHA256SUMS
+          gh release edit "$GITHUB_REF_NAME" --draft=false --latest
+
+      - name: Update Homebrew tap
+        if: env.HAS_TAP_TOKEN == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          SHA256="$(shasum -a 256 "dist/CmdPalm-$VERSION.zip" | cut -d' ' -f1)"
+          TAP="$RUNNER_TEMP/homebrew-tap"
+          gh repo clone rahatsagor/homebrew-tap "$TAP" -- --depth 1
+          mkdir -p "$TAP/Casks"
+          sed -e "s/{{VERSION}}/$VERSION/" -e "s/{{SHA256}}/$SHA256/" packaging/homebrew/cmdpalm.rb \
+            | sed '1,2d' > "$TAP/Casks/cmdpalm.rb"
+          cd "$TAP"
+          gh auth setup-git
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Casks/cmdpalm.rb
+          if ! git diff --cached --quiet; then
+            git commit -m "cmdpalm $VERSION"
+            git push
+          fi
+
+      - name: Remove signing material
+        if: always()
+        run: |
+          rm -f "$RUNNER_TEMP/identity.p12"
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          if [[ -f "$KEYCHAIN" ]]; then security delete-keychain "$KEYCHAIN"; fi
+
+      - name: Upload build diagnostics
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-build-diagnostics
+          path: build/*.log
+          retention-days: 7
+          if-no-files-found: ignore

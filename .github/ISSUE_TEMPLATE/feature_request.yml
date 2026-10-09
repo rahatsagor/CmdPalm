@@ -1,0 +1,15 @@
+name: Idea or request
+description: Suggest something CmdPalm should do.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: Describe the situation, not only the feature. It helps find the best way to solve it.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would help?

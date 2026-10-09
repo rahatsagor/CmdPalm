@@ -1,0 +1,40 @@
+# Build output
+/target/
+/build/
+/dist/
+/web/dist/
+/web/node_modules/
+/apple/Generated/
+/apple/*.xcodeproj/
+DerivedData/
+*.xcarchive
+
+# Release signing material
+*.p12
+*.pfx
+*.key
+*.keychain-db
+*.pem
+sparkle_private_key*
+.env*
+
+# Local development notes, agent tooling and previews
+/.agents/
+/.codex/
+/AGENTS.md
+/RTK.md
+/local-builds/
+/local-cache/
+/design/
+/notes/
+/scratch/
+*.log
+/coverage/
+/web/coverage/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
+__pycache__/

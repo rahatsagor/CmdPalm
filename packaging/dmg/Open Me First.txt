@@ -1,0 +1,23 @@
+Installing CmdPalm
+==================
+
+1. Drag CmdPalm into the Applications folder.
+
+2. CmdPalm is free and open source, and it is not signed with a paid Apple
+   Developer ID, so macOS blocks it the first time. Open Terminal and run:
+
+       xattr -dr com.apple.quarantine /Applications/CmdPalm.app
+
+   Or open CmdPalm once, then go to System Settings → Privacy & Security and
+   click "Open Anyway" next to the message about CmdPalm.
+
+3. Open CmdPalm. It lives in the menu bar and walks you through the rest.
+
+Updates install from inside the app, so you only do this once.
+
+Homebrew users can instead run:
+
+    brew install --cask rahatsagor/tap/cmdpalm
+
+Website: https://cmdpalm.app
+Source code, help and release notes: https://github.com/rahatsagor/CmdPalm

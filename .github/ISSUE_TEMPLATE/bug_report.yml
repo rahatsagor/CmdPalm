@@ -1,0 +1,42 @@
+name: Something isn't working
+description: Report a bug in the Mac app or on the phone.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: CmdPalm version
+      description: Settings → About on the Mac.
+      placeholder: "0.1.0"
+    validations:
+      required: true
+  - type: input
+    id: mac
+    attributes:
+      label: Mac and macOS version
+      placeholder: MacBook Air M2, macOS 26.1
+    validations:
+      required: true
+  - type: input
+    id: phone
+    attributes:
+      label: Phone or tablet and browser
+      description: Say whether you opened it from the home screen or a browser tab.
+      placeholder: iPhone 16, iOS 26.1, from the home screen
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: >
+        From ~/Library/Logs/CmdPalm on the Mac. They never contain what you type.
+        For detailed logs, set Settings → Advanced → Log detail to Detailed first.
+      render: text
