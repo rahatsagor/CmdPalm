@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { LoaderCircle } from '@lucide/vue'
-import { computed, defineAsyncComponent, onMounted, ref, watch, watchEffect } from 'vue'
+import { computed, onMounted, ref, watch, watchEffect } from 'vue'
 import SettingsSheet from '@/components/SettingsSheet.vue'
 import SideRail from '@/components/SideRail.vue'
 import StatusBar from '@/components/StatusBar.vue'
@@ -9,15 +9,17 @@ import Toasts from '@/components/Toasts.vue'
 import { connect, disconnect, state } from '@/lib/connection'
 import { token } from '@/lib/device'
 import { layout } from '@/lib/layout'
+import { pairingLink } from '@/lib/pairing'
+import { lazy } from '@/lib/reload'
 import { settings } from '@/lib/settings'
 import ConnectView from '@/views/ConnectView.vue'
 import TrackpadView from '@/views/TrackpadView.vue'
 
 // Less-used sections load on first visit to keep startup fast on phones.
-const KeyboardView = defineAsyncComponent(() => import('@/views/KeyboardView.vue'))
-const DeckView = defineAsyncComponent(() => import('@/views/DeckView.vue'))
-const AppsView = defineAsyncComponent(() => import('@/views/AppsView.vue'))
-const MediaView = defineAsyncComponent(() => import('@/views/MediaView.vue'))
+const KeyboardView = lazy(() => import('@/views/KeyboardView.vue'))
+const DeckView = lazy(() => import('@/views/DeckView.vue'))
+const AppsView = lazy(() => import('@/views/AppsView.vue'))
+const MediaView = lazy(() => import('@/views/MediaView.vue'))
 
 const views = { trackpad: TrackpadView, keyboard: KeyboardView, deck: DeckView, apps: AppsView, media: MediaView }
 
@@ -51,8 +53,8 @@ watchEffect(() => {
 })
 
 onMounted(() => {
-  // A pairing link wins over a saved token: the user is pairing again.
-  if (!/[#&]pair=/.test(location.hash)) connect()
+  // A pairing link wins over a saved token: ConnectView pairs with its code.
+  if (!pairingLink) connect()
   setTimeout(() => (slow.value = true), 6000)
 })
 </script>

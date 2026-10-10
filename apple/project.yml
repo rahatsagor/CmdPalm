@@ -10,16 +10,16 @@ options:
 packages:
   Sparkle:
     url: https://github.com/sparkle-project/Sparkle
-    from: 2.10.0
+    exactVersion: 2.10.0
 
 settings:
   base:
     SWIFT_VERSION: "6.0"
-    MARKETING_VERSION: "0.1.0"
+    MARKETING_VERSION: "0.1.1"
     CURRENT_PROJECT_VERSION: "1"
     ARCHS: arm64
     ONLY_ACTIVE_ARCH: NO
-    ENABLE_HARDENED_RUNTIME: NO
+    ENABLE_HARDENED_RUNTIME: YES
     CODE_SIGN_STYLE: Manual
     CODE_SIGN_IDENTITY: "-"
     DEVELOPMENT_TEAM: ""
@@ -52,6 +52,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: app.cmdpalm.mac
         PRODUCT_NAME: CmdPalm
         INFOPLIST_FILE: CmdPalm/Info.plist
+        CODE_SIGN_ENTITLEMENTS: CmdPalm/CmdPalm.entitlements
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         SWIFT_INCLUDE_PATHS: $(SRCROOT)/Generated

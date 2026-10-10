@@ -27,7 +27,7 @@ struct PhoneSetupPane: View {
             Section("Pairing") {
                 DescribedToggle(
                     "Allow pairing with a PIN",
-                    detail: "Devices can pair by typing the six-digit PIN shown with the QR code. Scanning the QR code always works.",
+                    detail: "Devices can pair by typing the six-digit PIN shown with the QR code. The PIN only works while it’s on screen here, and for a few minutes after. Scanning the QR code always works.",
                     isOn: $preferences.allowPin
                 )
                 DescribedToggle(
@@ -46,7 +46,7 @@ struct PhoneSetupPane: View {
                 } label: {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Address in the QR code")
-                        Text("The Mac name keeps working when the IP address changes. Some Android phones can’t open .local names; choose the IP address for them.")
+                        Text("Mac Name keeps working when the IP address changes. Some Android phones can’t open .local names; choose IP Address for them.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -149,7 +149,7 @@ private struct EncryptedConnectionSection: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Dictation and some phone features only work over an encrypted (HTTPS) connection. Install CmdPalm’s certificate on your phone once to turn it on. The certificate was created on this Mac and only covers local network addresses, never websites.")
                     .fixedSize(horizontal: false, vertical: true)
-                Label("On Android, installing CmdPalm as an app, rather than a Home screen shortcut, needs the encrypted connection, because Chrome only installs web apps over HTTPS.",
+                Label("On Android, installing CmdPalm as an app, rather than a Home Screen shortcut, needs the encrypted connection, because Chrome only installs web apps over HTTPS.",
                       systemImage: "info.circle")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -166,7 +166,7 @@ private struct EncryptedConnectionSection: View {
                 let certificateLink = "\(pairing.address)/cmdpalm.crt"
                 HStack(alignment: .top, spacing: 16) {
                     VStack(spacing: 6) {
-                        QRCodeView(text: certificateLink, size: 110)
+                        QRCodeView(text: certificateLink, size: 110, label: "Certificate QR code")
                         Text("Certificate").font(.caption).foregroundStyle(.secondary)
                     }
                     VStack(alignment: .leading, spacing: 8) {

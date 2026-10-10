@@ -1,7 +1,9 @@
 import { createApp } from 'vue'
 import App from './App.vue'
 import { installDisplayTracking } from './lib/display'
+import { onMessage } from './lib/connection'
 import { installHardwareKeyboard } from './lib/hardware'
+import { checkHostVersion, installReloadOnStaleBuild } from './lib/reload'
 import { installSettingsSync } from './lib/settingsSync'
 import { installWakeLock } from './lib/wakeLock'
 import './style.css'
@@ -23,6 +25,12 @@ function trackViewport() {
 // gestures always reach the trackpad.
 for (const type of ['gesturestart', 'gesturechange', 'gestureend']) {
   document.addEventListener(type, (event) => event.preventDefault(), { passive: false })
+}
+installReloadOnStaleBuild()
+if (import.meta.env.PROD) {
+  onMessage((message) => {
+    if (message.t === 'welcome') checkHostVersion(message.host.version)
+  })
 }
 trackViewport()
 installDisplayTracking()

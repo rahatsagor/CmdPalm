@@ -21,15 +21,15 @@ enum DeviceText {
         return "Since \(date.formatted(.dateTime.month(.abbreviated).day()))"
     }
 
-    static let forgetMessage = "It is disconnected and must pair again with a QR code, PIN or approval. Its phone settings kept on this Mac, such as custom keyboards and gestures, are deleted."
+    static let removeMessage = "It is disconnected and must pair again with a QR code, PIN or approval. Its phone settings kept on this Mac, such as custom keyboards and gestures, are deleted."
 
     @MainActor
-    static func confirmForget(_ device: TrustedDevice, host: HostController) {
+    static func confirmRemove(_ device: TrustedDevice, host: HostController) {
         let alert = NSAlert()
-        alert.messageText = "Forget “\(device.name)”?"
-        alert.informativeText = forgetMessage
+        alert.messageText = "Remove “\(device.name)”?"
+        alert.informativeText = removeMessage
         alert.alertStyle = .warning
-        alert.addButton(withTitle: "Forget Device").hasDestructiveAction = true
+        alert.addButton(withTitle: "Remove Device").hasDestructiveAction = true
         alert.addButton(withTitle: "Cancel")
         if AppActivation.shared.present({ alert.runModal() }) == .alertFirstButtonReturn {
             host.forget(device)
@@ -95,9 +95,9 @@ struct ConnectedDeviceRow: View {
             Button("Disconnect") { host.disconnect(device) }
             if device.remembered, let trusted = host.trusted.first(where: { $0.id == device.deviceId }) {
                 Divider()
-                Button("Forget Device…") {
+                Button("Remove Device…") {
                     // Let the context menu finish closing before the modal alert starts.
-                    Task { @MainActor in DeviceText.confirmForget(trusted, host: host) }
+                    Task { @MainActor in DeviceText.confirmRemove(trusted, host: host) }
                 }
             }
         }

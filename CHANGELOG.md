@@ -9,6 +9,65 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-10
+
+A safer, smoother update to the first release. Voice typing now stays
+entirely on your Mac, other devices on your network have fewer ways to get in
+the way, and pairing and reconnecting on the phone are more reliable.
+
+### Privacy and security
+
+- Voice typing always runs on your Mac. If your Mac can't recognise a
+  language on-device, CmdPalm tells you instead of sending audio to Apple's
+  servers.
+- The PIN only works while CmdPalm shows it on the Mac, and for three
+  minutes after, so nobody can try to guess it while you aren't pairing.
+  Wrong PINs from IPv6 addresses are counted per network, so a device can't
+  get around the lockout by switching addresses.
+- A device whose approval requests keep being declined has to wait before
+  asking again. Requests can't hide invisible characters in their names,
+  and pressing Return no longer approves a device.
+- Pause also stops shell commands that a deck button started.
+- Passwords copied from a password manager are never sent to a phone, and
+  clipboard managers no longer record the clipboard CmdPalm restores after a
+  paste.
+- Another device on the network can no longer use up the connections your
+  phone needs.
+- The phone shows **Not encrypted** while it is connected over HTTP, and
+  explains how to turn on the encrypted connection.
+- The Mac app is signed with the hardened runtime.
+
+### Phone and tablet
+
+- Scanning the QR code works the first time, even on a phone that was
+  paired before and then removed on the Mac.
+- When the Mac app updates, an open CmdPalm page reloads itself instead of
+  showing empty tabs.
+- **Reconnect** is offered after you tap Disconnect.
+- Keys pressed while the phone is reconnecting can't get stuck, and live
+  typing no longer deletes text on the Mac after the connection drops.
+- The home screen app opens its "can't reach your Mac" screen within a few
+  seconds when you're away from the Mac's network.
+- A **Cancel** button while the Mac is asked to approve, and clearer
+  messages when pairing doesn't work.
+- Voice typing starts more reliably on iPhone and iPad.
+- Settings that can't work in your browser, such as haptics on iOS 17 or
+  Keep Screen On without the encrypted connection, are hidden or say why.
+- The deck editor counts text the way the Mac does, so long text in other
+  languages isn't rejected after you save.
+- Clearer labels for app and mouse buttons, a styled volume slider in
+  Firefox, and better VoiceOver and keyboard support in sheets.
+
+### Mac app
+
+- Opening CmdPalm while it's already running shows its settings.
+- Deck buttons that control other apps through AppleScript now get a proper
+  permission prompt.
+- Devices are removed with **Remove** everywhere, and VoiceOver no longer
+  reads the secret pairing code from the QR code.
+- If the server can't start, the menu bar says so instead of staying on
+  "Starting…".
+
 ## [0.1.0] - 2026-10-09
 
 The first release.
@@ -76,5 +135,6 @@ The first release.
   device, so they survive a cleared browser, and you can copy them from
   another device.
 
-[Unreleased]: https://github.com/rahatsagor/CmdPalm/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/rahatsagor/CmdPalm/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/rahatsagor/CmdPalm/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/rahatsagor/CmdPalm/releases/tag/v0.1.0

@@ -101,7 +101,7 @@ pub enum NativeCommand {
 }
 
 /// Implemented in Swift. Called from background threads; implementations
-/// must be thread-safe and must not call back into [`crate::host::Host`]
+/// must be thread-safe and must not call back into [`crate::host::CoreHost`]
 /// synchronously from the main thread while waiting on these calls.
 #[uniffi::export(with_foreign)]
 pub trait HostDelegate: Send + Sync {

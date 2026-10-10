@@ -7,6 +7,7 @@ import SwiftUI
 struct QRCodeView: View {
     let text: String
     var size: CGFloat = 180
+    var label = "Pairing QR code"
 
     var body: some View {
         Group {
@@ -29,7 +30,7 @@ struct QRCodeView: View {
             RoundedRectangle(cornerRadius: size * 0.09, style: .continuous)
                 .strokeBorder(.black.opacity(0.08))
         }
-        .accessibilityLabel("QR code for \(text)")
+        .accessibilityLabel(label)
     }
 
     private static let context = CIContext(options: [.useSoftwareRenderer: false])

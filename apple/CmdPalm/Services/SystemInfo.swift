@@ -25,7 +25,14 @@ enum SystemInfo {
         return Host.current().localizedName ?? "Mac"
     }
 
+    /// Unit tests run inside the app, which must not touch the person's data.
+    static let isRunningTests = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+
     static var dataDirectory: URL {
+        if isRunningTests {
+            return FileManager.default.temporaryDirectory
+                .appending(path: "CmdPalm-tests-\(ProcessInfo.processInfo.processIdentifier)", directoryHint: .isDirectory)
+        }
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSHomeDirectory()).appending(path: "Library/Application Support")
         return base.appending(path: "CmdPalm", directoryHint: .isDirectory)

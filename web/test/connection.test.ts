@@ -178,3 +178,58 @@ describe('actions', () => {
     await expect(result).resolves.toEqual({ ok: false, message: 'Nope.' })
   })
 })
+
+describe('pairing', () => {
+  it('keeps a pairing in progress when the app connects with a saved token', () => {
+    conn.connect({ method: 'pair', code: 'abc' })
+    conn.connect()
+    expect(FakeSocket.all).toHaveLength(1)
+    last().open()
+    expect(last().sent).toMatchObject([{ t: 'hello', auth: { method: 'pair', code: 'abc' } }])
+  })
+
+  it('stays connecting when there is no saved token', () => {
+    localStorage.clear()
+    conn.connect({ method: 'pin', pin: '123456' })
+    conn.connect()
+    expect(conn.state.status).toBe('connecting')
+    expect(FakeSocket.all).toHaveLength(1)
+  })
+
+  it('reads the pairing link once and drops it from the address bar', async () => {
+    history.replaceState(null, '', '/#pair=one-time_1')
+    vi.resetModules()
+    const pairing = await import('../src/lib/pairing')
+    expect(location.hash).toBe('')
+    expect(pairing.pairingLink).toBe(true)
+    expect(pairing.takePairingCode()).toBe('one-time_1')
+    expect(pairing.takePairingCode()).toBeNull()
+  })
+})
+
+describe('disconnecting here', () => {
+  it('keeps the pairing so the device can reconnect', () => {
+    connected()
+    conn.disconnect(false)
+    expect(conn.state.status).toBe('idle')
+    expect(conn.state.byeReason).toBe('')
+    expect(localStorage.getItem('cmdpalm.token')).toBe('saved')
+    conn.connect()
+    expect(FakeSocket.all).toHaveLength(2)
+  })
+})
+
+describe('sending', () => {
+  it('drops input until the Mac welcomes a reconnect', () => {
+    connected()
+    vi.advanceTimersByTime(8000)
+    vi.advanceTimersByTime(1000)
+    const socket = last()
+    socket.open()
+    expect(conn.state.status).toBe('reconnecting')
+    expect(conn.send({ t: 'key', code: 0, down: true })).toBe(false)
+    expect(socket.sent).toMatchObject([{ t: 'hello' }])
+    socket.receive(welcome)
+    expect(conn.send({ t: 'key', code: 0, down: true })).toBe(true)
+  })
+})

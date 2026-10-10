@@ -11,7 +11,7 @@
 //!   for that combo and released afterwards ("temporary" modifiers).
 //! * A device that stops sending heartbeats has all of its input released.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::thread::JoinHandle;
@@ -35,6 +35,9 @@ pub const TEXT_GAP: Duration = Duration::from_millis(2);
 /// Release a device's held input when it has been silent this long.
 pub const WATCHDOG_TIMEOUT: Duration = Duration::from_millis(3000);
 const WATCHDOG_PERIOD: Duration = Duration::from_millis(250);
+const MAX_REPEAT: Duration = Duration::from_secs(60);
+/// Ended sessions remembered so late input for them is dropped.
+const ENDED_MEMORY: usize = 256;
 /// End a scroll gesture whose client stopped sending updates.
 pub const SCROLL_STALE: Duration = Duration::from_millis(300);
 const MOMENTUM_FRAME: Duration = Duration::from_micros(8333);
@@ -153,6 +156,9 @@ struct Repeat {
     session: SessionId,
     code: KeyCode,
     next: Instant,
+    /// Repeat ends here even if the key is still held, so a lost key-up
+    /// can't keep deleting text forever.
+    until: Instant,
 }
 
 #[derive(Default)]
@@ -281,6 +287,7 @@ pub(crate) struct Engine<S: EventSink> {
     motion: MotionPacer,
     last_watchdog: Instant,
     last_notice: HashMap<Notice, Instant>,
+    ended: VecDeque<SessionId>,
     pub(crate) interrupts: Arc<Interrupts>,
 }
 
@@ -303,6 +310,7 @@ impl<S: EventSink> Engine<S> {
             motion: MotionPacer::new(Instant::now()),
             last_watchdog: Instant::now(),
             last_notice: HashMap::new(),
+            ended: VecDeque::new(),
         }
     }
 
@@ -360,12 +368,18 @@ impl<S: EventSink> Engine<S> {
     /// Returns `false` when the engine should stop.
     pub(crate) fn handle(&mut self, command: Command, now: Instant) -> bool {
         match command {
+            // A deck action can still be finishing after its device left.
+            Command::Input { session, .. } | Command::Alive(session) if self.ended.contains(&session) => {}
             Command::Input { session, input } => {
                 self.alive(session, now);
                 self.input(session, input, now);
             }
             Command::Alive(session) => self.alive(session, now),
             Command::EndSession(session) => {
+                if self.ended.len() >= ENDED_MEMORY {
+                    self.ended.pop_front();
+                }
+                self.ended.push_back(session);
                 // Finish the motion first, so a drag ends where the finger did.
                 if !self.paused
                     && let Some((dx, dy)) = self.motion.take()
@@ -576,7 +590,12 @@ impl<S: EventSink> Engine<S> {
             if !temp.is_empty() {
                 self.session(session, now).temp.insert(code, temp);
             }
-            self.repeat = repeat.then(|| Repeat { session, code, next: now + self.tuning.key_repeat_delay });
+            self.repeat = repeat.then(|| Repeat {
+                session,
+                code,
+                next: now + self.tuning.key_repeat_delay,
+                until: now + MAX_REPEAT,
+            });
         }
         self.session(session, now).keys.insert(code);
     }
@@ -624,6 +643,10 @@ impl<S: EventSink> Engine<S> {
             return;
         };
         if now < repeat.next {
+            return;
+        }
+        if now >= repeat.until {
+            self.repeat = None;
             return;
         }
         let code = repeat.code;
@@ -1587,7 +1610,34 @@ mod tests {
             if !pause {
                 engine.handle(Command::EndSession(A), now);
                 assert!(!interrupts.should_stop(A), "the engine forgets ended sessions");
+                let before = engine.sink.events.len();
+                let late = Input::Text { text: "late".into(), mode: TypeMode::Unicode };
+                engine.handle(Command::Input { session: A, input: late }, now);
+                assert_eq!(engine.sink.events.len(), before, "input for an ended session is dropped");
+                assert!(!engine.sessions.contains_key(&A));
             }
         }
+    }
+
+    #[test]
+    fn key_repeat_stops_after_a_minute() {
+        let mut engine = Engine::new(Recorder::default(), Box::new(|_| {}));
+        let now = Instant::now();
+        engine.handle(
+            Command::Input { session: A, input: Input::Key { code: KEY_A, down: true, mods: 0, repeat: true } },
+            now,
+        );
+        // The device stays connected, only its key-up never arrives.
+        let mut at = now;
+        while at < now + MAX_REPEAT - Duration::from_secs(1) {
+            at += Duration::from_millis(500);
+            engine.handle(Command::Alive(A), at);
+            engine.tick(at);
+        }
+        assert!(engine.repeat.is_some());
+        at += Duration::from_secs(2);
+        engine.handle(Command::Alive(A), at);
+        engine.tick(at);
+        assert!(engine.repeat.is_none(), "a lost key-up can't repeat forever");
     }
 }

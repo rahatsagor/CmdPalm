@@ -84,7 +84,6 @@ private struct ApprovalPrompt: View {
                     Button("Don’t Allow") { host.respond(to: request, allow: false) }
                         .keyboardShortcut(.cancelAction)
                     Button("Allow") { host.respond(to: request, allow: true) }
-                        .keyboardShortcut(.defaultAction)
                 }
             }
             .padding(16)

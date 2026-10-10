@@ -129,19 +129,25 @@ final class SpeechService: @unchecked Sendable {
 
     private func begin(_ id: UInt64) {
         guard let session = sessions[id], !session.stopping else { return }
+        // Speech never leaves the Mac: without on-device support for the
+        // language, the recognizer would send audio to Apple's servers.
+        guard session.recognizer.supportsOnDeviceRecognition else {
+            sessions[id] = nil
+            discard(session)
+            send(id, .unavailable, message: "Speech is only transcribed on this Mac, and on-device recognition isn’t available for this language. Try another language, or turn on Dictation in System Settings → Keyboard so macOS can download it.")
+            return
+        }
         guard session.recognizer.isAvailable else {
             sessions[id] = nil
             discard(session)
-            send(id, .unavailable, message: "Speech recognition isn’t available right now. Check the Mac’s internet connection or Siri settings.")
+            send(id, .unavailable, message: "Speech recognition isn’t available on the Mac right now. Try again in a moment.")
             return
         }
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.shouldReportPartialResults = true
         request.taskHint = .dictation
         request.addsPunctuation = true
-        if session.recognizer.supportsOnDeviceRecognition {
-            request.requiresOnDeviceRecognition = true
-        }
+        request.requiresOnDeviceRecognition = true
         session.generation += 1
         let utterance = Utterance(generation: session.generation, request: request)
         let generation = utterance.generation

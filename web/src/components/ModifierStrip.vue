@@ -8,8 +8,8 @@ import ModKey from './ModKey.vue'
 withDefaults(defineProps<{ extras?: boolean; vertical?: boolean }>(), { extras: true, vertical: false })
 
 const extraKeys = [
-  { code: Key.Escape, label: 'esc' },
-  { code: Key.Tab, label: '⇥' },
+  { code: Key.Escape, label: 'esc', name: 'Escape' },
+  { code: Key.Tab, label: '⇥', name: 'Tab' },
 ]
 
 const fingers = useHeldPointers(keyUp)
@@ -37,6 +37,7 @@ function up(event: PointerEvent) {
         type="button"
         class="key-btn touch-none rounded-[9px] bg-key text-[14px] text-muted active:bg-key-down"
         :class="vertical ? 'min-h-0 flex-1' : 'w-12 shrink-0'"
+        :aria-label="key.name"
         @pointerdown="down(key.code, $event)"
         @pointerup="up"
         @pointercancel="up"

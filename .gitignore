@@ -18,16 +18,9 @@ DerivedData/
 sparkle_private_key*
 .env*
 
-# Local development notes, agent tooling and previews
-/.agents/
-/.codex/
-/AGENTS.md
-/RTK.md
+# Local builds and logs
 /local-builds/
 /local-cache/
-/design/
-/notes/
-/scratch/
 *.log
 /coverage/
 /web/coverage/

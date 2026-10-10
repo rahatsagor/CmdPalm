@@ -69,7 +69,7 @@ function save() {
       @click="confirming ? emit('remove') : (confirming = true)"
     >
       <Trash2 :size="16" />
-      {{ confirming ? `Delete “${page.name}” and its ${page.tiles.length} buttons` : 'Delete page' }}
+      {{ confirming ? `Delete “${page.name}” and its ${page.tiles.length} ${page.tiles.length === 1 ? 'button' : 'buttons'}` : 'Delete page' }}
     </button>
 
     <button type="button" class="mt-4 h-12 w-full rounded-2xl bg-accent text-[16px] font-semibold text-accent-text" @click="save">Done</button>

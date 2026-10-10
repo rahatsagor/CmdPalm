@@ -92,7 +92,7 @@ struct WelcomeView: View {
                 Text("\(name) is connected")
                     .font(.title.bold())
                     .multilineTextAlignment(.center)
-                Text("Tip: add CmdPalm to the phone’s home screen (Share → Add to Home Screen on iPhone, or the browser menu on Android) to open it like an app. CmdPalm lives in the menu bar; click its icon to pair more devices.")
+                Text("Tip: add CmdPalm to the phone’s Home Screen (Share → Add to Home Screen on iPhone, or the browser menu on Android) to open it like an app. CmdPalm lives in the menu bar; click its icon to pair more devices.")
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)

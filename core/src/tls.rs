@@ -195,7 +195,6 @@ pub fn load_identity(dir: &Path, names: &[String]) -> Result<Identity, TlsError>
             store::save_bytes(&paths.leaf_cert, cert.der())?;
             current.leaf_names = names.to_vec();
             current.leaf_expires = expires.unix_timestamp();
-            store::save(&paths.meta, &current)?;
             (key, cert.der().to_vec())
         }
     };

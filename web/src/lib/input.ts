@@ -70,17 +70,15 @@ export function keyUp(pointerId: number) {
   send({ t: 'key', code, down: false })
 }
 
-export function tap(code: number, extraMods = 0) {
+export function tap(code: number, extraMods = 0): boolean {
   const mods = modifiers.use() | extraMods
-  send({ t: 'tap', code, mods })
+  return send({ t: 'tap', code, mods })
 }
 
 /** Type a character as a key press so it can be part of a shortcut. */
 export function tapChar(ch: string): boolean {
   const key = labels.value.forChar(ch)
-  if (!key) return false
-  tap(key.code, key.mods)
-  return true
+  return !!key && tap(key.code, key.mods)
 }
 
 export function click(button: MouseButton = 'left') {
@@ -113,6 +111,17 @@ const SEEKING = new Set<MediaKey>(['rewind', 'fastForward'])
 /** Stepping keys still repeating, so Release all can stop them. */
 const repeating = new Set<() => void>()
 
+if (typeof document !== 'undefined') {
+  // A finger lift that comes after the page is hidden never arrives.
+  const stopRepeating = () => {
+    for (const stop of repeating) stop()
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') stopRepeating()
+  })
+  addEventListener('pagehide', stopRepeating)
+}
+
 /** Press a media key; call the returned function when the finger lifts. */
 export function pressMedia(key: MediaKey): () => void {
   if (SEEKING.has(key)) {
@@ -133,17 +142,19 @@ export function pressMedia(key: MediaKey): () => void {
   return stop
 }
 
-export function typeText(text: string, mode: TextMode = settings.textMode) {
-  if (!text) return
+/** Returns whether the text went to the Mac. */
+export function typeText(text: string, mode: TextMode = settings.textMode): boolean {
+  if (!text) return true
   // With a one-shot modifier waiting, a single character becomes a shortcut.
-  if (modifiers.pending() && [...text].length === 1 && tapChar(text)) return
+  if (modifiers.pending() && [...text].length === 1 && tapChar(text)) return true
   modifiers.clearLatched()
-  send({ t: 'text', text, mode })
+  return send({ t: 'text', text, mode })
 }
 
-export function edit(deleteCount: number, insert: string) {
-  if (deleteCount === 0 && !insert) return
-  send({ t: 'edit', delete: deleteCount, insert })
+/** Returns whether the change went to the Mac. */
+export function edit(deleteCount: number, insert: string): boolean {
+  if (deleteCount === 0 && !insert) return true
+  return send({ t: 'edit', delete: deleteCount, insert })
 }
 
 export function releaseAll() {

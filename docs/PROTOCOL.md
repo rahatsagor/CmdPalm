@@ -19,9 +19,10 @@ at the first byte of each connection to tell them apart.
 | `/api/icon?id=<bundle id>&size=<px>&k=<session key>` | App icon as PNG, 64 to 512 px. Needs the `sessionKey` from `welcome`. |
 | `/cmdpalm.crt` | The Mac's certificate authority (DER), for installing on the phone. |
 
-Only `GET` and `HEAD` are accepted. The `Host` header must be an IP address,
-`localhost` or a `.local` name; other names get `421`, so a website can't
-reach the server through DNS rebinding. Messages are limited to 1 MiB.
+Only `GET` and `HEAD` are accepted. The `Host` header must be present and be
+an IP address, `localhost` or a `.local` name; anything else gets `421`, so a
+website can't reach the server through DNS rebinding. Messages are limited to
+1 MiB.
 
 Text frames carry JSON objects with a `t` field naming the message type.
 Field names are camelCase. Pointer data uses binary frames.
@@ -62,7 +63,7 @@ without spaces; the phone app uses a UUID. Other IDs are `denied` as
 | --- | --- | --- |
 | `token` | `token` | Reconnect with the token issued at pairing. |
 | `pair` | `code` | The single-use code from the QR link (`/#pair=<code>`). |
-| `pin` | `pin` | The six-digit PIN shown on the Mac. |
+| `pin` | `pin` | The six-digit PIN shown on the Mac. It works only while the Mac shows it, and for three minutes after. |
 | `approve` | | Ask the person at the Mac to accept. The Mac replies `pending` and waits up to two minutes. |
 
 On success the Mac sends `welcome`:
@@ -85,10 +86,11 @@ Otherwise the Mac sends `denied` and closes the connection:
 | `reason` | Meaning |
 | --- | --- |
 | `unknown` | The token is unknown or was revoked. Pair again. |
-| `wrongPin` | Wrong code or PIN. |
-| `expiredCode` | The code or PIN changed since the phone saw it. |
-| `rejected` | The person at the Mac declined. |
-| `blocked` | Too many wrong attempts. `retryAfter` gives seconds to wait. |
+| `wrongPin` | The PIN is wrong, or it changed since the phone saw it. |
+| `pinClosed` | The PIN isn't shown on the Mac right now. Open the CmdPalm menu on the Mac and try again. Not counted as a wrong attempt. |
+| `expiredCode` | The QR code is wrong, expired or already used. |
+| `rejected` | The person at the Mac declined or didn't answer in time, or this pairing method is turned off. |
+| `blocked` | Too many wrong PINs, or too many declined approval requests. `retryAfter` gives seconds to wait. |
 | `busy` | Too many approval requests are already waiting. |
 | `incompatible` | Unsupported protocol version or invalid device info. |
 
@@ -119,7 +121,7 @@ a bitmask:
 | `button` | `button`, `op`, `mods` | Mouse button `left`, `right`, `middle`, `back` or `forward`; `op` is `down`, `up` or `click`. |
 | `media` | `key`, `op` | `volumeUp`, `volumeDown`, `mute`, `brightnessUp`, `brightnessDown`, `playPause`, `next`, `previous`, `fastForward`, `rewind`, `illuminationUp`, `illuminationDown`, `illuminationToggle`. |
 | `text` | `text`, `mode` | Type text, up to 64 KiB. `mode` is `unicode` (default), `keystrokes` (real key presses through the Mac's layout) or `paste`. |
-| `edit` | `delete`, `insert` | Delete characters before the caret, then type `insert`. Used for live typing and autocorrect. |
+| `edit` | `delete`, `insert` | Delete characters before the caret (at most 4 096), then type `insert` (up to 64 KiB). Used for live typing and autocorrect. |
 | `release` | | Release everything this device holds. |
 
 ### Binary frames
@@ -137,8 +139,9 @@ Little-endian. The first byte is the type.
 ### Actions
 
 `{"t":"action","action":{…},"id":n}` runs an action. If `id` is given, the Mac
-answers with `actionResult` (`{id, ok, message?}`). Actions are the same
-objects deck buttons store, tagged by `kind`:
+answers with `actionResult` (`{id, ok, message?}`). A failed action without an
+`id` still gets an `actionResult`, with no `id`. Actions are the same objects
+deck buttons store, tagged by `kind`:
 
 | `kind` | Fields |
 | --- | --- |
@@ -146,10 +149,10 @@ objects deck buttons store, tagged by `kind`:
 | `text` | `text`, `enter` |
 | `media` | `key` |
 | `app` | `id` (bundle identifier), `op`: `open`, `toggle`, `hide`, `quit` |
-| `url` | `url` (`file:`, `javascript:` and `data:` are refused) |
+| `url` | `url`. `javascript:` and `data:` are refused; `file:` only works while shell commands are allowed |
 | `system` | `name`, e.g. `missionControl`, `launchpad`, `lockScreen`, `screenshotArea`; see `SystemAction` |
 | `shortcut` | `name` of a macOS Shortcuts automation |
-| `shell` | `command`; refused unless allowed on the Mac |
+| `shell` | `command`; refused unless allowed on the Mac. Pausing input stops commands that are still running. |
 | `mouse` | `button`, `clicks` |
 | `delay` | `ms`, up to 10 000 |
 | `sequence` | `steps`: up to 64 actions, nested at most 3 deep |
@@ -185,7 +188,7 @@ objects deck buttons store, tagged by `kind`:
 | `notice` | `level`, `code`, `message` | Something the person should know, e.g. `secureInput` when a password field blocks typing. |
 | `clipboard` | `text` | Answer to `clipboardGet`. |
 | `voice` | `state`, `text?`, `final`, `message?` | Voice typing: `listening`, `stopped`, `unavailable` or `error`. |
-| `actionResult` | `id?`, `ok`, `message?` | Answer to an `action` with an `id`. |
+| `actionResult` | `id?`, `ok`, `message?` | Answer to an `action` with an `id`, or a failed action without one. |
 | `settingsList` | `devices: [{id, name, model, updatedAt}]` | Answer to `settingsList`: other paired devices with saved settings, newest first. |
 | `settings` | `settings`, `updatedAt` | Answer to `settingsCopy`: that device's saved settings. |
 | `bye` | `reason`, `reconnect?` | The Mac is closing the connection, with a message to show. `reconnect: true` means the Mac stopped or restarted its server and the phone may reconnect with its token on its own; otherwise (disconnected or removed on the Mac, protocol errors) it waits for the person to reconnect. |
@@ -229,8 +232,10 @@ Mac never uses them to type a character.
 }
 ```
 
-Limits: 24 pages, 64 tiles per page, 80-character labels, 4 096 characters of
-text per action. The Mac rejects a deck that breaks these limits, and the sender gets a `notice` explaining why.
+Limits: 24 pages, 64 tiles per page, 80-character labels, IDs of up to 128
+bytes, and 4 096 bytes (UTF-8) of text, URL or shell command per action. The
+Mac rejects a deck that breaks these limits, and the sender gets a `notice`
+explaining why.
 
 ## Phone settings
 

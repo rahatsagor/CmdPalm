@@ -71,6 +71,23 @@ class ReleaseVersionTests(unittest.TestCase):
                     self.assertEqual(result.returncode, 2, result.stderr)
 
 
+class ReleaseNotesTests(unittest.TestCase):
+    def test_wrapped_lines_are_joined_for_github(self):
+        markdown = (
+            "The first release.\n\n### Trackpad\n\n"
+            "- Move, tap to click, and touch and hold\n  to drag.\n"
+            "- Pinch to zoom.\n\n"
+            "A paragraph that\nwraps onto two lines.\n"
+        )
+        self.assertEqual(
+            release.unwrap(markdown),
+            "The first release.\n\n### Trackpad\n\n"
+            "- Move, tap to click, and touch and hold to drag.\n"
+            "- Pinch to zoom.\n\n"
+            "A paragraph that wraps onto two lines.",
+        )
+
+
 class SparkleKeyTests(unittest.TestCase):
     def keys(self, legacy=False):
         # RFC 8032 section 7.1, test 1 (public test vector, not a release key).

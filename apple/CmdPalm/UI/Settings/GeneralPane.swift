@@ -58,7 +58,7 @@ struct GeneralPane: View {
             Section("Dictation") {
                 DescribedToggle(
                     "Allow dictation from devices",
-                    detail: "Your phone streams microphone audio to this Mac, which transcribes it on-device when the language supports it. Needs the encrypted connection from Phone Setup.",
+                    detail: "Your phone streams microphone audio to this Mac, which transcribes it on the Mac. Speech is never sent anywhere else. Needs the encrypted connection from Phone Setup.",
                     isOn: $preferences.voiceEnabled
                 )
             }

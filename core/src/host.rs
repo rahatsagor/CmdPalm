@@ -157,12 +157,12 @@ impl Shared {
         }
     }
 
-    /// Whether work started for `session` should stop: input is paused or the
-    /// device has disconnected.
     pub fn device_settings(&self) -> MutexGuard<'_, DeviceSettings> {
         self.settings.lock().unwrap_or_else(|p| p.into_inner())
     }
 
+    /// Whether work started for `session` should stop: input is paused or the
+    /// device has disconnected.
     pub fn should_stop(&self, session: SessionId) -> bool {
         self.interrupts.should_stop(session) || !self.state().sessions.contains_key(&session)
     }
@@ -341,7 +341,11 @@ impl CoreHost {
             .thread_name("cmdpalm-net")
             .enable_all()
             .build()
-            .map_err(|e| HostError::new(format!("could not start the network runtime: {e}")))?;
+            .map_err(|e| {
+                let message = format!("could not start the network runtime: {e}");
+                self.shared.emit(HostEvent::Failed { message: message.clone() });
+                HostError::new(message)
+            })?;
         let (shutdown, shutdown_rx) = watch::channel(false);
         let shared = self.shared.clone();
         let (port, taken) = runtime.block_on(server::start(shared, shutdown_rx)).map_err(|e| {
@@ -437,6 +441,12 @@ impl CoreHost {
     pub fn renew_pairing(&self) {
         self.shared.state().pairing.rotate(Instant::now());
         self.shared.emit(HostEvent::PairingChanged);
+    }
+
+    /// Tell the core whether the PIN is on screen. The PIN is only accepted
+    /// while it is shown, and for a few minutes after it is hidden.
+    pub fn set_pin_shown(&self, shown: bool) {
+        self.shared.state().pairing.set_pin_shown(shown, Instant::now());
     }
 
     pub fn connected_devices(&self) -> Vec<ConnectedDevice> {

@@ -1,21 +1,24 @@
 <script setup lang="ts">
 import { ChevronRight, Copy, Download, Lock, LockOpen, LogOut, Maximize, Minimize, RotateCcw, Unplug } from '@lucide/vue'
-import { computed, defineAsyncComponent, ref } from 'vue'
+import { computed, ref } from 'vue'
 import { appNames } from '@/lib/apps'
 import { describe } from '@/lib/actions'
 import { disconnect, labels, state } from '@/lib/connection'
 import { actionProblem, clone } from '@/lib/deck'
 import { deviceModel } from '@/lib/device'
 import { canFullscreen, display, install, installHint, toggleFullscreen } from '@/lib/display'
+import { hapticsSupported } from '@/lib/haptics'
 import type { Action } from '@/lib/protocol'
+import { lazy } from '@/lib/reload'
 import { resetSettings, settings, type GestureMap, type GestureSlot } from '@/lib/settings'
+import { wakeLockSupported } from '@/lib/wakeLock'
 import ActionEditor from './ActionEditor.vue'
 import RangeRow from './RangeRow.vue'
 import Segmented from './Segmented.vue'
 import Sheet from './Sheet.vue'
 import Toggle from './Toggle.vue'
 
-const CopySettingsSheet = defineAsyncComponent(() => import('./CopySettingsSheet.vue'))
+const CopySettingsSheet = lazy(() => import('./CopySettingsSheet.vue'))
 
 const emit = defineEmits<{ close: [] }>()
 
@@ -75,14 +78,14 @@ const times = (v: number) => `${v.toFixed(1)}×`
             CmdPalm {{ state.hostVersion }} · {{ state.status === 'connected' ? `${state.latency || '<1'} ms` : 'offline' }}
           </div>
         </div>
-        <span class="flex items-center gap-1 rounded-full px-2.5 py-1 text-[12px] font-medium" :class="secure ? 'bg-good/15 text-good' : 'bg-surface-3 text-muted'">
+        <span class="flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[12px] font-medium" :class="secure ? 'bg-good/15 text-good' : 'bg-warn/15 text-warn'">
           <Lock v-if="secure" :size="12" /><LockOpen v-else :size="12" />
-          {{ secure ? 'Encrypted' : 'Local only' }}
+          {{ secure ? 'Encrypted' : 'Not encrypted' }}
         </span>
       </div>
       <p v-if="!secure" class="pb-2 text-[13px] leading-snug text-muted">
-        Dictation and some phone features need an encrypted (HTTPS) connection. In the Mac’s CmdPalm settings, choose
-        <b>Phone Setup → Encrypted Connection</b> for steps.
+        Others on this Wi-Fi could see what you type. To set up the encrypted connection, open CmdPalm’s settings on the Mac and
+        choose <b>Phone Setup → Encrypted Connection</b>. Dictation and some phone features need it too.
       </p>
     </section>
 
@@ -215,8 +218,13 @@ const times = (v: number) => `${v.toFixed(1)}×`
           { value: 'light', label: 'Light' },
         ]"
       />
-      <Toggle v-model="settings.haptics" label="Haptic feedback" />
-      <Toggle v-model="settings.keepAwake" label="Keep screen on" hint="While connected to the Mac." />
+      <Toggle v-if="hapticsSupported" v-model="settings.haptics" label="Haptic feedback" />
+      <Toggle
+        v-model="settings.keepAwake"
+        label="Keep screen on"
+        :hint="wakeLockSupported ? 'While connected to the Mac.' : secure ? 'Not available in this browser.' : 'Needs the encrypted connection.'"
+        :disabled="!wakeLockSupported"
+      />
       <Toggle v-model="settings.rememberDevice" label="Remember this device" hint="Turn off on shared devices. Applies on the next connection." />
     </section>
 
@@ -236,7 +244,7 @@ const times = (v: number) => `${v.toFixed(1)}×`
     <p class="py-6 text-center text-[12px] text-faint">
       <a href="https://cmdpalm.app" target="_blank" rel="noopener" class="underline-offset-2 hover:underline">CmdPalm</a>
       is free and open source under the
-      <a href="https://github.com/rahatsagor/CmdPalm" target="_blank" rel="noopener" class="underline-offset-2 hover:underline">GNU AGPL v3</a>.
+      <a href="https://github.com/rahatsagor/CmdPalm/blob/main/LICENSE" target="_blank" rel="noopener" class="underline-offset-2 hover:underline">GNU AGPL v3</a>.
     </p>
 
     <CopySettingsSheet v-if="showCopy" @close="showCopy = false" />

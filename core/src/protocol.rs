@@ -401,6 +401,8 @@ pub enum DenyReason {
     /// The trust token is unknown or was revoked; pair again.
     Unknown,
     WrongPin,
+    /// The PIN isn't shown on the Mac right now, so it can't be used.
+    PinClosed,
     ExpiredCode,
     Rejected,
     Blocked,

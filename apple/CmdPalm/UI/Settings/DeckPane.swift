@@ -5,6 +5,7 @@ struct DeckPane: View {
     @Environment(HostController.self) private var host
     @Environment(Preferences.self) private var preferences
     @State private var summary = ""
+    @State private var deckHash: Int?
     @State private var error: String?
     @State private var confirmReset = false
     @State private var confirmShell = false
@@ -54,7 +55,13 @@ struct DeckPane: View {
             }
         }
         .settingsForm()
-        .onAppear(perform: refresh)
+        .task {
+            // Phones edit the deck too, and the core sends no event for that.
+            while !Task.isCancelled {
+                refresh()
+                try? await Task.sleep(for: .seconds(2))
+            }
+        }
         .confirmationDialog("Reset the deck?", isPresented: $confirmReset) {
             Button("Reset Deck", role: .destructive) {
                 host.resetDeck()
@@ -72,6 +79,8 @@ struct DeckPane: View {
 
     private func refresh() {
         let json = host.deckJSON()
+        guard json.hashValue != deckHash else { return }
+        deckHash = json.hashValue
         guard let object = try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any],
               let pages = object["pages"] as? [[String: Any]]
         else {

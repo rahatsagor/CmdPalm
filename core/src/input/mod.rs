@@ -129,6 +129,11 @@ impl EventSink for LogSink {
         match event {
             Synth::Pause(_) => {}
             Synth::Move { .. } => tracing::trace!(target: "cmdpalm::synth", "{event:?}"),
+            // Typing stays out of the default log, even in a dry run.
+            Synth::Text { text } => {
+                tracing::info!(target: "cmdpalm::synth", "Text({} characters)", text.chars().count())
+            }
+            Synth::Key { .. } => tracing::debug!(target: "cmdpalm::synth", "{event:?}"),
             _ => tracing::info!(target: "cmdpalm::synth", "{event:?}"),
         }
     }
@@ -324,7 +329,7 @@ pub enum Command {
     SetPaused(bool),
     Tuning(Tuning),
     Layout(LayoutMap),
-    /// Testing aid: reply once all previously queued commands are processed.
+    /// Reply once all previously queued commands are processed.
     Flush(std::sync::mpsc::Sender<()>),
     Shutdown,
 }

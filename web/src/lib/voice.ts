@@ -86,6 +86,9 @@ export async function startVoice(onFinal: (text: string) => void, locale = navig
     })
     if (run !== generation) return discard()
     audio = new AudioContext()
+    // Created after an await, so outside the tap that started dictation: iOS
+    // leaves such a context suspended until asked.
+    await audio.resume()
     // A static file rather than a blob: URL so the page's CSP can stay strict.
     await audio.audioWorklet.addModule('/voice-worklet.js')
     if (run !== generation) return discard()
@@ -96,6 +99,11 @@ export async function startVoice(onFinal: (text: string) => void, locale = navig
       sendBinary(encodeAudio(event.data.pcm))
     }
     source.connect(worklet)
+    // Safari only runs nodes that lead to the output; a silent gain keeps the
+    // microphone from playing through the speaker.
+    const mute = audio.createGain()
+    mute.gain.value = 0
+    worklet.connect(mute).connect(audio.destination)
     stream = media
     context = audio
     node = worklet

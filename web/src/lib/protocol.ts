@@ -210,7 +210,7 @@ export interface VolumeState {
   muted: boolean
 }
 
-export type DenyReason = 'unknown' | 'wrongPin' | 'expiredCode' | 'rejected' | 'blocked' | 'busy' | 'incompatible'
+export type DenyReason = 'unknown' | 'wrongPin' | 'expiredCode' | 'rejected' | 'blocked' | 'busy' | 'incompatible' | 'pinClosed'
 export type VoiceState = 'listening' | 'stopped' | 'unavailable' | 'error'
 
 export type ServerMessage =

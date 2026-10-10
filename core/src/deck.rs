@@ -14,8 +14,10 @@ const MAX_TILES: usize = 64;
 const MAX_TEXT: usize = 4_096;
 const MAX_LABEL: usize = 80;
 const MAX_STEPS: usize = 64;
-const MAX_DEPTH: usize = 3;
-const MAX_DELAY_MS: u32 = 10_000;
+const MAX_ID: usize = 128;
+const MAX_NAME: usize = 512;
+pub(crate) const MAX_DEPTH: usize = 3;
+pub(crate) const MAX_DELAY_MS: u32 = 10_000;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -87,6 +89,7 @@ impl Deck {
             return Err(DeckError::TooLarge);
         }
         for page in &self.pages {
+            check_id(&page.id)?;
             check_label(&page.name)?;
             if !(1..=8).contains(&page.columns) {
                 return Err(DeckError::Invalid("columns must be between 1 and 8".into()));
@@ -95,7 +98,11 @@ impl Deck {
                 return Err(DeckError::TooLarge);
             }
             for tile in &page.tiles {
+                check_id(&tile.id)?;
                 check_label(&tile.label)?;
+                if let Some(icon) = &tile.icon {
+                    check_icon(icon)?;
+                }
                 if let Some(color) = &tile.color
                     && !is_css_color(color)
                 {
@@ -115,6 +122,26 @@ fn check_label(label: &str) -> Result<(), DeckError> {
     Ok(())
 }
 
+fn check_id(id: &str) -> Result<(), DeckError> {
+    if id.len() > MAX_ID {
+        return Err(DeckError::Invalid("id is too long".into()));
+    }
+    Ok(())
+}
+
+fn check_icon(icon: &TileIcon) -> Result<(), DeckError> {
+    let (text, max) = match icon {
+        TileIcon::App { id } => (id, MAX_NAME),
+        TileIcon::Symbol { name } => (name, MAX_ID),
+        // Room for long emoji sequences such as families and flags.
+        TileIcon::Emoji { text } => (text, 64),
+    };
+    if text.len() > max {
+        return Err(DeckError::Invalid("icon is too long".into()));
+    }
+    Ok(())
+}
+
 fn is_css_color(value: &str) -> bool {
     let hex = value.strip_prefix('#').unwrap_or("");
     matches!(hex.len(), 3 | 4 | 6 | 8) && hex.chars().all(|c| c.is_ascii_hexdigit())
@@ -122,8 +149,8 @@ fn is_css_color(value: &str) -> bool {
 
 pub fn validate_action(action: &Action, depth: usize) -> Result<(), DeckError> {
     match action {
-        Action::Keys { code, mods: m, .. } => {
-            if *code > keycodes::MAX_KEYCODE || m & !mods::ALL != 0 {
+        Action::Keys { code, mods: m, char } => {
+            if *code > keycodes::MAX_KEYCODE || m & !mods::ALL != 0 || char.as_ref().is_some_and(|c| c.len() > 16) {
                 return Err(DeckError::Invalid("invalid key".into()));
             }
         }
@@ -138,7 +165,7 @@ pub fn validate_action(action: &Action, depth: usize) -> Result<(), DeckError> {
             }
         }
         Action::App { id, .. } | Action::Shortcut { name: id } => {
-            if id.is_empty() || id.len() > 512 {
+            if id.is_empty() || id.len() > MAX_NAME {
                 return Err(DeckError::Invalid("missing name".into()));
             }
         }

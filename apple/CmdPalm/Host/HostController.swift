@@ -37,6 +37,7 @@ final class HostController {
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
     @ObservationIgnored private var appsChanged: DispatchWorkItem?
     @ObservationIgnored private var pairingTimer: Timer?
+    @ObservationIgnored private var pinViews = 0
     @ObservationIgnored private let network = NWPathMonitor()
     @ObservationIgnored var onApprovalsChanged: (() -> Void)?
 
@@ -93,19 +94,7 @@ final class HostController {
 
     func start() {
         guard !host.isRunning() else { return }
-        status = .starting
-        let host = host!
-        Task.detached {
-            do {
-                _ = try host.start()
-            } catch {
-                let message = (error as? HostError).map { if case let .Failed(message) = $0 { message } else { "\($0)" } }
-                    ?? error.localizedDescription
-                await MainActor.run { [weak self] in
-                    if self?.status == .starting { self?.status = .failed(message) }
-                }
-            }
-        }
+        launch { host in _ = try host.start() }
     }
 
     func stop() {
@@ -114,15 +103,37 @@ final class HostController {
     }
 
     func restart() {
-        let host = host!
         configuredPort = preferences.port
         let config = makeConfig()
-        status = .starting
-        Task.detached {
+        launch { host in
             host.stop()
             host.updateConfig(config: config)
-            _ = try? host.start()
+            _ = try host.start()
         }
+    }
+
+    private func launch(_ work: @escaping @Sendable (CoreHost) throws -> Void) {
+        status = .starting
+        let host = host!
+        Task.detached {
+            do {
+                try work(host)
+            } catch {
+                let message = (error as? HostError).map { if case let .Failed(message) = $0 { message } else { "\($0)" } }
+                    ?? error.localizedDescription
+                await MainActor.run { [weak self] in
+                    // The Stopped event from a restart can land before this.
+                    if let self, !self.isRunning { self.status = .failed(message) }
+                }
+            }
+        }
+    }
+
+    /// Views showing the PIN report here; the core only accepts the PIN while
+    /// one is on screen, and for a few minutes after.
+    func pinShown(_ shown: Bool) {
+        pinViews = max(0, pinViews + (shown ? 1 : -1))
+        host.setPinShown(shown: pinViews > 0)
     }
 
     /// Stops serving and releases anything the phone was holding down, before
@@ -192,6 +203,7 @@ final class HostController {
             status = .running(port: port)
             preferredPortTaken = taken
             paused = host.isPaused()
+            host.setPinShown(shown: pinViews > 0)
             refreshPairing()
             sendSystemState()
         case .stopped:

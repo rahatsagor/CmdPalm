@@ -21,13 +21,31 @@ function iosToggle(): HTMLLabelElement {
   return label
 }
 
+/** iOS and iPadOS 18 or later, which play a haptic for switch controls. */
+function switchHaptics(): boolean {
+  const ua = navigator.userAgent
+  const apple = /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)
+  const version = Number((/ OS (\d+)_/.exec(ua) ?? /Version\/(\d+)/.exec(ua))?.[1] ?? 0)
+  return apple && version >= 18
+}
+
+export const hapticsSupported = typeof navigator !== 'undefined' && (typeof navigator.vibrate === 'function' || switchHaptics())
+
+function editing(): boolean {
+  const el = document.activeElement
+  if (el instanceof HTMLTextAreaElement) return true
+  if (el instanceof HTMLInputElement) return !['checkbox', 'radio', 'button', 'range'].includes(el.type)
+  return el instanceof HTMLElement && el.isContentEditable
+}
+
 const PATTERN: Record<Haptic, number> = { select: 4, light: 8, medium: 14, heavy: 24 }
 
 export function haptic(kind: Haptic = 'light') {
-  if (!settings.haptics) return
+  if (!settings.haptics || !hapticsSupported) return
   if (typeof navigator.vibrate === 'function') {
     navigator.vibrate(PATTERN[kind])
     return
   }
-  iosToggle().click()
+  // Clicking the label focuses the switch, which would close the keyboard.
+  if (!editing()) iosToggle().click()
 }

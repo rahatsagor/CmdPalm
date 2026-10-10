@@ -19,7 +19,7 @@ use crate::api::HostEvent;
 use crate::deck::{Deck, DeckError};
 use crate::host::{Shared, lan_addresses};
 use crate::protocol::ServerMessage;
-use crate::{session, store, tls};
+use crate::{auth, session, store, tls};
 
 const PORT_ATTEMPTS: u16 = 20;
 const HEAD_LIMIT: usize = 16 * 1024;
@@ -31,6 +31,8 @@ const ICON_CACHE_LIMIT: usize = 256;
 /// file descriptors and lock out real phones.
 const MAX_CONNECTIONS: usize = 128;
 const MAX_CONNECTIONS_PER_ADDRESS: usize = 16;
+const MAX_REQUESTS_PER_CONNECTION: usize = 200;
+const MAX_KEEP_ALIVE: Duration = Duration::from_secs(120);
 pub const MAX_MESSAGE: usize = 1 << 20;
 
 #[derive(Debug, thiserror::Error)]
@@ -164,7 +166,12 @@ async fn accept_loop(shared: Arc<Shared>, listener: TcpListener, mut shutdown: w
     }
 }
 
-/// Counts an open connection until dropped.
+fn open_connections(shared: &Shared) -> usize {
+    shared.connections.lock().unwrap_or_else(|p| p.into_inner()).values().sum()
+}
+
+/// Counts an open connection until dropped. IPv6 peers are counted per /64,
+/// since one machine can use any number of addresses in its prefix.
 struct ConnectionSlot {
     shared: Arc<Shared>,
     peer: IpAddr,
@@ -172,6 +179,7 @@ struct ConnectionSlot {
 
 impl ConnectionSlot {
     fn take(shared: &Arc<Shared>, peer: IpAddr) -> Option<Self> {
+        let peer = auth::throttle_key(peer);
         let mut open = shared.connections.lock().unwrap_or_else(|p| p.into_inner());
         let total: usize = open.values().sum();
         let mine = open.entry(peer).or_insert(0);
@@ -411,6 +419,8 @@ where
 {
     let mut buf = Vec::with_capacity(4096);
     let mut first = true;
+    let opened = Instant::now();
+    let mut served = 0usize;
     loop {
         let Some(head) = read_head(&mut stream, &mut buf, first).await else { return };
         first = false;
@@ -422,7 +432,7 @@ where
             let _ = write_response(&mut stream, &Response::text(405, "Method not allowed"), false, false).await;
             return;
         }
-        if !request.header("host").is_none_or(local_host) {
+        if !request.header("host").is_some_and(local_host) {
             let _ = write_response(&mut stream, &Response::text(421, "Unknown host name"), false, false).await;
             return;
         }
@@ -447,7 +457,13 @@ where
             }
             return;
         }
-        let keep_alive = request.keep_alive();
+        served += 1;
+        // Keep-alive connections are recycled so idle sockets can't hold the
+        // connection slots that phones need.
+        let keep_alive = request.keep_alive()
+            && served < MAX_REQUESTS_PER_CONNECTION
+            && opened.elapsed() < MAX_KEEP_ALIVE
+            && open_connections(&shared) < MAX_CONNECTIONS * 3 / 4;
         let response = route(&shared, &request, secure).await;
         if write_response(&mut stream, &response, request.method == "HEAD", keep_alive).await.is_err() || !keep_alive {
             return;

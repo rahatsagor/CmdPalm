@@ -104,7 +104,7 @@ private struct TrustedDeviceRow: View {
         .confirmationDialog("Remove “\(device.name)”?", isPresented: $confirmForget) {
             Button("Remove Device", role: .destructive) { host.forget(device) }
         } message: {
-            Text(DeviceText.forgetMessage)
+            Text(DeviceText.removeMessage)
         }
     }
 

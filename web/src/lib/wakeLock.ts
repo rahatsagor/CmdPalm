@@ -6,10 +6,13 @@ import { state } from './connection'
 let sentinel: WakeLockSentinel | null = null
 let requesting = false
 
+/** Browsers only offer the wake lock on secure (HTTPS) pages. */
+export const wakeLockSupported = typeof navigator !== 'undefined' && 'wakeLock' in navigator
+
 const wanted = () => settings.keepAwake && state.status === 'connected' && document.visibilityState === 'visible'
 
 async function acquire() {
-  if (sentinel || requesting || !('wakeLock' in navigator)) return
+  if (sentinel || requesting || !wakeLockSupported) return
   requesting = true
   try {
     const lock = await navigator.wakeLock.request('screen')

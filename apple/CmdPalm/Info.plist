@@ -30,8 +30,16 @@
 	<true/>
 	<key>NSHumanReadableCopyright</key>
 	<string>© 2026 CmdPalm. Licensed under the GNU AGPL v3.</string>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Deck buttons you set up can control other apps on this Mac.</string>
+	<key>NSDesktopFolderUsageDescription</key>
+	<string>CmdPalm lists the apps in folders you added in Settings, and deck buttons you set up can use files on your Desktop.</string>
+	<key>NSDocumentsFolderUsageDescription</key>
+	<string>CmdPalm lists the apps in folders you added in Settings, and deck buttons you set up can use files in your Documents folder.</string>
+	<key>NSDownloadsFolderUsageDescription</key>
+	<string>CmdPalm lists the apps in folders you added in Settings, and deck buttons you set up can use files in your Downloads folder.</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>CmdPalm runs a small server on your local network so your phone or iPad can connect to this Mac.</string>
+	<string>CmdPalm runs a small server on your local network so your phone or tablet can connect to this Mac.</string>
 	<key>NSRemovableVolumesUsageDescription</key>
 	<string>CmdPalm lists the apps in folders you added in Settings, so you can open them from your phone.</string>
 	<key>NSNetworkVolumesUsageDescription</key>

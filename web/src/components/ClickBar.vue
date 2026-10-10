@@ -51,7 +51,7 @@ onBeforeUnmount(letGo)
       @pointercancel="up(button, $event)"
       @contextmenu.prevent
     >
-      {{ button === 'left' ? 'Click' : 'Right click' }}
+      {{ button === 'left' ? 'Click' : 'Right-click' }}
     </button>
   </div>
 </template>

@@ -87,13 +87,15 @@ fi
 
 sign() { codesign --force --timestamp=none ${KEYCHAIN_ARGS[@]+"${KEYCHAIN_ARGS[@]}"} --sign "$IDENTITY" "$@"; }
 SPARKLE="$APP/Contents/Frameworks/Sparkle.framework/Versions/B"
-# Inside-out, as Sparkle's documentation describes for re-signing.
-sign "$SPARKLE/XPCServices/Installer.xpc"
-sign --preserve-metadata=entitlements "$SPARKLE/XPCServices/Downloader.xpc"
-sign "$SPARKLE/Autoupdate"
-sign "$SPARKLE/Updater.app"
-sign "$APP/Contents/Frameworks/Sparkle.framework"
-sign "$APP"
+# Inside-out, as Sparkle's documentation describes for re-signing. The app's
+# entitlements turn off library validation: a self-signed identity has no
+# Team ID, so the hardened runtime would otherwise refuse Sparkle.framework.
+sign --options runtime "$SPARKLE/XPCServices/Installer.xpc"
+sign --options runtime --preserve-metadata=entitlements "$SPARKLE/XPCServices/Downloader.xpc"
+sign --options runtime "$SPARKLE/Autoupdate"
+sign --options runtime "$SPARKLE/Updater.app"
+sign --options runtime "$APP/Contents/Frameworks/Sparkle.framework"
+sign --options runtime --entitlements "$ROOT/apple/CmdPalm/CmdPalm.entitlements" "$APP"
 codesign --verify --deep --strict "$APP"
 
 echo "==> $APP"

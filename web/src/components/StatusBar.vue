@@ -2,7 +2,7 @@
 import { Check, Hand, Pause, Settings, ShieldAlert } from '@lucide/vue'
 import { state } from '@/lib/connection'
 import { modifiers } from '@/lib/input'
-import { online, panic, released, stuck } from '@/lib/status'
+import { explainPermission, online, panic, released, stuck } from '@/lib/status'
 
 const emit = defineEmits<{ settings: [] }>()
 </script>
@@ -12,6 +12,7 @@ const emit = defineEmits<{ settings: [] }>()
     <div class="flex h-12 items-center gap-2 px-3">
       <div class="flex min-w-0 flex-1 items-center gap-2">
         <span
+          role="img"
           class="size-2 shrink-0 rounded-full transition-colors"
           :class="online ? 'bg-good' : 'animate-pulse bg-warn'"
           :aria-label="online ? 'Connected' : 'Reconnecting'"
@@ -24,13 +25,15 @@ const emit = defineEmits<{ settings: [] }>()
       <span v-if="state.paused" class="flex items-center gap-1 rounded-full bg-warn/15 px-2.5 py-1 text-[12px] font-medium text-warn">
         <Pause :size="12" fill="currentColor" /> Paused
       </span>
-      <span
+      <button
         v-else-if="!state.features.permission"
+        type="button"
         class="flex items-center gap-1 rounded-full bg-bad/15 px-2.5 py-1 text-[12px] font-medium text-bad"
-        title="CmdPalm needs Accessibility permission on the Mac"
+        aria-label="CmdPalm needs Accessibility permission on the Mac"
+        @click="explainPermission"
       >
         <ShieldAlert :size="13" /> Permission
-      </span>
+      </button>
 
       <button
         v-if="stuck"

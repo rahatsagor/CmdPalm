@@ -23,7 +23,12 @@ struct MenuBarIcon: View {
 
     private var accessibilityLabel: String {
         if !host.approvals.isEmpty { return "CmdPalm, a device is asking to pair" }
-        if case .failed = host.status { return "CmdPalm, not running" }
+        switch host.status {
+        case .failed: return "CmdPalm, not running"
+        case .stopped: return "CmdPalm, stopped"
+        case .starting: return "CmdPalm, starting"
+        case .running: break
+        }
         if host.paused { return "CmdPalm, paused" }
         if !permissions.canControl { return "CmdPalm, needs Accessibility permission" }
         return host.connected.isEmpty ? "CmdPalm" : "CmdPalm, connected"

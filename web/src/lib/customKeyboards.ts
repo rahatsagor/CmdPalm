@@ -41,7 +41,7 @@ export const LIMITS = { minCols: 2, maxCols: 12, minRows: 1, maxRows: 8, boards:
 
 const STORAGE_KEY = 'cmdpalm.keyboards'
 const MOUSE_BUTTONS: MouseButton[] = ['left', 'right', 'middle']
-const MOUSE_LABELS: Partial<Record<MouseButton, string>> = { left: 'Click', right: 'Right click', middle: 'Middle click' }
+const MOUSE_LABELS: Partial<Record<MouseButton, string>> = { left: 'Click', right: 'Right-click', middle: 'Middle click' }
 
 export const newId = () => Math.random().toString(36).slice(2, 10)
 

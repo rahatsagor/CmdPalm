@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { LaptopMinimal, LoaderCircle, ShieldCheck } from '@lucide/vue'
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
-import { connect, state } from '@/lib/connection'
+import { connect, disconnect, state } from '@/lib/connection'
 import { deviceModel, token } from '@/lib/device'
+import { takePairingCode } from '@/lib/pairing'
 import { settings } from '@/lib/settings'
 import Toggle from '@/components/Toggle.vue'
 
@@ -12,12 +13,10 @@ const macName = ref('')
 const mode = ref<'pin' | 'approve' | 'pair'>('pin')
 
 onMounted(async () => {
-  const match = /[#&]pair=([\w-]+)/.exec(location.hash)
-  if (match) {
-    // Drop the one-time code from the address bar and history.
-    history.replaceState(null, '', location.pathname + location.search)
+  const code = takePairingCode()
+  if (code) {
     mode.value = 'pair'
-    connect({ method: 'pair', code: match[1]! })
+    connect({ method: 'pair', code })
   }
   try {
     const info = (await (await fetch('/api/info', { cache: 'no-store' })).json()) as { name?: string }
@@ -25,13 +24,16 @@ onMounted(async () => {
   } catch {
     // Offline: the form still works once the Mac is reachable.
   }
-  if (!match) input.value?.focus()
+  if (!code) input.value?.focus()
 })
 
+const incompatible = computed(() => state.status === 'denied' && state.denied?.reason === 'incompatible')
+const reload = () => location.reload()
 const busy = computed(() => state.status === 'connecting' || state.status === 'pending')
 const mac = computed(() => macName.value || 'your Mac')
 // Disconnected from the Mac while still paired.
-const canReconnect = computed(() => state.status === 'idle' && !!state.byeReason && !!token.get())
+const canReconnect = computed(() => state.status === 'idle' && !!token.get())
+const disconnected = computed(() => (canReconnect.value && !state.byeReason ? 'Disconnected from the Mac.' : ''))
 
 const error = computed(() => {
   if (state.status === 'idle' && state.byeReason) return state.byeReason
@@ -42,7 +44,11 @@ const error = computed(() => {
     case 'expiredCode':
       return 'That pairing code expired or was already used. Scan the new QR code, or enter the PIN.'
     case 'rejected':
-      return mode.value === 'pin' ? 'PIN pairing is turned off on the Mac.' : 'The Mac declined this device.'
+      return mode.value === 'pin'
+        ? 'PIN pairing is turned off on the Mac.'
+        : 'The Mac didn’t allow this device. Approval may be turned off in CmdPalm’s Phone Setup settings.'
+    case 'pinClosed':
+      return 'Open the CmdPalm menu on the Mac to show the PIN, then try again.'
     case 'blocked':
       return `Too many attempts. Try again in ${state.denied.retryAfter ?? 30} seconds.`
     case 'busy':
@@ -58,6 +64,11 @@ function submitPin() {
   if (pin.value.length !== 6 || busy.value) return
   mode.value = 'pin'
   connect({ method: 'pin', pin: pin.value })
+}
+
+function cancel() {
+  disconnect(false)
+  nextTick(() => input.value?.focus())
 }
 
 function requestApproval() {
@@ -102,6 +113,7 @@ watch(
             <div class="text-[17px] font-semibold">Waiting for approval</div>
             <p class="mt-1 text-[14px] text-muted">Click <b>Allow</b> on {{ mac }} to let this {{ deviceModel() }} connect.</p>
           </div>
+          <button type="button" class="h-11 w-full rounded-2xl text-[15px] font-medium text-accent" @click="cancel">Cancel</button>
         </template>
         <template v-else>
           <LoaderCircle :size="28" class="animate-spin text-muted" />
@@ -136,6 +148,15 @@ watch(
           </div>
         </div>
         <p v-if="error" class="mt-4 text-center text-[14px] leading-snug text-bad" role="alert">{{ error }}</p>
+        <p v-else-if="disconnected" class="mt-4 text-center text-[14px] leading-snug text-muted" role="status">{{ disconnected }}</p>
+        <button
+          v-if="incompatible"
+          type="button"
+          class="mt-3 h-11 w-full rounded-2xl text-[15px] font-medium text-accent"
+          @click="reload"
+        >
+          Reload
+        </button>
         <button
           v-if="canReconnect"
           type="button"

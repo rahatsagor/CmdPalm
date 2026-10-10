@@ -29,6 +29,26 @@ REPO = "rahatsagor/CmdPalm"
 MIN_MACOS = "15.0"
 
 
+def unwrap(markdown: str) -> str:
+    """Join hard-wrapped lines. GitHub shows every newline in release notes
+    as a line break, so wrapped changelog lines would break mid-sentence."""
+    lines: list[str] = []
+    for line in markdown.splitlines():
+        stripped = line.strip()
+        continues = (
+            lines
+            and stripped
+            and lines[-1].strip()
+            and not stripped.startswith(("#", "- ", "* ", ">", "|", "```"))
+            and not lines[-1].lstrip().startswith(("#", "|", "```"))
+        )
+        if continues:
+            lines[-1] = lines[-1].rstrip() + " " + stripped
+        else:
+            lines.append(line.rstrip())
+    return "\n".join(lines)
+
+
 def section(version: str) -> str:
     """The body of the `## [version]` section of CHANGELOG.md."""
     text = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
@@ -208,7 +228,7 @@ def sign(path: Path) -> str:
 def main() -> None:
     args = sys.argv[1:]
     if len(args) == 2 and args[0] == "notes":
-        print(section(args[1]))
+        print(unwrap(section(args[1])))
     elif len(args) == 2 and args[0] == "check":
         check_version(args[1])
         print(f"Release metadata for {args[1]} is consistent")

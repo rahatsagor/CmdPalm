@@ -145,6 +145,12 @@ fn hello(device: &str, auth: Value) -> Value {
 fn pin_pairing_then_token_reconnect() {
     let f = fixture();
     let pin = f.host.pairing_info().pin;
+    f.rt.block_on(async {
+        let mut ws = connect(f.port).await;
+        send(&mut ws, hello("phone-1", json!({"method": "pin", "pin": pin}))).await;
+        assert_eq!(recv(&mut ws).await["reason"], "pinClosed", "the PIN only works while the Mac shows it");
+    });
+    f.host.set_pin_shown(true);
     let token = f.rt.block_on(async {
         let mut ws = connect(f.port).await;
         send(&mut ws, hello("phone-1", json!({"method": "pin", "pin": "000001"}))).await;
@@ -273,6 +279,11 @@ fn serves_the_web_client_and_guards_icons() {
         assert!(get_from(format!("test.local:{port}"), "/").await.starts_with("HTTP/1.1 200"));
         let rebound = get_from(format!("attacker.example:{port}"), "/api/info").await;
         assert!(rebound.starts_with("HTTP/1.1 421"), "names that could be DNS-rebound are refused: {rebound}");
+        let mut tcp = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+        tcp.write_all(b"GET /api/info HTTP/1.1\r\nConnection: close\r\n\r\n").await.unwrap();
+        let mut out = Vec::new();
+        tcp.read_to_end(&mut out).await.unwrap();
+        assert!(out.starts_with(b"HTTP/1.1 421"), "requests without a Host header are refused");
         let index = get("/").await;
         assert!(index.starts_with("HTTP/1.1 200"), "{index}");
         assert!(index.contains("Cache-Control: no-cache") && index.contains("<title>CmdPalm"));

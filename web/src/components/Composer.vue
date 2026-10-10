@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, ClipboardPaste, CornerDownLeft, Delete, Eraser, Mic, Send, Square } from '@lucide/vue'
 import { computed, onBeforeUnmount, onDeactivated, ref } from 'vue'
-import { send, state } from '@/lib/connection'
+import { onMessage, send, state } from '@/lib/connection'
 import { haptic } from '@/lib/haptics'
 import { useHeldPointers } from '@/lib/heldPointers'
 import { edit, keyDown, keyUp, modifiers, tap, tapChar, typeText } from '@/lib/input'
@@ -34,7 +34,8 @@ function syncLive() {
     return
   }
   modifiers.clearLatched()
-  edit(change.delete, change.insert)
+  // Unsent changes stay in the next diff instead of being counted as typed.
+  if (!edit(change.delete, change.insert)) return
   sent = next
   if (graphemes(sent).length > MAX_LIVE) reset()
 }
@@ -43,6 +44,13 @@ function reset() {
   text.value = ''
   sent = ''
 }
+
+// After a reconnect the Mac's caret may be anywhere, so live typing starts
+// over rather than deleting text based on what this field last sent.
+const offWelcome = onMessage((message) => {
+  if (message.t === 'welcome' && live.value) reset()
+})
+onBeforeUnmount(offWelcome)
 
 function onBeforeInput(event: InputEvent) {
   if (!live.value) return
@@ -72,8 +80,7 @@ function onKeydown(event: KeyboardEvent) {
 }
 
 function submit(withReturn = false) {
-  const value = text.value
-  if (value) typeText(value)
+  if (!typeText(text.value)) return
   if (withReturn) tap(Key.Return)
   reset()
   haptic('light')
@@ -116,9 +123,12 @@ const endVoice = () => void stopVoice()
 onDeactivated(endVoice)
 onBeforeUnmount(endVoice)
 
+// Browsers only offer the clipboard on secure (HTTPS) pages.
+const canPaste = typeof navigator.clipboard?.readText === 'function'
+
 function pasteFromPhone() {
   navigator.clipboard
-    ?.readText()
+    .readText()
     .then((value) => {
       if (value) send({ t: 'text', text: value, mode: 'paste' })
     })
@@ -205,7 +215,13 @@ defineExpose({ focus: () => field.value?.focus() })
         >
           Live
         </button>
-        <button type="button" class="grid size-8 place-items-center rounded-full text-muted" aria-label="Paste the phone clipboard on the Mac" @click="pasteFromPhone">
+        <button
+          v-if="canPaste"
+          type="button"
+          class="grid size-8 place-items-center rounded-full text-muted"
+          aria-label="Paste the phone clipboard on the Mac"
+          @click="pasteFromPhone"
+        >
           <ClipboardPaste :size="17" />
         </button>
         <button v-if="text" type="button" class="grid size-8 place-items-center rounded-full text-muted" aria-label="Clear the field (keeps the Mac’s text)" @click="reset">

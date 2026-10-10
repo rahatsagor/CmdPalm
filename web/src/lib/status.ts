@@ -14,6 +14,14 @@ export const stuck = computed(() => modsLabel(modifiers.state.locked | modifiers
 export const released = ref(false)
 let releasedTimer: ReturnType<typeof setTimeout> | undefined
 
+export function explainPermission() {
+  notify(
+    'CmdPalm needs Accessibility permission to control the Mac. On the Mac, turn on CmdPalm in System Settings → Privacy & Security → Accessibility.',
+    'warning',
+    'permission',
+  )
+}
+
 /** Release every key and button this device holds on the Mac. */
 export function panic() {
   releaseHardwareKeys()

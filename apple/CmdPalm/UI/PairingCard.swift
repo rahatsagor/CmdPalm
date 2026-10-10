@@ -59,6 +59,7 @@ private struct PinRow: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
+        .reportsPinVisibility()
     }
 
     /// A system-driven timer text, which is cheaper than redrawing the row
@@ -75,6 +76,89 @@ private struct PinRow: View {
     static func format(_ pin: String) -> String {
         guard pin.count == 6 else { return pin }
         return "\(pin.prefix(3)) \(pin.suffix(3))"
+    }
+}
+
+extension View {
+    /// Tells the host while this view is on screen, as the core only accepts
+    /// the PIN then.
+    func reportsPinVisibility() -> some View {
+        background(PinVisibility())
+    }
+}
+
+private struct PinVisibility: View {
+    @Environment(HostController.self) private var host
+
+    var body: some View {
+        WindowVisibility { host.pinShown($0) }
+            .frame(width: 0, height: 0)
+            .accessibilityHidden(true)
+    }
+}
+
+/// Reports whether its window is on screen. Menu bar panel content can stay
+/// alive while the panel is closed, so `onDisappear` alone isn't reliable.
+struct WindowVisibility: NSViewRepresentable {
+    let changed: @MainActor (Bool) -> Void
+
+    func makeNSView(context: Context) -> VisibilityView {
+        VisibilityView(changed: changed)
+    }
+
+    func updateNSView(_ view: VisibilityView, context: Context) {}
+
+    static func dismantleNSView(_ view: VisibilityView, coordinator: ()) {
+        view.stop()
+    }
+
+    final class VisibilityView: NSView {
+        private let changed: @MainActor (Bool) -> Void
+        private var visible = false
+        private var observers: [NSObjectProtocol] = []
+
+        init(changed: @escaping @MainActor (Bool) -> Void) {
+            self.changed = changed
+            super.init(frame: .zero)
+        }
+
+        @available(*, unavailable)
+        required init?(coder: NSCoder) { fatalError() }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            removeObservers()
+            if let window {
+                let center = NotificationCenter.default
+                observers.append(center.addObserver(forName: NSWindow.didChangeOcclusionStateNotification, object: window, queue: .main) { [weak self] _ in
+                    MainActor.assumeIsolated { self?.update() }
+                })
+                observers.append(center.addObserver(forName: NSWindow.willCloseNotification, object: window, queue: .main) { [weak self] _ in
+                    MainActor.assumeIsolated { self?.report(false) }
+                })
+            }
+            update()
+        }
+
+        func stop() {
+            removeObservers()
+            report(false)
+        }
+
+        private func update() {
+            report(window.map { $0.isVisible && $0.occlusionState.contains(.visible) } ?? false)
+        }
+
+        private func report(_ shown: Bool) {
+            guard shown != visible else { return }
+            visible = shown
+            changed(shown)
+        }
+
+        private func removeObservers() {
+            observers.forEach(NotificationCenter.default.removeObserver)
+            observers = []
+        }
     }
 }
 

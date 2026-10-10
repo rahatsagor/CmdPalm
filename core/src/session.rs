@@ -3,6 +3,7 @@
 
 use std::net::IpAddr;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
 use std::time::{Duration, Instant};
 
 use futures_util::stream::{SplitSink, SplitStream};
@@ -35,6 +36,7 @@ const DEAD_AFTER: Duration = Duration::from_secs(8);
 const MAX_PENDING_APPROVALS: usize = 3;
 const MAX_TEXT: usize = 64 * 1024;
 const ACTION_QUEUE: usize = 32;
+const MAX_IN_FLIGHT: usize = 8;
 /// A device that stops reading would otherwise block the session loop, and
 /// with it heartbeats, Disconnect and shutdown.
 const SEND_TIMEOUT: Duration = Duration::from_secs(5);
@@ -126,7 +128,7 @@ pub(crate) async fn run<S>(
                     session: id,
                     device_id: device.id.clone(),
                     name: authorized.name.clone(),
-                    model: device.model.chars().take(64).collect(),
+                    model: auth::clean(&device.model, 64),
                     address: peer.to_string(),
                     connected_at: auth::unix_now(),
                     secure,
@@ -172,6 +174,7 @@ pub(crate) async fn run<S>(
         jobs,
         voice: false,
         last_heard: Instant::now(),
+        in_flight: Arc::new(AtomicUsize::new(0)),
     };
 
     if send(&mut sink, &welcome).await {
@@ -243,8 +246,8 @@ where
     let config = shared.config();
     let now = Instant::now();
     let fallback_name = || {
-        let name: String = device.name.chars().filter(|c| !c.is_control()).take(64).collect();
-        if name.trim().is_empty() { "Unnamed device".to_string() } else { name.trim().to_string() }
+        let name = auth::clean(&device.name, 64);
+        if name.is_empty() { "Unnamed device".to_string() } else { name }
     };
     let accept = |shared: &Shared| {
         let name = fallback_name();
@@ -271,7 +274,7 @@ where
                     shared.emit(HostEvent::PairingChanged);
                     accept(shared)
                 }
-                Verdict::Rejected => Err(Some(Refusal(DenyReason::ExpiredCode, None))),
+                Verdict::Rejected | Verdict::Closed => Err(Some(Refusal(DenyReason::ExpiredCode, None))),
                 Verdict::Locked(wait) => Err(Some(Refusal(DenyReason::Blocked, Some(wait)))),
             }
         }
@@ -286,6 +289,7 @@ where
                     accept(shared)
                 }
                 Verdict::Rejected => Err(Some(Refusal(DenyReason::WrongPin, None))),
+                Verdict::Closed => Err(Some(Refusal(DenyReason::PinClosed, None))),
                 Verdict::Locked(wait) => {
                     shared.emit(HostEvent::PairingChanged);
                     Err(Some(Refusal(DenyReason::Blocked, Some(wait))))
@@ -301,12 +305,12 @@ where
             let request = ApprovalRequest {
                 id,
                 device_name: fallback_name(),
-                model: device.model.chars().take(64).collect(),
+                model: auth::clean(&device.model, 64),
                 address: peer.to_string(),
             };
             {
                 let mut state = shared.state();
-                if let Some(wait) = state.pairing.locked(peer, now) {
+                if let Some(wait) = state.pairing.approval_locked(peer, now) {
                     return Err(Some(Refusal(DenyReason::Blocked, Some(wait))));
                 }
                 let peer_text = peer.to_string();
@@ -338,15 +342,20 @@ where
                 }
             })
             .await;
+            let declined = || shared.state().pairing.approval_declined(peer, Instant::now());
             match waited {
                 Ok(Some(true)) => accept(shared),
-                Ok(Some(false)) => Err(Some(Refusal(DenyReason::Rejected, None))),
+                Ok(Some(false)) => {
+                    declined();
+                    Err(Some(Refusal(DenyReason::Rejected, None)))
+                }
                 Ok(None) => {
                     cancel_approval(shared, id);
                     Err(None)
                 }
                 Err(_) => {
                     cancel_approval(shared, id);
+                    declined();
                     Err(Some(Refusal(DenyReason::Rejected, None)))
                 }
             }
@@ -368,6 +377,7 @@ struct Connection {
     jobs: mpsc::Sender<Job>,
     voice: bool,
     last_heard: Instant,
+    in_flight: Arc<AtomicUsize>,
 }
 
 /// Device IDs are compared byte for byte when a remembered device returns,
@@ -409,10 +419,28 @@ impl Connection {
         }
     }
 
+    /// Run work that may block on macOS. A device can only keep a few such
+    /// jobs in flight, so a flood of requests can't pile up threads.
     fn blocking<F: FnOnce(&Shared) -> Option<ServerMessage> + Send + 'static>(&self, work: F) {
+        if self.in_flight.fetch_add(1, AtomicOrdering::SeqCst) >= MAX_IN_FLIGHT {
+            self.in_flight.fetch_sub(1, AtomicOrdering::SeqCst);
+            self.shared.send_to(
+                self.id,
+                notice(NoticeLevel::Warning, "busy", "The Mac is still busy. Try again in a moment."),
+            );
+            return;
+        }
         let shared = self.shared.clone();
         let id = self.id;
+        struct Done(Arc<AtomicUsize>);
+        impl Drop for Done {
+            fn drop(&mut self) {
+                self.0.fetch_sub(1, AtomicOrdering::SeqCst);
+            }
+        }
+        let done = Done(self.in_flight.clone());
         tokio::task::spawn_blocking(move || {
+            let _done = done;
             if let Some(reply) = work(&shared) {
                 shared.send_to(id, reply);
             }
@@ -477,7 +505,7 @@ impl Connection {
             }
             ClientMessage::Edit { delete, insert } => {
                 if insert.len() > MAX_TEXT {
-                    return None;
+                    return Some(notice(NoticeLevel::Warning, "tooLong", "That text is too long to send at once."));
                 }
                 self.input(Input::Edit { delete, insert });
                 None

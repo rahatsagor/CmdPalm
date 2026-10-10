@@ -22,7 +22,9 @@ pub fn load<T: DeserializeOwned>(path: &Path) -> Option<T> {
         Err(err) => {
             // Keep the unreadable file for inspection instead of overwriting it.
             let backup = path.with_extension("corrupt.json");
-            tracing::error!(path = %path.display(), %err, "ignoring corrupt file");
+            // serde's message can quote file contents, such as a deck snippet.
+            let kind = format!("{:?}", err.classify());
+            tracing::error!(path = %path.display(), kind, line = err.line(), column = err.column(), "ignoring corrupt file");
             let _ = fs::rename(path, backup);
             None
         }

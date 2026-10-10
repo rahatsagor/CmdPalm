@@ -1,5 +1,5 @@
 import { comboLabel, type LabelMap } from './keys'
-import type { Action, MediaKey, SystemAction } from './protocol'
+import type { Action, AppOp, MediaKey, MouseButton, SystemAction } from './protocol'
 
 export interface Meta {
   label: string
@@ -105,6 +105,16 @@ export function defaultAction(kind: Action['kind']): Action {
   }
 }
 
+const APP_OPS: Record<AppOp, string> = { open: 'Open', toggle: 'Show or hide', hide: 'Hide', quit: 'Quit' }
+const CLICKS: Record<MouseButton, string> = { left: 'click', right: 'right-click', middle: 'middle click', back: 'back click', forward: 'forward click' }
+
+/** "Click", "Right-click", "Double-click", "Double right-click"… */
+function mouseLabel(button: MouseButton, clicks: number): string {
+  const name = CLICKS[button] ?? `${button} click`
+  if (clicks <= 1) return name[0]!.toUpperCase() + name.slice(1)
+  return `${clicks === 2 ? 'Double' : 'Triple'}${button === 'left' ? '-' : ' '}${name}`
+}
+
 export function describe(action: Action | null, labels: LabelMap, apps?: Map<string, string>): string {
   if (!action) return 'Nothing'
   switch (action.kind) {
@@ -115,7 +125,7 @@ export function describe(action: Action | null, labels: LabelMap, apps?: Map<str
     case 'media':
       return MEDIA[action.key]?.label ?? action.key
     case 'app':
-      return `Open ${apps?.get(action.id) ?? (action.id.split('.').pop() || 'app')}`
+      return `${APP_OPS[action.op ?? 'toggle']} ${apps?.get(action.id) ?? (action.id.split('.').pop() || 'app')}`
     case 'text':
       return action.text ? `Type “${action.text.length > 18 ? `${action.text.slice(0, 18)}…` : action.text}”` : 'Type text'
     case 'url':
@@ -123,7 +133,7 @@ export function describe(action: Action | null, labels: LabelMap, apps?: Map<str
     case 'shortcut':
       return action.name ? `Shortcut “${action.name}”` : 'Run Shortcut'
     case 'mouse':
-      return `${action.clicks && action.clicks > 1 ? (action.clicks === 2 ? 'Double' : 'Triple') : ''}${action.clicks && action.clicks > 1 ? '-' : ''}${action.button} click`
+      return mouseLabel(action.button, action.clicks ?? 1)
     case 'sequence':
       return `${action.steps.length} step${action.steps.length === 1 ? '' : 's'}`
     case 'delay':

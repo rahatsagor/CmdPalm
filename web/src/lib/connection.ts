@@ -134,10 +134,12 @@ function teardown() {
 
 /** Connect with the stored token, or with `auth` when pairing. */
 export function connect(auth?: AuthRequest) {
+  // A pairing in progress (code, PIN or approval) wins over the saved token.
+  if (!auth && ws && pendingAuth && pendingAuth.method !== 'token') return
   const saved = token.get()
   const request: AuthRequest | null = auth ?? (saved ? { method: 'token', token: saved } : null)
   if (!request) {
-    state.status = 'idle'
+    if (!ws) state.status = 'idle'
     return
   }
   teardown()
@@ -330,6 +332,9 @@ export function isOpen(): boolean {
 
 export function send(message: ClientMessage): boolean {
   if (!ws || ws.readyState !== WebSocket.OPEN) return false
+  // Input sent mid-handshake can reach the Mac after the welcome, which makes
+  // this side forget held keys, so their key ups would never follow.
+  if (state.status !== 'connected' && message.t !== 'hello' && message.t !== 'ping') return false
   // A click must land where the pointer is now, not before the last frame.
   if (message.t !== 'ping' && message.t !== 'hello') pointer.flush()
   ws.send(JSON.stringify(message))

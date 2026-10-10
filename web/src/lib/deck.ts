@@ -11,6 +11,10 @@ export function newId(prefix = 't'): string {
   return `${prefix}-${Array.from(bytes, (b) => b.toString(36).padStart(2, '0')).join('').slice(0, 10)}`
 }
 
+const encoder = new TextEncoder()
+/** The Mac limits text by its UTF-8 size. */
+const tooLong = (text: string) => encoder.encode(text).length > LIMITS.text
+
 /** Returns a problem with the action, or '' when it can be saved. */
 export function actionProblem(action: Action, depth = 0): string {
   switch (action.kind) {
@@ -18,12 +22,13 @@ export function actionProblem(action: Action, depth = 0): string {
       return action.code < 0 || action.code > 0xff ? 'Pick a key.' : ''
     case 'text':
       if (!action.text) return 'Enter the text to type.'
-      return action.text.length > LIMITS.text ? 'The text is too long.' : ''
+      return tooLong(action.text) ? 'The text is too long.' : ''
     case 'shell':
       if (!action.command.trim()) return 'Enter a command.'
-      return action.command.length > LIMITS.text ? 'The command is too long.' : ''
+      return tooLong(action.command) ? 'The command is too long.' : ''
     case 'url':
-      return /^[a-z][\w+.-]*:\S+/i.test(action.url.trim()) && action.url.length <= LIMITS.text ? '' : 'Enter a full link, like https://example.com.'
+      if (tooLong(action.url)) return 'The link is too long.'
+      return /^[a-z][\w+.-]*:\S+/i.test(action.url.trim()) ? '' : 'Enter a full link, like https://example.com.'
     case 'app':
       return action.id ? '' : 'Choose an app.'
     case 'shortcut':

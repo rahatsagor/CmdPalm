@@ -80,8 +80,8 @@ an external drive. Play, pause, skip and set the volume.
 <td valign="top">
 
 #### Voice
-Talk into your phone and your Mac types what you say, using on-device speech
-recognition where your Mac supports it.
+Talk into your phone and your Mac types what you say. Speech is recognised
+on the Mac itself and never sent to a server.
 
 </td>
 </tr>
@@ -144,8 +144,9 @@ skips this step for you.
    pointer or types. CmdPalm asks on first launch and opens the right page in
    System Settings.
 2. **Scan the QR code** in the menu bar with your phone's camera. You can
-   also open the address shown under the code and enter the six-digit PIN.
-   CmdPalm remembers the phone, so it reconnects on its own next time.
+   also open the address shown under the code and enter the six-digit PIN
+   while the CmdPalm menu is open. CmdPalm remembers the phone, so it
+   reconnects on its own next time.
 3. **Add it to your home screen** for a full-screen app:
    - **iPhone and iPad:** Share → Add to Home Screen.
    - **Android:** Chrome installs web apps only over an encrypted connection.
@@ -166,6 +167,11 @@ certificate on your phone as shown, then pair with the **Encrypted link**.
 Without it, everything else works, and you can still dictate with the
 microphone button on your phone's keyboard.
 
+Your Mac recognises the speech itself, so voice typing needs on-device
+recognition for your language. If CmdPalm says it isn't available, turn on
+Dictation in **System Settings → Keyboard** so macOS downloads it, or pick
+another language.
+
 ## Gestures
 
 | On the trackpad | Does |
@@ -179,7 +185,7 @@ microphone button on your phone's keyboard.
 | Three-finger swipe up / down | Mission Control / App Exposé |
 | Three-finger swipe left / right | Switch spaces |
 | Three-finger tap | Middle click |
-| Four-finger swipe up / down | Launchpad / Show Desktop |
+| Four-finger swipe up / down | Apps (Launchpad on macOS 15) / Show Desktop |
 
 Every gesture can be changed in the phone's settings. Turn on **Show advanced
 settings** for pointer acceleration, gesture mapping and text options.

@@ -77,7 +77,7 @@ impl HostDelegate for Delegate {
         *self.clipboard.lock().unwrap() = text;
     }
     fn begin_paste(&self, text: String) -> bool {
-        println!("paste: {text:?}");
+        println!("paste: {} characters", text.chars().count());
         true
     }
     fn end_paste(&self) {}
@@ -108,6 +108,8 @@ fn main() {
     };
     let delegate = Arc::new(Delegate { volume: Mutex::new((0.5, false)), clipboard: Mutex::new(String::new()) });
     let host = if live { CoreHost::new(config, delegate) } else { CoreHost::dry_run(config, delegate) };
+    // The PIN is printed below, so it counts as shown for as long as this runs.
+    host.set_pin_shown(true);
     match host.start() {
         Ok(port) => {
             let info = host.pairing_info();

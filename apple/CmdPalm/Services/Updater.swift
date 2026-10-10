@@ -10,13 +10,14 @@ final class Updater: NSObject {
     private(set) var canCheck = false
     /// Set when a scheduled check found an update the person hasn't seen.
     private(set) var pendingVersion: String?
+    private(set) var lastChecked: Date?
 
     @ObservationIgnored private var controller: SPUStandardUpdaterController!
     @ObservationIgnored private var observation: NSKeyValueObservation?
 
     override init() {
         super.init()
-        controller = SPUStandardUpdaterController(startingUpdater: false, updaterDelegate: nil, userDriverDelegate: self)
+        controller = SPUStandardUpdaterController(startingUpdater: false, updaterDelegate: self, userDriverDelegate: self)
     }
 
     /// Debug builds and builds without a feed and signing key never update,
@@ -58,11 +59,10 @@ final class Updater: NSObject {
         }
     }
 
-    var lastChecked: Date? { controller.updater.lastUpdateCheckDate }
-
     func start() {
         guard isConfigured else { return }
         controller.startUpdater()
+        lastChecked = controller.updater.lastUpdateCheckDate
         observation = controller.updater.observe(\.canCheckForUpdates, options: [.initial, .new]) { [weak self] _, _ in
             Task { @MainActor in
                 guard let self else { return }
@@ -82,6 +82,12 @@ final class Updater: NSObject {
         pendingVersion = nil
         AppActivation.shared.enter()
         controller.checkForUpdates(nil)
+    }
+}
+
+extension Updater: SPUUpdaterDelegate {
+    func updater(_ updater: SPUUpdater, didFinishUpdateCycleFor updateCheck: SPUUpdateCheck, error: (any Error)?) {
+        lastChecked = updater.lastUpdateCheckDate
     }
 }
 

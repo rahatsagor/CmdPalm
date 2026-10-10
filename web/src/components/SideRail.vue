@@ -3,7 +3,7 @@ import { Check, Hand, Pause, Settings, ShieldAlert } from '@lucide/vue'
 import { state } from '@/lib/connection'
 import { modifiers } from '@/lib/input'
 import { settings } from '@/lib/settings'
-import { online, panic, released, stuck } from '@/lib/status'
+import { explainPermission, online, panic, released, stuck } from '@/lib/status'
 import { selectTab, TABS } from '@/lib/tabs'
 
 const emit = defineEmits<{ settings: [] }>()
@@ -15,22 +15,25 @@ const emit = defineEmits<{ settings: [] }>()
   <nav class="side-rail no-scrollbar flex w-14 shrink-0 flex-col items-center overflow-y-auto py-2" aria-label="Sections">
     <div class="flex flex-col items-center gap-1 pb-1" :title="state.hostName">
       <span
+        role="img"
         class="size-2 rounded-full transition-colors"
         :class="online ? 'bg-good' : 'animate-pulse bg-warn'"
         :aria-label="online ? `Connected to ${state.hostName}` : 'Reconnecting'"
       />
       <span class="text-[9px] leading-none text-faint tabular-nums">{{ online ? (state.latency ? `${state.latency}ms` : '') : '…' }}</span>
     </div>
-    <span v-if="state.paused" class="grid size-7 place-items-center rounded-full bg-warn/15 text-warn" aria-label="Paused on the Mac">
+    <span v-if="state.paused" role="img" class="grid size-7 place-items-center rounded-full bg-warn/15 text-warn" aria-label="Paused on the Mac">
       <Pause :size="12" fill="currentColor" />
     </span>
-    <span
+    <button
       v-else-if="!state.features.permission"
+      type="button"
       class="grid size-7 place-items-center rounded-full bg-bad/15 text-bad"
       aria-label="CmdPalm needs Accessibility permission on the Mac"
+      @click="explainPermission"
     >
       <ShieldAlert :size="14" />
-    </span>
+    </button>
     <button
       v-if="stuck"
       type="button"

@@ -7,8 +7,9 @@ use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 
 use crate::api::NativeCommand;
+use crate::deck::{MAX_DELAY_MS, MAX_DEPTH};
 use crate::host::Shared;
-use crate::input::{Command, Input, SessionId, TypeMode};
+use crate::input::{Command, Input, Interrupts, SessionId, TypeMode};
 use crate::keycodes::{self as kc, KeyCode, mods};
 use crate::protocol::{Action, MouseButton, PressOp, ServerMessage, SystemAction};
 
@@ -22,6 +23,8 @@ pub(crate) struct Job {
 const PASTE_RESTORE_DELAY: Duration = Duration::from_millis(450);
 const DELAY_SLICE: Duration = Duration::from_millis(50);
 const STOPPED: &str = "Stopped because control was paused or the device disconnected.";
+const SHELL_POLL: Duration = Duration::from_millis(100);
+const SHELL_KILL_GRACE: Duration = Duration::from_secs(1);
 
 pub(crate) async fn worker(shared: Arc<Shared>, session: SessionId, mut jobs: mpsc::Receiver<Job>) {
     while let Some(job) = jobs.recv().await {
@@ -129,8 +132,12 @@ fn url_allowed(url: &str, allow_shell: bool) -> bool {
     if scheme.is_empty() || !scheme.chars().all(|c| c.is_ascii_alphanumeric() || "+-.".contains(c)) {
         return false;
     }
-    // A file URL can launch scripts; treat it like a shell command.
-    allow_shell || scheme != "file"
+    match scheme.as_str() {
+        "javascript" | "data" => false,
+        // A file URL can launch scripts; treat it like a shell command.
+        "file" => allow_shell,
+        _ => true,
+    }
 }
 
 /// Runs one action. Steps stop as soon as the device disconnects or input is
@@ -187,7 +194,7 @@ pub(crate) fn execute(shared: &Shared, session: SessionId, action: &Action, dept
             if !shared.config().allow_shell {
                 return Err("Shell commands are turned off. Turn them on in CmdPalm settings on the Mac.".into());
             }
-            run_shell(command)?;
+            run_shell(command, shared.interrupts.clone())?;
         }
         Action::Mouse { button, clicks } => {
             let button: MouseButton = *button;
@@ -195,7 +202,7 @@ pub(crate) fn execute(shared: &Shared, session: SessionId, action: &Action, dept
         }
         Action::Delay { ms } => {
             shared.flush_engine();
-            let until = Instant::now() + Duration::from_millis((*ms).min(10_000) as u64);
+            let until = Instant::now() + Duration::from_millis((*ms).min(MAX_DELAY_MS) as u64);
             while let Some(left) = until.checked_duration_since(Instant::now()).filter(|d| !d.is_zero()) {
                 if shared.should_stop(session) {
                     return Err(STOPPED.into());
@@ -204,7 +211,7 @@ pub(crate) fn execute(shared: &Shared, session: SessionId, action: &Action, dept
             }
         }
         Action::Sequence { steps } => {
-            if depth >= 3 {
+            if depth >= MAX_DEPTH {
                 return Err("The sequence is nested too deeply.".into());
             }
             for step in steps {
@@ -215,18 +222,41 @@ pub(crate) fn execute(shared: &Shared, session: SessionId, action: &Action, dept
     Ok(())
 }
 
-fn run_shell(command: &str) -> Result<(), String> {
+fn run_shell(command: &str, interrupts: Arc<Interrupts>) -> Result<(), String> {
+    use std::os::unix::process::CommandExt as _;
     let mut child = std::process::Command::new("/bin/zsh")
         .arg("-lc")
         .arg(command)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
+        // Its own process group, so Pause can stop everything it started.
+        .process_group(0)
         .spawn()
         .map_err(|e| format!("Couldn't run the command: {e}"))?;
-    // Reap the process whenever it finishes so it never lingers as a zombie.
+    let group = child.id() as libc::pid_t;
+    // Reap the process when it finishes so it never lingers as a zombie, and
+    // stop it if input is paused while it runs: the command inherits CmdPalm's
+    // Accessibility permission, so it must not outlive Pause.
     std::thread::spawn(move || {
-        let _ = child.wait();
+        let mut signalled: Option<Instant> = None;
+        while let Ok(None) = child.try_wait() {
+            if interrupts.paused() {
+                match signalled {
+                    None => {
+                        // SAFETY: signals only the process group created above.
+                        unsafe { libc::killpg(group, libc::SIGTERM) };
+                        signalled = Some(Instant::now());
+                    }
+                    Some(at) if at.elapsed() >= SHELL_KILL_GRACE => {
+                        // SAFETY: as above.
+                        unsafe { libc::killpg(group, libc::SIGKILL) };
+                    }
+                    Some(_) => {}
+                }
+            }
+            std::thread::sleep(SHELL_POLL);
+        }
     });
     Ok(())
 }
@@ -253,5 +283,19 @@ mod tests {
         assert!(!url_allowed("file:///tmp/x.command", false));
         assert!(url_allowed("file:///tmp/x.command", true));
         assert!(!url_allowed("no scheme", false));
+        assert!(!url_allowed("JavaScript:alert(1)", true));
+        assert!(!url_allowed("data:text/html,hi", true));
+    }
+
+    #[test]
+    fn pause_stops_running_shell_commands() {
+        let dir = tempfile::tempdir().unwrap();
+        let marker = dir.path().join("done");
+        let interrupts = Arc::new(Interrupts::default());
+        run_shell(&format!("sleep 2; touch '{}'", marker.display()), interrupts.clone()).unwrap();
+        std::thread::sleep(Duration::from_millis(300));
+        interrupts.set_paused(true);
+        std::thread::sleep(Duration::from_millis(2600));
+        assert!(!marker.exists(), "the paused command never finished");
     }
 }

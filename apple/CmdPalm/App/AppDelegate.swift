@@ -9,15 +9,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     #endif
 
     func applicationWillFinishLaunching(_ notification: Notification) {
+        // Unit tests run inside the app; don't log, serve or prompt.
+        guard !SystemInfo.isRunningTests else { return }
         SystemInfo.redirectLogs()
         let level = AppModel.shared.preferences.logLevel.rawValue
         initLogging(filter: "warn,cmdpalm_core=\(level)")
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Unit tests run inside the app; don't start serving or prompt.
-        if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil { return }
-        if handOffToRunningCopy() { return }
+        guard !SystemInfo.isRunningTests else { return }
 
         let model = model
         model.permissions.startMonitoring()
@@ -68,18 +68,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        guard !SystemInfo.isRunningTests else { return }
         model.host.shutdown()
     }
 
-    /// Two copies would fight over the port and both post input.
-    private func handOffToRunningCopy() -> Bool {
-        guard let id = Bundle.main.bundleIdentifier else { return false }
+    /// Two copies would fight over the port and both post input, so a second
+    /// copy reopens the running one, which shows Settings, and exits before
+    /// creating anything.
+    static func handOffToRunningCopy() {
+        guard !SystemInfo.isRunningTests, let id = Bundle.main.bundleIdentifier else { return }
         let me = ProcessInfo.processInfo.processIdentifier
         guard let other = NSRunningApplication.runningApplications(withBundleIdentifier: id)
             .first(where: { $0.processIdentifier != me })
-        else { return false }
-        other.activate()
-        DispatchQueue.main.async { NSApp.terminate(nil) }
-        return true
+        else { return }
+        if let url = other.bundleURL {
+            let done = DispatchSemaphore(value: 0)
+            NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration()) { _, _ in
+                done.signal()
+            }
+            _ = done.wait(timeout: .now() + 5)
+        } else {
+            other.activate()
+        }
+        exit(0)
     }
 }
