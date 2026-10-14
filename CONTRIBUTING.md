@@ -66,7 +66,7 @@ scripts/make-signing-identity.sh
 | `web/` | The phone app (Vue, TypeScript, Tailwind). The Mac serves the built files from inside the app bundle. |
 | `scripts/` | Build, packaging and release tooling. |
 | `packaging/` | The Homebrew cask template and files that go into the DMG. |
-| `docs/` | The [wire protocol](docs/PROTOCOL.md) between the phone app and the Mac. |
+| `docs/` | The [wire protocol](docs/PROTOCOL.md) between the phone app and the Mac, and the README's images in `docs/media/` (rebuild them with `scripts/readme-media.sh`). |
 
 The Rust core owns everything that should behave the same regardless of the
 UI: what a device may do, how input is posted, and how sessions start and

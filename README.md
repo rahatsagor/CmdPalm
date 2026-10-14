@@ -1,19 +1,20 @@
 <div align="center">
 
-<img src="web/public/icon.svg" width="128" height="128" alt="CmdPalm app icon" />
+<img src="web/public/icon.svg" width="112" height="112" alt="CmdPalm app icon" />
 
 # CmdPalm
 
 ### Your Mac, in your palm.
 
-Turn your iPhone, iPad or Android phone into a trackpad, keyboard and button deck for your Mac.<br />
-No app to install on the phone. No account. Nothing leaves your network.
+Turn your iPhone, iPad or Android phone into a trackpad, keyboard and button
+deck for your Mac.<br />
+**No app to install on the phone. No account. Nothing leaves your network.**
 
 <br />
 
-[**Download for Mac**](https://github.com/rahatsagor/CmdPalm/releases/latest/download/CmdPalm.dmg) &nbsp;·&nbsp;
-[Website](https://cmdpalm.app) &nbsp;·&nbsp;
-[Release notes](CHANGELOG.md)
+<a href="https://github.com/rahatsagor/CmdPalm/releases/latest/download/CmdPalm.dmg"><img src="https://img.shields.io/badge/Download_for_Mac-f9813d?style=for-the-badge&logo=apple&logoColor=white" alt="Download for Mac" height="36" /></a>
+&nbsp;
+<a href="https://cmdpalm.app"><img src="https://img.shields.io/badge/Website-1f1f1f?style=for-the-badge&logo=safari&logoColor=white" alt="Website" height="36" /></a>
 
 <br />
 
@@ -22,19 +23,44 @@ No app to install on the phone. No account. Nothing leaves your network.
 [![Apple silicon](https://img.shields.io/badge/Apple%20silicon-native-1f1f1f?style=flat-square)](#requirements)
 [![AGPL-3.0 License](https://img.shields.io/badge/license-AGPL--3.0-1f1f1f?style=flat-square)](LICENSE)
 
+<br />
+
+<a href="https://cmdpalm.app"><img src="docs/media/hero.webp" width="800" alt="A phone moves the Mac's pointer as a trackpad, types as a keyboard, runs buttons from a deck and types what you say" /></a>
+
 </div>
 
 <br />
 
-CmdPalm lives in your Mac's menu bar and serves a fast web app on your local
-network. Scan a QR code with your phone and you are in control. Add it to
-your home screen and it opens full screen, just like a native app.
+<table>
+<tr>
+<td width="33%" align="center" valign="top">
+
+**1. Install on your Mac**<br />
+<sub>It lives in the menu bar.</sub>
+
+</td>
+<td width="33%" align="center" valign="top">
+
+**2. Scan the QR code**<br />
+<sub>With your phone's camera. That's the whole setup.</sub>
+
+</td>
+<td width="33%" align="center" valign="top">
+
+**3. You're in control**<br />
+<sub>Add it to your home screen and it opens like an app.</sub>
+
+</td>
+</tr>
+</table>
 
 ## Everything you need from the couch
 
 <table>
 <tr>
 <td width="50%" valign="top">
+
+<img src="docs/media/trackpad.webp" width="100%" alt="Tapping, scrolling and pinching on the phone moves and zooms on the Mac" />
 
 #### Trackpad
 Tap to click, drag, two-finger scrolling with real momentum, pinch to zoom,
@@ -43,6 +69,8 @@ smoothly even on busy Wi-Fi.
 
 </td>
 <td width="50%" valign="top">
+
+<img src="docs/media/keyboard.webp" width="100%" alt="Typing on a full Mac keyboard on the phone" />
 
 #### Keyboard
 Shows your Mac's own layout, with sticky modifiers, function and media keys.
@@ -54,6 +82,8 @@ at once for any combination.
 <tr>
 <td valign="top">
 
+<img src="docs/media/custom.webp" width="100%" alt="A custom game keyboard with WASD keys" />
+
 #### Custom keyboards
 Only the keys you need, laid out how you like: arrows for slides, WASD for
 games, or your editing shortcuts. Each key stays pressed for as long as you
@@ -61,6 +91,8 @@ touch it.
 
 </td>
 <td valign="top">
+
+<img src="docs/media/deck.webp" width="100%" alt="A grid of buttons on the phone controlling the Mac" />
 
 #### Deck
 A button grid like a Stream Deck: shortcuts, text snippets, apps, websites,
@@ -72,12 +104,16 @@ all your devices.
 <tr>
 <td valign="top">
 
+<img src="docs/media/apps-media.webp" width="100%" alt="Launching a Mac app from its icon on the phone" />
+
 #### Apps and media
 Launch, switch, hide and quit apps with their real icons, including apps on
 an external drive. Play, pause, skip and set the volume.
 
 </td>
 <td valign="top">
+
+<img src="docs/media/voice.webp" width="100%" alt="Speaking into the phone while the Mac types the words" />
 
 #### Voice
 Talk into your phone and your Mac types what you say. Speech is recognised
@@ -91,17 +127,51 @@ Your phone settings, custom keyboards and gestures are kept on your Mac too,
 so they survive a cleared browser. Set up a new phone in one tap with **Copy
 settings from another device**.
 
+<div align="center">
+
+<a href="https://cmdpalm.app/#film"><img src="docs/media/film.jpg" width="640" alt="Watch the CmdPalm film" /></a>
+
+<sub><a href="https://cmdpalm.app/#film">▶ Watch the film on cmdpalm.app</a></sub>
+
+</div>
+
 ## Private by design
 
-- **Local only.** CmdPalm talks to your phone over your own network. There are
-  no accounts, no analytics and no cloud service. The only outside connection
-  is the update check.
-- **Only devices you pair.** Pairing needs the QR code, the PIN shown on your
-  Mac, or your approval on the Mac. You can remove a device at any time.
-- **One switch to stop everything.** Pause in the menu bar stops all input
-  instantly, including text that is still being typed.
-- **Encrypted when you want it.** CmdPalm creates its own certificate for an
-  encrypted connection, and nothing you type ever appears in its logs.
+<table>
+<tr>
+<td width="50%" valign="top">
+
+**Local only**<br />
+CmdPalm talks to your phone over your own network. There are no accounts,
+no analytics and no cloud service. The only outside connection is the
+update check.
+
+</td>
+<td width="50%" valign="top">
+
+**Only devices you pair**<br />
+Pairing needs the QR code, the PIN shown on your Mac, or your approval on
+the Mac. You can remove a device at any time.
+
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+**One switch to stop everything**<br />
+Pause in the menu bar stops all input instantly, including text that is
+still being typed.
+
+</td>
+<td valign="top">
+
+**Encrypted when you want it**<br />
+CmdPalm creates its own certificate for an encrypted connection, and
+nothing you type ever appears in its logs.
+
+</td>
+</tr>
+</table>
 
 Read [SECURITY.md](SECURITY.md) for the full details.
 
@@ -123,7 +193,7 @@ brew install --cask rahatsagor/tap/cmdpalm
 
 1. Download [CmdPalm.dmg](https://github.com/rahatsagor/CmdPalm/releases/latest/download/CmdPalm.dmg)
    and drag CmdPalm into Applications.
-2. CmdPalm is free and open source, and it isn't notarized by Apple, so
+2. CmdPalm is free and open source, and it isn't notarized by Apple yet, so
    macOS asks you to confirm the first time it opens. Run this once in
    Terminal:
 
@@ -229,6 +299,29 @@ as** to **Key presses** in the phone's advanced settings.
 </details>
 
 <details>
+<summary><strong>Using a VPN, your own DNS name or a reverse proxy</strong></summary>
+<br />
+
+Most people never need this. If you connect your devices some other way,
+CmdPalm can go along with it:
+
+- **A VPN or mesh network** (WireGuard, Tailscale, ZeroTier and the like):
+  in **Settings → Phone Setup**, set **Address in the QR code** to
+  **Custom** and pick the Mac's VPN address from the menu next to the field.
+- **A name from your own DNS**, such as `studio.home.arpa`: type it in
+  **Custom**. CmdPalm accepts connections that use that name.
+- **A reverse proxy on the Mac** (Caddy, nginx, or a VPN's HTTPS sharing):
+  point it at `http://localhost:8790`, type its `https://` address in
+  **Custom**, and turn on **Accept connections through a proxy on this Mac**
+  under **Settings → Advanced**. The phone then gets an encrypted connection
+  from the proxy's certificate.
+
+Each address is a separate site to the phone's browser, so pair once for
+each address you use.
+
+</details>
+
+<details>
 <summary><strong>Something else</strong></summary>
 <br />
 
@@ -262,6 +355,8 @@ based on it must be released under the same license, with its full source
 code.
 
 <div align="center">
+<br />
+<a href="https://cmdpalm.app"><img src="web/public/icon.svg" width="40" height="40" alt="" /></a>
 <br />
 <a href="https://cmdpalm.app"><strong>cmdpalm.app</strong></a>
 </div>
