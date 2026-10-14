@@ -24,7 +24,6 @@ example in your own fork.
 - [Rust](https://rustup.rs) (stable)
 - [Bun](https://bun.sh)
 - [XcodeGen](https://github.com/yonaskolb/XcodeGen): `brew install xcodegen`
-- Python 3.11 or later and OpenSSL 3 for release-tool checks
 
 CI and releases use Rust stable, Bun's latest stable release, and the newest
 stable Xcode installed on GitHub's `xcode-27` image. That runner image is
@@ -97,14 +96,19 @@ CI runs all of these on every push.
 cargo fmt --all --check
 cargo clippy --all-targets -- -D warnings
 cargo test
-python3 -m unittest discover -s scripts/tests -v
 
 cd web
+bun install
 bun run lint
 bun run typecheck
 bun run test
 
-cd ../apple
+cd ..
+web/node_modules/.bin/oxlint scripts    # release tooling, on Bun
+web/node_modules/.bin/tsc -p scripts
+bun test ./scripts/tests
+
+cd apple
 xcodebuild test -project CmdPalm.xcodeproj -scheme CmdPalm -destination "platform=macOS,arch=arm64"
 ```
 

@@ -30,4 +30,3 @@ sparkle_private_key*
 .idea/
 .vscode/
 *.swp
-__pycache__/

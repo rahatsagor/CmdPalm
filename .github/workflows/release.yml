@@ -45,9 +45,11 @@ jobs:
       - name: Install release tools
         run: |
           brew update
-          brew install xcodegen openssl@3
-          brew upgrade xcodegen openssl@3
-          echo "$(brew --prefix openssl@3)/bin" >> "$GITHUB_PATH"
+          brew install xcodegen
+          brew upgrade xcodegen
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: latest
 
       - name: Check release settings
         id: version
@@ -58,13 +60,13 @@ jobs:
           P12_PASSWORD: ${{ secrets.SIGNING_IDENTITY_PASSWORD }}
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          python3 scripts/release_notes.py check "$VERSION"
-          python3 scripts/release_notes.py check-keys
+          bun scripts/release-notes.ts check "$VERSION"
+          bun scripts/release-notes.ts check-keys
           if [[ -z "$P12" || -z "$P12_PASSWORD" ]]; then
             echo "::error::Set both SIGNING_IDENTITY_P12 and SIGNING_IDENTITY_PASSWORD repository secrets"
             exit 1
           fi
-          python3 scripts/release_notes.py notes "$VERSION" > "$RUNNER_TEMP/notes.md"
+          bun scripts/release-notes.ts notes "$VERSION" > "$RUNNER_TEMP/notes.md"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
@@ -74,9 +76,6 @@ jobs:
         with:
           toolchain: stable
           targets: aarch64-apple-darwin
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with:
-          bun-version: latest
       - name: Import signing identity
         env:
           P12: ${{ secrets.SIGNING_IDENTITY_P12 }}
@@ -109,7 +108,7 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           SIGN_UPDATE=build/DerivedData/SourcePackages/artifacts/sparkle/Sparkle/bin/sign_update
-          python3 scripts/release_notes.py appcast "$VERSION" "dist/CmdPalm-$VERSION.zip" dist/appcast.xml
+          bun scripts/release-notes.ts appcast "$VERSION" "dist/CmdPalm-$VERSION.zip" dist/appcast.xml
           # The app requires a signed feed (SURequireSignedFeed).
           printf '%s' "$SPARKLE_PRIVATE_KEY" | "$SIGN_UPDATE" --ed-key-file - dist/appcast.xml
           printf '%s' "$SPARKLE_PRIVATE_KEY" | "$SIGN_UPDATE" --verify --ed-key-file - dist/appcast.xml

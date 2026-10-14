@@ -7,7 +7,7 @@ cd "$(dirname "$0")/.."
 
 src=apple/Resources/icon.svg
 iconset=apple/CmdPalm/Assets.xcassets/AppIcon.appiconset
-for tool in rsvg-convert python3; do
+for tool in rsvg-convert bun; do
   command -v "$tool" >/dev/null || {
     echo "error: $tool is required to regenerate icons (see CONTRIBUTING.md)" >&2
     exit 1
@@ -23,20 +23,25 @@ trap 'rm -rf "$scratch"' EXIT
 
 # Only remove the background's corner mask. Keep the phone and all artwork
 # geometry intact, even when their radii or the background radius change.
-python3 - "$src" "$square" <<'PYTHON'
-import sys
-import xml.etree.ElementTree as ET
-
-ET.register_namespace("", "http://www.w3.org/2000/svg")
-tree = ET.parse(sys.argv[1])
-background = tree.find(".//*[@id='background-shape']")
-if background is None:
-    raise SystemExit("error: icon.svg is missing the background-shape group")
-for rect in background.findall("{http://www.w3.org/2000/svg}rect"):
-    rect.attrib.pop("rx", None)
-    rect.attrib.pop("ry", None)
-tree.write(sys.argv[2], encoding="unicode")
-PYTHON
+cat >"$scratch/square.ts" <<'TS'
+const [source, target] = process.argv.slice(2) as [string, string]
+let found = false
+const rewriter = new HTMLRewriter()
+  .on('#background-shape', { element: () => void (found = true) })
+  .on('#background-shape > rect', {
+    element(rect) {
+      rect.removeAttribute('rx')
+      rect.removeAttribute('ry')
+    },
+  })
+const square = await rewriter.transform(new Response(Bun.file(source))).text()
+if (!found) {
+  console.error('error: icon.svg is missing the background-shape group')
+  process.exit(1)
+}
+await Bun.write(target, square)
+TS
+bun "$scratch/square.ts" "$src" "$square"
 
 render() { rsvg-convert -w "$2" -h "$2" "$1" -o "$3"; }
 

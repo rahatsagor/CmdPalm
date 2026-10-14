@@ -54,6 +54,12 @@ jobs:
       - run: bun run lint
       - run: bun run test
       - run: bun run build
+      - name: Check release scripts
+        # The scripts in scripts/ use the phone client's lint and TypeScript setup.
+        working-directory: .
+        run: |
+          web/node_modules/.bin/oxlint scripts
+          web/node_modules/.bin/tsc -p scripts
 
   app:
     name: Mac app
@@ -78,13 +84,12 @@ jobs:
       - name: Install build tools
         run: |
           brew update
-          brew install xcodegen actionlint openssl@3
-          brew upgrade xcodegen actionlint openssl@3
-          echo "$(brew --prefix openssl@3)/bin" >> "$GITHUB_PATH"
+          brew install xcodegen actionlint
+          brew upgrade xcodegen actionlint
       - name: Check release tooling and workflows
         run: |
           actionlint
-          python3 -m unittest discover -s scripts/tests -v
+          bun test ./scripts/tests
       - name: Generate Swift bindings
         # XcodeGen must see the generated Swift file on a fresh checkout.
         run: scripts/build-core.sh

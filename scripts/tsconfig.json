@@ -1,0 +1,20 @@
+{
+  // The release scripts run on Bun and borrow the phone client's TypeScript
+  // and Bun types, so `bun install` in web/ is all they need.
+  "compilerOptions": {
+    "target": "ES2023",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2023"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "typeRoots": ["../web/node_modules/@types"],
+    "types": ["bun"]
+  },
+  "include": ["*.ts", "tests/*.ts"]
+}
