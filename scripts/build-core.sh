@@ -25,6 +25,10 @@ fi
 # Xcode sets these for its own toolchain; they confuse rustc's linker.
 unset SDKROOT MACOSX_DEPLOYMENT_TARGET IPHONEOS_DEPLOYMENT_TARGET LD LDFLAGS CC CXX
 export MACOSX_DEPLOYMENT_TARGET=15.0
+# Xcode also puts its toolchain's clang first on PATH. That clang has no
+# default SDK, so C code in dependencies such as ring can't find the system
+# headers on a fresh build. The /usr/bin shims find the SDK through xcrun.
+export CC=/usr/bin/cc CXX=/usr/bin/c++
 
 cd "$ROOT"
 cargo build --locked --release --target "$TARGET" -p cmdpalm-core
