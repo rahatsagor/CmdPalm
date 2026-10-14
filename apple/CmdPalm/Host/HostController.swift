@@ -38,6 +38,9 @@ final class HostController {
     @ObservationIgnored private var appsChanged: DispatchWorkItem?
     @ObservationIgnored private var pairingTimer: Timer?
     @ObservationIgnored private var pinViews = 0
+    /// Starts, stops and restarts run one after another, so two quick
+    /// restarts can't interleave and leave the server on an old setting.
+    @ObservationIgnored private var lifecycle: Task<Void, Never>?
     @ObservationIgnored private let network = NWPathMonitor()
     @ObservationIgnored var onApprovalsChanged: (() -> Void)?
 
@@ -85,6 +88,11 @@ final class HostController {
         return false
     }
 
+    private var hasFailed: Bool {
+        if case .failed = status { return true }
+        return false
+    }
+
     var port: UInt16? {
         if case let .running(port) = status { return port }
         return nil
@@ -98,8 +106,7 @@ final class HostController {
     }
 
     func stop() {
-        let host = host!
-        Task.detached { host.stop() }
+        enqueue { host in host.stop() }
     }
 
     func restart() {
@@ -114,8 +121,14 @@ final class HostController {
 
     private func launch(_ work: @escaping @Sendable (CoreHost) throws -> Void) {
         status = .starting
+        enqueue(work)
+    }
+
+    private func enqueue(_ work: @escaping @Sendable (CoreHost) throws -> Void) {
         let host = host!
-        Task.detached {
+        let previous = lifecycle
+        lifecycle = Task.detached {
+            await previous?.value
             do {
                 try work(host)
             } catch {
@@ -247,7 +260,7 @@ final class HostController {
 
     private func preferencesChanged() {
         bridge.setAllowsShell(preferences.allowShell)
-        if preferences.port != configuredPort, isRunning || status == .starting {
+        if preferences.port != configuredPort, isRunning || status == .starting || hasFailed {
             restart()
         } else {
             configuredPort = preferences.port

@@ -23,6 +23,10 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - A device removed on the Mac can no longer bring its settings back by
   saving them just as it is removed. Devices that aren't remembered can't
   see other devices' settings.
+- When the Mac isn't connected to a network, the menu says so instead of
+  showing a QR code that can't work.
+- Changing the port after CmdPalm couldn't start now starts it, and quick
+  restarts no longer leave the server on an old setting.
 - A damaged settings file is no longer renamed again on every launch.
 - One IPv6 device can no longer hold every approval request slot.
 

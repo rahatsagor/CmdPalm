@@ -6,7 +6,10 @@ struct PairingCard: View {
 
     var body: some View {
         VStack(spacing: 12) {
-            if let pairing = host.pairing, host.isRunning {
+            if let pairing = host.pairing, host.isRunning, pairing.addresses.isEmpty, host.preferences.linkAddress != .custom {
+                NoNetworkPlaceholder()
+                    .frame(height: qrSize)
+            } else if let pairing = host.pairing, host.isRunning {
                 QRCodeView(text: pairing.link, size: qrSize)
                 Text("Scan with your phone’s camera")
                     .font(.callout)
