@@ -9,6 +9,13 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixes
+
+- Pasting while the Mac was still typing earlier text could paste your
+  previous clipboard instead.
+- A held ⌘ or other modifier no longer turns typed text or dictation
+  corrections into shortcuts, such as ⌘⌫ moving a file to the Trash.
+
 ## [0.1.1] - 2026-10-10
 
 A safer, smoother update to the first release. Voice typing now stays

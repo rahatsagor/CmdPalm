@@ -489,7 +489,7 @@ impl<S: EventSink> Engine<S> {
                     if self.interrupts.should_stop(session) {
                         return;
                     }
-                    self.tap(KEY_DELETE, 0, KEYSTROKE_HOLD);
+                    self.type_key(KEY_DELETE, 0, KEYSTROKE_HOLD);
                 }
                 self.type_text(session, &insert, TypeMode::Unicode);
             }
@@ -629,6 +629,27 @@ impl<S: EventSink> Engine<S> {
         self.release_temp_mods(temp);
     }
 
+    /// Tap a key as part of typed text or a dictation edit. Only the
+    /// modifiers the character needs reach the app, not ones a device is
+    /// holding, so a held ⌘ can't turn a correction's ⌫ into ⌘⌫.
+    fn type_key(&mut self, code: KeyCode, mods: u8, hold: Duration) {
+        if self.os_keys.contains_key(&code) || keycodes::is_modifier(code) || code == KEY_CAPS_LOCK {
+            return self.tap(code, mods, hold);
+        }
+        self.repeat = None;
+        let temp = self.press_temp_mods(mods);
+        let flags = self
+            .os_keys
+            .keys()
+            .filter_map(|code| keycodes::modifier(*code))
+            .filter(|m| mods & m.wire != 0)
+            .fold(keycodes::intrinsic_flags(code), |acc, m| acc | m.flags);
+        self.sink.post(Synth::Key { code, down: true, flags, repeat: false });
+        self.sink.post(Synth::Pause(hold));
+        self.sink.post(Synth::Key { code, down: false, flags, repeat: false });
+        self.release_temp_mods(temp);
+    }
+
     fn resolve_char(&self, ch: char) -> Option<KeyCode> {
         let lower = ch.to_lowercase().next().unwrap_or(ch);
         match self.layout.chars.get(&lower) {
@@ -671,8 +692,8 @@ impl<S: EventSink> Engine<S> {
             }
             first = false;
             match segment {
-                Segment::Return => self.tap(KEY_RETURN, 0, KEYSTROKE_HOLD),
-                Segment::Tab => self.tap(KEY_TAB, 0, KEYSTROKE_HOLD),
+                Segment::Return => self.type_key(KEY_RETURN, 0, KEYSTROKE_HOLD),
+                Segment::Tab => self.type_key(KEY_TAB, 0, KEYSTROKE_HOLD),
                 Segment::Text(chunk) if mode == TypeMode::Keystrokes => {
                     let mut pending = String::new();
                     for ch in chunk.chars() {
@@ -684,7 +705,7 @@ impl<S: EventSink> Engine<S> {
                                 if !pending.is_empty() {
                                     self.sink.post(Synth::Text { text: std::mem::take(&mut pending) });
                                 }
-                                self.tap(code, mods, KEYSTROKE_HOLD);
+                                self.type_key(code, mods, KEYSTROKE_HOLD);
                             }
                             None => pending.push(ch),
                         }
@@ -1497,6 +1518,48 @@ mod tests {
                 Synth::Text { text: "lo".into() },
             ]
         );
+    }
+
+    #[test]
+    fn typed_text_ignores_held_modifiers() {
+        let mut h = Harness::new();
+        let layout = KeyboardLayout {
+            id: "us".into(),
+            name: "US".into(),
+            iso: false,
+            keys: vec![KeyCap {
+                code: KEY_A,
+                base: "a".into(),
+                shift: "A".into(),
+                option: "å".into(),
+                option_shift: "Å".into(),
+                dead: 0,
+            }],
+        };
+        h.cmd(Command::Layout(LayoutMap::from_layout(&layout)));
+        h.key(B, KEY_COMMAND, true);
+        h.take();
+        h.input(A, Input::Edit { delete: 1, insert: String::new() });
+        h.input(A, Input::Text { text: "aA\n".into(), mode: TypeMode::Keystrokes });
+        assert_eq!(
+            h.take(),
+            vec![
+                key_ev(KEY_DELETE, true, 0),
+                key_ev(KEY_DELETE, false, 0),
+                key_ev(KEY_A, true, 0),
+                key_ev(KEY_A, false, 0),
+                flags_ev(KEY_SHIFT, SHIFT | CMD),
+                key_ev(KEY_A, true, SHIFT),
+                key_ev(KEY_A, false, SHIFT),
+                flags_ev(KEY_SHIFT, CMD),
+                key_ev(KEY_RETURN, true, 0),
+                key_ev(KEY_RETURN, false, 0),
+            ],
+            "another device's ⌘ never turns typing into shortcuts"
+        );
+        // The ⌘ itself stays held for the device holding it.
+        h.input(B, Input::Tap { code: KEY_Q, mods: 0 });
+        assert!(h.take().contains(&key_ev(KEY_Q, true, CMD)));
     }
 
     #[test]

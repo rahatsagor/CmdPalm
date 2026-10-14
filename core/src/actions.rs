@@ -120,7 +120,9 @@ pub(crate) fn paste(shared: &Shared, session: SessionId, text: &str) -> Result<(
         return Err("Couldn't use the clipboard.".into());
     }
     input(shared, session, Input::CharTap { ch: 'v', fallback: kc::KEY_V, mods: mods::COMMAND });
-    shared.flush_engine();
+    // Restoring the clipboard before ⌘V is posted, say behind a long text
+    // from another device, would paste the person's previous clipboard.
+    shared.finish_engine();
     std::thread::sleep(PASTE_RESTORE_DELAY);
     shared.delegate.end_paste();
     Ok(())

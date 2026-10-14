@@ -140,6 +140,15 @@ impl Shared {
         let _ = rx.recv_timeout(Duration::from_secs(5));
     }
 
+    /// Like [`Shared::flush_engine`], but with no time limit, for work that
+    /// must not happen before queued input is posted. The engine answers in
+    /// order, and returns at once if it has shut down.
+    pub fn finish_engine(&self) {
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.engine(Command::Flush(tx));
+        let _ = rx.recv();
+    }
+
     /// Call the delegate. Never call this while holding the state lock.
     pub fn emit(&self, event: HostEvent) {
         self.delegate.on_event(event);
