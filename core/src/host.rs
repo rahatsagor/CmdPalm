@@ -377,11 +377,13 @@ impl CoreHost {
         // Give sessions a moment to send their goodbye frames.
         std::thread::sleep(Duration::from_millis(100));
         running.runtime.shutdown_timeout(Duration::from_secs(1));
-        // Session tasks may have been dropped mid-flight; release their input.
+        // Session tasks may have been dropped mid-flight; release their input
+        // and stop any dictation they left running.
         let ids: Vec<SessionId> = self.shared.state().sessions.drain().map(|(id, _)| id).collect();
         for id in ids {
             self.shared.interrupts.end(id);
             self.shared.engine(Command::EndSession(id));
+            self.shared.delegate.voice_stop(id, true);
         }
         let approvals: Vec<u64> = self.shared.state().approvals.drain().map(|(id, _)| id).collect();
         for id in approvals {

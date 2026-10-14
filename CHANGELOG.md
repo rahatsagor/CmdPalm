@@ -15,6 +15,9 @@ and versions follow [Semantic Versioning](https://semver.org/).
   previous clipboard instead.
 - A held ⌘ or other modifier no longer turns typed text or dictation
   corrections into shortcuts, such as ⌘⌫ moving a file to the Trash.
+- Starting and stopping voice typing quickly, or disconnecting while it
+  started, could leave speech recognition running on the Mac. Stopping
+  CmdPalm now stops it too.
 
 ## [0.1.1] - 2026-10-10
 

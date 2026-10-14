@@ -20,6 +20,7 @@ use crate::protocol::{AppEntry, AppOp};
 struct MockDelegate {
     events: Mutex<Vec<HostEvent>>,
     opened: Mutex<Vec<String>>,
+    voice: Mutex<Vec<&'static str>>,
 }
 
 impl HostDelegate for MockDelegate {
@@ -61,10 +62,15 @@ impl HostDelegate for MockDelegate {
     }
     fn end_paste(&self) {}
     fn voice_start(&self, _session: u64, _locale: Option<String>) -> bool {
+        // Starting recognition is slow; a stop sent meanwhile must wait for it.
+        std::thread::sleep(Duration::from_millis(100));
+        self.voice.lock().unwrap().push("start");
         true
     }
     fn voice_audio(&self, _session: u64, _pcm: Vec<u8>) {}
-    fn voice_stop(&self, _session: u64, _cancel: bool) {}
+    fn voice_stop(&self, _session: u64, _cancel: bool) {
+        self.voice.lock().unwrap().push("stop");
+    }
 }
 
 struct Fixture {
@@ -428,4 +434,28 @@ fn phone_settings_are_kept_per_device_and_can_be_copied() {
             "forgetting a device drops its settings"
         );
     });
+}
+
+#[test]
+fn voice_stops_after_it_starts_even_when_sent_right_away() {
+    let f = fixture();
+    let code = f.host.pairing_info().link.split("#pair=").nth(1).unwrap().to_string();
+    f.rt.block_on(async {
+        let mut ws = connect(f.port).await;
+        send(&mut ws, hello("phone", json!({"method": "pair", "code": code}))).await;
+        assert_eq!(recv(&mut ws).await["t"], "welcome");
+        send(&mut ws, json!({"t": "voiceStart"})).await;
+        send(&mut ws, json!({"t": "voiceStop", "cancel": false})).await;
+        send(&mut ws, json!({"t": "voiceStart"})).await;
+        drop(ws);
+    });
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while f.delegate.voice.lock().unwrap().len() < 4 && std::time::Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert_eq!(
+        f.delegate.voice.lock().unwrap().as_slice(),
+        ["start", "stop", "start", "stop"],
+        "a disconnect stops the voice it left running"
+    );
 }

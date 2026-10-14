@@ -40,6 +40,42 @@ const MAX_IN_FLIGHT: usize = 8;
 /// A device that stops reading would otherwise block the session loop, and
 /// with it heartbeats, Disconnect and shutdown.
 const SEND_TIMEOUT: Duration = Duration::from_secs(5);
+/// Voice starts a device may have waiting at once.
+const MAX_VOICE_STARTS: usize = 4;
+
+enum VoiceOp {
+    Start(Option<String>),
+    Stop { cancel: bool },
+}
+
+/// Runs voice starts and stops one at a time, in the order they arrived, so
+/// a quick start then stop, or a disconnect during a start, can't end with
+/// recognition still running. Exits once the session drops its sender.
+async fn voice_worker(
+    shared: Arc<Shared>,
+    id: SessionId,
+    mut ops: mpsc::UnboundedReceiver<VoiceOp>,
+    starts: Arc<AtomicUsize>,
+) {
+    while let Some(op) = ops.recv().await {
+        let shared = shared.clone();
+        let starts = starts.clone();
+        let _ = tokio::task::spawn_blocking(move || match op {
+            VoiceOp::Start(locale) => {
+                let started = shared.delegate.voice_start(id, locale);
+                starts.fetch_sub(1, AtomicOrdering::SeqCst);
+                if !started {
+                    shared.send_to(
+                        id,
+                        voice(VoiceState::Unavailable, Some("Couldn't start speech recognition on the Mac.")),
+                    );
+                }
+            }
+            VoiceOp::Stop { cancel } => shared.delegate.voice_stop(id, cancel),
+        })
+        .await;
+    }
+}
 
 type WsSink<S> = SplitSink<WebSocketStream<S>, Message>;
 type WsStream<S> = SplitStream<WebSocketStream<S>>;
@@ -166,12 +202,17 @@ pub(crate) async fn run<S>(
 
     let (jobs, job_rx) = mpsc::channel(ACTION_QUEUE);
     let worker = tokio::spawn(actions::worker(shared.clone(), id, job_rx));
+    let (voice_ops, voice_rx) = mpsc::unbounded_channel();
+    let voice_starts = Arc::new(AtomicUsize::new(0));
+    tokio::spawn(voice_worker(shared.clone(), id, voice_rx, voice_starts.clone()));
     let mut conn = Connection {
         shared: shared.clone(),
         id,
         device_id: device.id.clone(),
         remembered: authorized.remembered,
         jobs,
+        voice_ops,
+        voice_starts,
         voice: false,
         last_heard: Instant::now(),
         in_flight: Arc::new(AtomicUsize::new(0)),
@@ -223,9 +264,10 @@ pub(crate) async fn run<S>(
     shared.engine(Command::EndSession(id));
     worker.abort();
     if conn.voice {
-        let delegate = shared.delegate.clone();
-        tokio::task::spawn_blocking(move || delegate.voice_stop(id, true));
+        let _ = conn.voice_ops.send(VoiceOp::Stop { cancel: true });
     }
+    // Dropping the sender lets the voice worker finish what is queued, then exit.
+    drop(conn);
     shared.emit(HostEvent::SessionsChanged);
     tracing::info!(session = id, "device disconnected");
 }
@@ -375,6 +417,8 @@ struct Connection {
     device_id: String,
     remembered: bool,
     jobs: mpsc::Sender<Job>,
+    voice_ops: mpsc::UnboundedSender<VoiceOp>,
+    voice_starts: Arc<AtomicUsize>,
     voice: bool,
     last_heard: Instant,
     in_flight: Arc<AtomicUsize>,
@@ -558,12 +602,15 @@ impl Connection {
                 }
                 let locale = locale
                     .filter(|l| l.len() <= 32 && l.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'));
+                if self.voice_starts.fetch_add(1, AtomicOrdering::SeqCst) >= MAX_VOICE_STARTS {
+                    self.voice_starts.fetch_sub(1, AtomicOrdering::SeqCst);
+                    return Some(voice(VoiceState::Unavailable, Some("The Mac is still busy. Try again in a moment.")));
+                }
+                if self.voice_ops.send(VoiceOp::Start(locale)).is_err() {
+                    self.voice_starts.fetch_sub(1, AtomicOrdering::SeqCst);
+                    return None;
+                }
                 self.voice = true;
-                let id = self.id;
-                self.blocking(move |shared| {
-                    (!shared.delegate.voice_start(id, locale))
-                        .then(|| voice(VoiceState::Unavailable, Some("Couldn't start speech recognition on the Mac.")))
-                });
                 None
             }
             ClientMessage::SettingsSave { settings, updated_at } => {
@@ -606,11 +653,7 @@ impl Connection {
             },
             ClientMessage::VoiceStop { cancel } => {
                 if std::mem::take(&mut self.voice) {
-                    let id = self.id;
-                    self.blocking(move |shared| {
-                        shared.delegate.voice_stop(id, cancel);
-                        None
-                    });
+                    let _ = self.voice_ops.send(VoiceOp::Stop { cancel });
                 }
                 None
             }
