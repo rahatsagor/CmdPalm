@@ -10,7 +10,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use cmdpalm_core::api::{HostConfig, HostDelegate, HostEvent, NativeCommand};
+use cmdpalm_core::api::{HostConfig, HostDelegate, HostEvent, LinkHost, NativeCommand};
 use cmdpalm_core::host::CoreHost;
 use cmdpalm_core::protocol::{AppEntry, AppOp};
 
@@ -100,7 +100,8 @@ fn main() {
         host_name: String::new(),
         computer_name: std::env::var("CMDPALM_NAME").unwrap_or_else(|_| "Dev Host".into()),
         app_version: env!("CARGO_PKG_VERSION").into(),
-        link_uses_host_name: false,
+        link_host: LinkHost::IpAddress,
+        allow_local_proxy: false,
         allow_pin: true,
         allow_approval: false,
         allow_shell: false,

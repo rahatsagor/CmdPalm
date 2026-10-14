@@ -11,18 +11,20 @@ final class Preferences {
     enum LinkAddress: String, CaseIterable, Identifiable {
         case hostName
         case ipAddress
+        case custom
         var id: Self { self }
 
         var title: String {
             switch self {
             case .hostName: "Mac Name"
             case .ipAddress: "IP Address"
+            case .custom: "Custom"
             }
         }
 
         /// The host a phone would open for this choice, such as `Studio.local`
         /// or `192.168.1.5`, or nil when the Mac has none.
-        func host(hostName: String, addresses: [String]) -> String? {
+        func host(hostName: String, addresses: [String], custom: String = "") -> String? {
             switch self {
             case .hostName:
                 var name = hostName.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -30,11 +32,16 @@ final class Preferences {
                 return name.isEmpty ? nil : name
             case .ipAddress:
                 return addresses.first { !$0.isEmpty }
+            case .custom:
+                let address = custom.trimmingCharacters(in: .whitespacesAndNewlines)
+                return address.isEmpty ? nil : address
             }
         }
 
-        func label(hostName: String, addresses: [String]) -> String {
-            guard let host = host(hostName: hostName, addresses: addresses) else { return title }
+        func label(hostName: String, addresses: [String], custom: String = "") -> String {
+            guard let host = host(hostName: hostName, addresses: addresses, custom: custom) else {
+                return title
+            }
             return "\(title) (\(host))"
         }
     }
@@ -56,6 +63,8 @@ final class Preferences {
     private enum Key {
         static let port = "port"
         static let linkAddress = "linkAddress"
+        static let customLinkAddress = "customLinkAddress"
+        static let allowLocalProxy = "allowLocalProxy"
         static let allowPin = "allowPin"
         static let allowApproval = "allowApproval"
         static let allowShell = "allowShell"
@@ -71,6 +80,12 @@ final class Preferences {
 
     var port: Int { didSet { save(port, Key.port) } }
     var linkAddress: LinkAddress { didSet { save(linkAddress.rawValue, Key.linkAddress) } }
+    /// The address the QR code uses when `linkAddress` is `.custom`: another
+    /// of the Mac's addresses, a name from the person's own DNS, or a URL
+    /// such as `https://mac.example.com` for a reverse proxy.
+    var customLinkAddress: String { didSet { save(customLinkAddress, Key.customLinkAddress) } }
+    /// Trust a reverse proxy on this Mac to say which device is connecting.
+    var allowLocalProxy: Bool { didSet { save(allowLocalProxy, Key.allowLocalProxy) } }
     var allowPin: Bool { didSet { save(allowPin, Key.allowPin) } }
     var allowApproval: Bool { didSet { save(allowApproval, Key.allowApproval) } }
     var allowShell: Bool { didSet { save(allowShell, Key.allowShell) } }
@@ -90,6 +105,7 @@ final class Preferences {
         defaults.register(defaults: [
             Key.port: Self.defaultPort,
             Key.linkAddress: LinkAddress.hostName.rawValue,
+            Key.allowLocalProxy: false,
             Key.allowPin: true,
             Key.allowApproval: true,
             Key.allowShell: false,
@@ -99,6 +115,8 @@ final class Preferences {
         ])
         port = Self.validPort(defaults.integer(forKey: Key.port)) ?? Self.defaultPort
         linkAddress = LinkAddress(rawValue: defaults.string(forKey: Key.linkAddress) ?? "") ?? .hostName
+        customLinkAddress = defaults.string(forKey: Key.customLinkAddress) ?? ""
+        allowLocalProxy = defaults.bool(forKey: Key.allowLocalProxy)
         allowPin = defaults.bool(forKey: Key.allowPin)
         allowApproval = defaults.bool(forKey: Key.allowApproval)
         allowShell = defaults.bool(forKey: Key.allowShell)
@@ -106,6 +124,14 @@ final class Preferences {
         logLevel = LogLevel(rawValue: defaults.string(forKey: Key.logLevel) ?? "") ?? .info
         onboarded = defaults.bool(forKey: Key.onboarded)
         appFolders = Self.uniqueFolders(defaults.stringArray(forKey: Key.appFolders) ?? [])
+    }
+
+    var linkHost: LinkHost {
+        switch linkAddress {
+        case .hostName: .hostName
+        case .ipAddress: .ipAddress
+        case .custom: .custom(address: customLinkAddress)
+        }
     }
 
     static let maxAppFolders = 32

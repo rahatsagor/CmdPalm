@@ -26,6 +26,20 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - A damaged settings file is no longer renamed again on every launch.
 - One IPv6 device can no longer hold every approval request slot.
 
+### Other ways to connect
+
+For people who connect their devices in their own way. Nothing changes if
+you don't use these.
+
+- **Custom** in **Settings → Phone Setup** puts any address in the QR code:
+  one of the Mac's other addresses, such as a VPN's, a name from your own
+  DNS, or the `https://` address of a reverse proxy.
+- Names without dots, and names under `.home.arpa` and `.internal`, work as
+  well as `.local`.
+- **Accept connections through a proxy on this Mac**, under **Settings →
+  Advanced**, lets a reverse proxy on the Mac pass along which device is
+  connecting and whether the connection is encrypted. It is off by default.
+
 ## [0.1.1] - 2026-10-10
 
 A safer, smoother update to the first release. Voice typing now stays

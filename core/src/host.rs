@@ -11,7 +11,8 @@ use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, oneshot, watch};
 
 use crate::api::{
-    ApprovalRequest, ConnectedDevice, HostConfig, HostDelegate, HostError, HostEvent, PairingInfo, VoiceUpdate,
+    ApprovalRequest, ConnectedDevice, HostConfig, HostDelegate, HostError, HostEvent, LinkHost, PairingInfo,
+    VoiceUpdate,
 };
 use crate::auth::{self, Pairing, TrustStore, TrustedDevice};
 use crate::deck::Deck;
@@ -215,12 +216,17 @@ fn data_dir(config: &HostConfig) -> Option<PathBuf> {
     (!config.data_dir.is_empty()).then(|| PathBuf::from(&config.data_dir))
 }
 
-/// LAN addresses a phone can reach, Wi-Fi and Ethernet first.
-pub fn lan_addresses() -> Vec<IpAddr> {
+/// Interfaces that VPNs and mesh networks create on macOS: WireGuard and
+/// most VPN apps use `utun`, ZeroTier uses `feth`.
+const VPN_INTERFACES: [&str; 8] = ["utun", "ipsec", "ppp", "tun", "tap", "wg", "zt", "feth"];
+
+/// Addresses a phone might reach, Wi-Fi and Ethernet first, each marked
+/// with whether it belongs to a VPN.
+fn network_addresses() -> Vec<(IpAddr, bool)> {
     let Ok(interfaces) = if_addrs::get_if_addrs() else {
         return Vec::new();
     };
-    let mut found: Vec<(u8, IpAddr)> = interfaces
+    let mut found: Vec<(u8, IpAddr, bool)> = interfaces
         .into_iter()
         .filter(|iface| !iface.is_loopback())
         .filter_map(|iface| {
@@ -229,25 +235,72 @@ pub fn lan_addresses() -> Vec<IpAddr> {
                 return None;
             }
             let name = iface.name.as_str();
+            let vpn = VPN_INTERFACES.iter().any(|prefix| name.starts_with(prefix));
             let rank = if name.starts_with("en") {
                 0
-            } else if name.starts_with("bridge")
-                || name.starts_with("utun")
-                || name.starts_with("awdl")
-                || name.starts_with("llw")
-            {
+            } else if vpn || name.starts_with("bridge") || name.starts_with("awdl") || name.starts_with("llw") {
                 // VPNs, Internet Sharing and AirDrop interfaces are rarely what
                 // a phone on the same Wi-Fi can reach.
                 2
             } else {
                 1
             };
-            Some((rank, IpAddr::V4(v4)))
+            Some((rank, IpAddr::V4(v4), vpn))
         })
         .collect();
     found.sort();
-    found.dedup_by_key(|(_, ip)| *ip);
-    found.into_iter().map(|(_, ip)| ip).collect()
+    found.dedup_by_key(|(_, ip, _)| *ip);
+    found.into_iter().map(|(_, ip, vpn)| (ip, vpn)).collect()
+}
+
+/// LAN addresses a phone can reach, Wi-Fi and Ethernet first.
+pub fn lan_addresses() -> Vec<IpAddr> {
+    network_addresses().into_iter().map(|(ip, _)| ip).collect()
+}
+
+/// Plain and encrypted base URLs for an address typed by hand. A bare host
+/// gets CmdPalm's port; a URL is used as given, so a reverse proxy on the
+/// default HTTPS port works. `None` if it isn't usable.
+pub(crate) fn custom_link(address: &str, port: u16) -> Option<(String, String)> {
+    let address = address.trim();
+    let (scheme, authority) = match address.split_once("://") {
+        Some((scheme, rest)) => (Some(scheme.to_ascii_lowercase()), rest.trim_end_matches('/')),
+        None => (None, address.trim_end_matches('/')),
+    };
+    let (plain, authority) = match scheme.as_deref() {
+        Some("https") => ("https", authority.to_string()),
+        Some("http") => ("http", authority.to_string()),
+        Some(_) => return None,
+        None if authority.starts_with('[') => {
+            let (_, after) = authority.split_once(']')?;
+            ("http", if after.is_empty() { format!("{authority}:{port}") } else { authority.to_string() })
+        }
+        None if authority.matches(':').count() > 1 => ("http", format!("[{authority}]:{port}")),
+        None if authority.rsplit_once(':').is_some_and(|(_, p)| p.parse::<u16>().is_ok()) => {
+            ("http", authority.to_string())
+        }
+        None => ("http", format!("{authority}:{port}")),
+    };
+    let name = server::host_name(&authority);
+    let valid = match name.strip_prefix('[') {
+        Some(rest) => rest.strip_suffix(']').is_some_and(|ip| ip.parse::<std::net::Ipv6Addr>().is_ok()),
+        None => {
+            !name.is_empty()
+                && name
+                    .split('.')
+                    .all(|label| !label.is_empty() && label.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-'))
+        }
+    };
+    valid.then(|| (format!("{plain}://{authority}"), format!("https://{authority}")))
+}
+
+/// The host name of a custom pairing address, which the server accepts in
+/// addition to the names in [`server::local_host`].
+pub(crate) fn custom_host_name(config: &HostConfig) -> Option<String> {
+    let LinkHost::Custom { address } = &config.link_host else { return None };
+    let (base, _) = custom_link(address, config.port)?;
+    let (_, authority) = base.split_once("://")?;
+    Some(server::host_name(authority))
 }
 
 struct Running {
@@ -410,7 +463,7 @@ impl CoreHost {
                 let _ = tx.send(Outgoing::Message(ServerMessage::Features { features }));
             }
         }
-        if previous.link_uses_host_name != config.link_uses_host_name || previous.host_name != config.host_name {
+        if previous.link_host != config.link_host || previous.host_name != config.host_name {
             self.shared.emit(HostEvent::PairingChanged);
         }
     }
@@ -418,22 +471,34 @@ impl CoreHost {
     pub fn pairing_info(&self) -> PairingInfo {
         let config = self.shared.config();
         let port = self.shared.port.load(Ordering::Relaxed);
-        let addresses = lan_addresses();
+        let network = network_addresses();
+        let addresses: Vec<IpAddr> = network.iter().map(|(ip, _)| *ip).collect();
         let ip = addresses.first().map(IpAddr::to_string).unwrap_or_else(|| "127.0.0.1".into());
         let host = config.host_name.trim().trim_end_matches('.').to_string();
-        let link_host = if config.link_uses_host_name && !host.is_empty() { host } else { ip };
+        let custom = match &config.link_host {
+            LinkHost::Custom { address } => custom_link(address, port),
+            _ => None,
+        };
+        let (address, secure_address) = custom.unwrap_or_else(|| {
+            let link_host = match &config.link_host {
+                LinkHost::IpAddress => ip,
+                LinkHost::HostName | LinkHost::Custom { .. } if !host.is_empty() => host,
+                LinkHost::HostName | LinkHost::Custom { .. } => ip,
+            };
+            (format!("http://{link_host}:{port}"), format!("https://{link_host}:{port}"))
+        });
         let mut state = self.shared.state();
         let now = Instant::now();
         state.pairing.refresh(now);
-        let address = format!("http://{link_host}:{port}");
         let info = PairingInfo {
             link: format!("{address}/#pair={}", state.pairing.code()),
-            secure_address: format!("https://{link_host}:{port}"),
+            secure_address,
             address,
             pin: state.pairing.pin().to_string(),
             expires_in_secs: state.pairing.expires_in(now).as_secs() as u32,
             port,
             addresses: addresses.iter().map(IpAddr::to_string).collect(),
+            vpn_addresses: network.iter().filter(|(_, vpn)| *vpn).map(|(ip, _)| ip.to_string()).collect(),
             ca_fingerprint: String::new(),
         };
         drop(state);

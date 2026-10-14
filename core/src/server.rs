@@ -182,8 +182,12 @@ impl ConnectionSlot {
         let peer = auth::throttle_key(peer);
         let mut open = shared.connections.lock().unwrap_or_else(|p| p.into_inner());
         let total: usize = open.values().sum();
+        // A reverse proxy on this Mac connects from loopback on behalf of
+        // every phone that uses it.
+        let proxy = peer.is_loopback() && shared.config().allow_local_proxy;
+        let limit = if proxy { MAX_CONNECTIONS / 2 } else { MAX_CONNECTIONS_PER_ADDRESS };
         let mine = open.entry(peer).or_insert(0);
-        if total >= MAX_CONNECTIONS || *mine >= MAX_CONNECTIONS_PER_ADDRESS {
+        if total >= MAX_CONNECTIONS || *mine >= limit {
             if *mine == 0 {
                 open.remove(&peer);
             }
@@ -432,12 +436,14 @@ where
             let _ = write_response(&mut stream, &Response::text(405, "Method not allowed"), false, false).await;
             return;
         }
-        if !request.header("host").is_some_and(local_host) {
+        let client = client(&request, peer, secure, shared.config().allow_local_proxy);
+        let Some(host) = client.host.filter(|host| known_host(&shared, host)) else {
             let _ = write_response(&mut stream, &Response::text(421, "Unknown host name"), false, false).await;
             return;
-        }
+        };
+        let (address, secure) = (client.address, client.secure);
         if request.path == "/ws" {
-            match websocket_accept(&request) {
+            match websocket_accept(&request, host) {
                 Ok(accept) => {
                     let reply = format!(
                         "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: {accept}\r\n\r\n"
@@ -449,7 +455,7 @@ where
                         .max_message_size(Some(MAX_MESSAGE))
                         .max_frame_size(Some(MAX_MESSAGE));
                     let ws = WebSocketStream::from_raw_socket(stream, Role::Server, Some(config)).await;
-                    session::run(shared, ws, peer, secure, shutdown).await;
+                    session::run(shared, ws, address, secure, shutdown).await;
                 }
                 Err(response) => {
                     let _ = write_response(&mut stream, &response, false, false).await;
@@ -471,22 +477,84 @@ where
     }
 }
 
-/// Whether a `Host` header names this Mac the way a phone on the network
-/// would: an IP address, `localhost` or a Bonjour `.local` name. Anything
-/// else is a domain that could resolve to this Mac through DNS rebinding,
-/// which would make another website same-origin with the server.
+/// Private name suffixes that public DNS never answers for: Bonjour, home
+/// networks (RFC 8375) and ICANN's private-use `.internal`.
+const LOCAL_SUFFIXES: [&str; 3] = [".local", ".home.arpa", ".internal"];
+
+/// Whether a `Host` header names this Mac the way a device on the network
+/// would: an IP address, `localhost`, a single-label name from the local
+/// network's DNS, or a name under [`LOCAL_SUFFIXES`]. Anything else is
+/// a domain that could resolve to this Mac through DNS rebinding, which
+/// would make another website same-origin with the server.
 pub(crate) fn local_host(host: &str) -> bool {
-    let name = match host.strip_prefix('[') {
-        Some(rest) => return rest.split_once(']').is_some_and(|(ip, _)| ip.parse::<Ipv6Addr>().is_ok()),
-        None => host.rsplit_once(':').filter(|(_, port)| port.parse::<u16>().is_ok()).map_or(host, |(name, _)| name),
+    if let Some(rest) = host.strip_prefix('[') {
+        return rest.split_once(']').is_some_and(|(ip, _)| ip.parse::<Ipv6Addr>().is_ok());
+    }
+    let name = host_name(host);
+    if name.parse::<IpAddr>().is_ok() || name == "localhost" {
+        return true;
+    }
+    let well_formed = name.split('.').all(|label| {
+        !label.is_empty() && label.len() <= 63 && label.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+    });
+    if !well_formed {
+        return false;
+    }
+    // Public DNS has no dotless names, so only the local network's resolver
+    // can answer for one. Bare suffixes are not machine names.
+    if !name.contains('.') {
+        return !LOCAL_SUFFIXES.iter().any(|suffix| suffix[1..] == name);
+    }
+    LOCAL_SUFFIXES.iter().any(|suffix| name.ends_with(suffix) && name.len() > suffix.len())
+}
+
+/// The name in a `Host` header, lowercased, without its port or final dot.
+pub(crate) fn host_name(host: &str) -> String {
+    let name = host.rsplit_once(':').filter(|(_, port)| port.parse::<u16>().is_ok()).map_or(host, |(name, _)| name);
+    name.strip_suffix('.').unwrap_or(name).to_ascii_lowercase()
+}
+
+/// Whether the server answers requests for `host`: a local name, or the host
+/// of the custom pairing address the person set on the Mac.
+fn known_host(shared: &Shared, host: &str) -> bool {
+    local_host(host) || crate::host::custom_host_name(&shared.config()).is_some_and(|name| host_name(host) == name)
+}
+
+/// Who a request is really from. When the person allows it, a reverse proxy
+/// on this Mac (Caddy, nginx, a VPN's HTTPS proxy) connects over loopback and
+/// names the phone in `X-Forwarded-*` headers. Browsers can't add those
+/// headers to a WebSocket upgrade or a navigation, so a web page can't fake
+/// them, but other programs on the Mac could, hence the opt-in.
+#[derive(Debug, PartialEq)]
+pub(crate) struct Client<'a> {
+    pub address: IpAddr,
+    pub secure: bool,
+    /// The host name the phone used, for the `Host` and `Origin` checks.
+    pub host: Option<&'a str>,
+}
+
+pub(crate) fn client(request: &Request, peer: IpAddr, secure: bool, allow_proxy: bool) -> Client<'_> {
+    let host = request.header("host");
+    // The last entry is the one added by the proxy that connected to us.
+    let forwarded = (allow_proxy && peer.is_loopback())
+        .then(|| request.header("x-forwarded-for"))
+        .flatten()
+        .and_then(|list| list.rsplit(',').next())
+        .and_then(|ip| ip.trim().parse::<IpAddr>().ok());
+    let Some(address) = forwarded else {
+        return Client { address: peer, secure, host };
     };
-    let name = name.trim_end_matches('.').to_ascii_lowercase();
-    name.parse::<IpAddr>().is_ok() || name == "localhost" || (name.ends_with(".local") && name.len() > ".local".len())
+    let first = |value: &'static str| request.header(value).map(|v| v.split(',').next().unwrap_or(v).trim());
+    Client {
+        address: address.to_canonical(),
+        secure: secure || first("x-forwarded-proto").is_some_and(|proto| proto.eq_ignore_ascii_case("https")),
+        host: first("x-forwarded-host").filter(|h| !h.is_empty()).or(host),
+    }
 }
 
 /// Validate a WebSocket upgrade. Browsers always send `Origin`; requiring it
-/// to match `Host` stops other web pages from talking to the server.
-fn websocket_accept(request: &Request) -> Result<String, Response> {
+/// to match the host stops other web pages from talking to the server.
+fn websocket_accept(request: &Request, host: &str) -> Result<String, Response> {
     if !request.header_has_token("upgrade", "websocket") || !request.header_has_token("connection", "upgrade") {
         return Err(Response::text(426, "WebSocket upgrade required"));
     }
@@ -498,7 +566,6 @@ fn websocket_accept(request: &Request) -> Result<String, Response> {
     };
     if let Some(origin) = request.header("origin") {
         let origin_host = origin.split_once("://").map(|(_, rest)| rest).unwrap_or(origin);
-        let host = request.header("host").unwrap_or_default();
         if !origin_host.eq_ignore_ascii_case(host) {
             return Err(Response::text(403, "Cross-origin connections are not allowed"));
         }
@@ -681,8 +748,8 @@ mod tests {
     fn websocket_upgrades_require_same_origin() {
         let base = "GET /ws HTTP/1.1\r\nHost: mac.local:8790\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n";
         let ok = parse_head(format!("{base}Origin: http://mac.local:8790\r\n").as_bytes()).unwrap();
-        assert_eq!(websocket_accept(&ok).unwrap(), "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=");
+        assert_eq!(websocket_accept(&ok, "mac.local:8790").unwrap(), "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=");
         let evil = parse_head(format!("{base}Origin: https://evil.example\r\n").as_bytes()).unwrap();
-        assert_eq!(websocket_accept(&evil).unwrap_err().status, 403);
+        assert_eq!(websocket_accept(&evil, "mac.local:8790").unwrap_err().status, 403);
     }
 }

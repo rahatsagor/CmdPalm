@@ -47,11 +47,15 @@ Only the latest release receives fixes.
   for it and disconnects it immediately.
 - **Other websites** can't drive CmdPalm from a browser on your network: the
   server rejects WebSocket connections whose `Origin` doesn't match its own
-  address, and answers only requests addressed to an IP address, `localhost`
-  or a `.local` name, which blocks DNS rebinding.
+  address, and answers only requests addressed to names public DNS can't
+  serve, which blocks DNS rebinding: an IP address, `localhost`, a name
+  without dots, a name under `.local`, `.home.arpa` or `.internal`, or the
+  custom address you set on the Mac.
 - **Connection limits.** Each address (or IPv6 /64 network) can hold at most
   16 connections, and idle connections are closed and recycled, so another
-  device on the network can't use up the connections your phone needs.
+  device on the network can't use up the connections your phone needs. An
+  allowed proxy on the Mac may hold up to 64, since it connects for every
+  phone that uses it.
 
 ## Network
 
@@ -70,6 +74,16 @@ port speaks both HTTP and HTTPS.
   it could not be used to impersonate public websites. Install it on your
   phone from **Settings → Phone Setup → Encrypted Connection**, and compare
   the SHA-256 fingerprint shown there if you want to be sure.
+- **A reverse proxy on the Mac** is ignored unless you turn on **Accept
+  connections through a proxy on this Mac** in **Settings → Advanced**. With
+  it on, CmdPalm believes the `X-Forwarded-For`, `X-Forwarded-Proto` and
+  `X-Forwarded-Host` headers on connections from the Mac itself, so each
+  phone behind the proxy keeps its own address and lockouts. Devices on the
+  network can't use these headers, and browsers can't add them to the
+  requests CmdPalm answers, but another program on the Mac could claim a
+  different address for itself. It still needs the code, the PIN or your
+  approval, within the same limits. If your proxy makes CmdPalm reachable
+  from the internet, turn off **Allow devices to ask to pair**.
 
 There are no accounts, no analytics and no cloud relay. CmdPalm contacts
 GitHub to check for updates, and nothing else. Voice typing is transcribed on

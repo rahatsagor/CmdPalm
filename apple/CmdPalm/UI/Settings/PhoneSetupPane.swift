@@ -40,17 +40,24 @@ struct PhoneSetupPane: View {
             Section("Network") {
                 Picker(selection: $preferences.linkAddress) {
                     ForEach(Preferences.LinkAddress.allCases) { option in
-                        Text(option.label(hostName: SystemInfo.bonjourHostName, addresses: host.pairing?.addresses ?? []))
-                            .tag(option)
+                        Text(option.label(
+                            hostName: SystemInfo.bonjourHostName,
+                            addresses: host.pairing?.addresses ?? [],
+                            custom: preferences.customLinkAddress
+                        ))
+                        .tag(option)
                     }
                 } label: {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Address in the QR code")
-                        Text("Mac Name keeps working when the IP address changes. Some Android phones can’t open .local names; choose IP Address for them.")
+                        Text("Mac Name keeps working when the IP address changes. Some Android phones can’t open .local names; choose IP Address for them. Custom is for a VPN or a proxy you set up yourself.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
+                }
+                if preferences.linkAddress == .custom {
+                    CustomAddressField()
                 }
                 PortField()
             }
@@ -129,6 +136,67 @@ private struct PortField: View {
     private func apply() {
         guard let port = parsed else { return }
         preferences.port = port
+        focused = false
+    }
+}
+
+private struct CustomAddressField: View {
+    @Environment(HostController.self) private var host
+    @Environment(Preferences.self) private var preferences
+    @State private var text = ""
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        LabeledContent {
+            HStack(spacing: 8) {
+                TextField("Custom address", text: $text, prompt: Text(verbatim: "mac.example.com"))
+                    .labelsHidden()
+                    .frame(minWidth: 180)
+                    .autocorrectionDisabled()
+                    .focused($focused)
+                    .onSubmit(apply)
+                if let addresses = host.pairing?.addresses, !addresses.isEmpty {
+                    Menu {
+                        ForEach(addresses, id: \.self) { address in
+                            Button(menuTitle(address)) {
+                                text = address
+                                apply()
+                            }
+                        }
+                    } label: {
+                        Image(systemName: "network")
+                    }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
+                    .help("Use one of this Mac’s addresses")
+                    .accessibilityLabel("Use one of this Mac’s addresses")
+                }
+                if trimmed != preferences.customLinkAddress {
+                    Button("Apply", action: apply)
+                }
+            }
+        } label: {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Custom address")
+                Text("Another of this Mac’s addresses, such as a VPN’s, a name for this Mac from your own DNS, or the https address of a proxy you set up. Without a port, CmdPalm’s port is added. CmdPalm also accepts connections that use this name.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .onAppear { text = preferences.customLinkAddress }
+    }
+
+    private var trimmed: String {
+        text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func menuTitle(_ address: String) -> String {
+        host.pairing?.vpnAddresses.contains(address) == true ? "\(address) (VPN)" : address
+    }
+
+    private func apply() {
+        preferences.customLinkAddress = trimmed
         focused = false
     }
 }

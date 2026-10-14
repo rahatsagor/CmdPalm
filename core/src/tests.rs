@@ -10,7 +10,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio_tungstenite::tungstenite::Message;
 
-use crate::api::{HostConfig, HostDelegate, HostEvent, NativeCommand};
+use crate::api::{HostConfig, HostDelegate, HostEvent, LinkHost, NativeCommand};
 use crate::host::{CoreHost, Shared};
 use crate::input::{InputEngine, SharedRecorder, Synth};
 use crate::keycodes::{KEY_COMMAND, KEY_Q, flags};
@@ -75,6 +75,7 @@ impl HostDelegate for MockDelegate {
 
 struct Fixture {
     host: CoreHost,
+    config: HostConfig,
     delegate: Arc<MockDelegate>,
     recorder: SharedRecorder,
     port: u16,
@@ -95,7 +96,8 @@ fn fixture() -> Fixture {
         host_name: "Test.local".into(),
         computer_name: "Test Mac".into(),
         app_version: "1.0.0".into(),
-        link_uses_host_name: true,
+        link_host: LinkHost::HostName,
+        allow_local_proxy: false,
         allow_pin: true,
         allow_approval: true,
         allow_shell: false,
@@ -105,11 +107,11 @@ fn fixture() -> Fixture {
     let sink = recorder.clone();
     let engine = InputEngine::spawn(move || sink, Box::new(|_| {}));
     let delegate = Arc::new(MockDelegate::default());
-    let shared = Arc::new(Shared::new(config, delegate.clone(), &engine, Box::new(|| true)));
+    let shared = Arc::new(Shared::new(config.clone(), delegate.clone(), &engine, Box::new(|| true)));
     let host = CoreHost::with_shared(shared, Some(engine));
     let port = host.start().unwrap();
     let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
-    Fixture { host, delegate, recorder, port, _dir: dir, rt }
+    Fixture { host, config, delegate, recorder, port, _dir: dir, rt }
 }
 
 type Client = tokio_tungstenite::WebSocketStream<TcpStream>;
@@ -369,14 +371,160 @@ fn disconnect_and_restart_tell_the_phone_whether_to_come_back() {
 #[test]
 fn only_local_host_names_are_served() {
     use crate::server::local_host;
-    for ok in ["192.168.1.5:8790", "127.0.0.1", "[::1]:8790", "localhost:8790", "Studio.local:8790", "studio.local."] {
+    for ok in [
+        "192.168.1.5:8790",
+        "127.0.0.1",
+        "[::1]:8790",
+        "[fd7a:115c:a1e0::1]:8790",
+        "localhost:8790",
+        "Studio.local:8790",
+        "studio.local.",
+        "studio:8790",
+        "studio.home.arpa",
+        "studio.internal:8790",
+    ] {
         assert!(local_host(ok), "{ok}");
     }
-    for bad in
-        ["evil.example:8790", "local", ".local", "studio.local.evil.example", "[evil]:80", "localhost.evil.example"]
-    {
+    for bad in [
+        "evil.example:8790",
+        "local",
+        ".local",
+        "studio.local.evil.example",
+        "[evil]:80",
+        "localhost.evil.example",
+        "studio.ts.net",
+        "studio.local.evil.example:8790",
+        "home.arpa",
+        "internal",
+        "studio..local",
+        "stu_dio",
+        "",
+    ] {
         assert!(!local_host(bad), "{bad}");
     }
+}
+
+#[test]
+fn trusts_forwarded_headers_only_from_an_allowed_proxy_on_this_mac() {
+    use crate::server::{client, parse_head};
+    let head = b"GET /ws HTTP/1.1\r\nHost: mac.example.com\r\nX-Forwarded-For: 10.0.0.9, 10.8.0.3\r\nX-Forwarded-Proto: https\r\nX-Forwarded-Host: mac.example.com\r\n";
+    let request = parse_head(head).unwrap();
+    let loopback: std::net::IpAddr = "127.0.0.1".parse().unwrap();
+    let phone: std::net::IpAddr = "10.8.0.3".parse().unwrap();
+    let proxied = client(&request, loopback, false, true);
+    assert_eq!(proxied.address, phone, "the proxy's own entry is the last one");
+    assert!(proxied.secure);
+    assert_eq!(proxied.host, Some("mac.example.com"));
+
+    let off = client(&request, loopback, false, false);
+    assert_eq!(off.address, loopback, "forwarded headers are ignored unless allowed");
+    assert!(!off.secure);
+
+    let lan: std::net::IpAddr = "192.168.1.20".parse().unwrap();
+    let direct = client(&request, lan, false, true);
+    assert_eq!(direct.address, lan, "a device on the network can't claim another address");
+    assert!(!direct.secure);
+
+    let plain = parse_head(b"GET / HTTP/1.1\r\nHost: 127.0.0.1:8790\r\n").unwrap();
+    assert_eq!(client(&plain, "::1".parse().unwrap(), true, true).address, "::1".parse::<std::net::IpAddr>().unwrap());
+}
+
+#[test]
+fn works_behind_a_reverse_proxy_when_allowed() {
+    let f = fixture();
+    let mut config = f.config.clone();
+    config.link_host = LinkHost::Custom { address: "https://mac.example.com".into() };
+    f.host.update_config(config.clone());
+    let code = f.host.pairing_info().link.split("#pair=").nth(1).unwrap().to_string();
+    let port = f.port;
+    let get = |extra: &'static str| async move {
+        let mut tcp = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+        let head = format!("GET /api/info HTTP/1.1\r\n{extra}Connection: close\r\n\r\n");
+        tcp.write_all(head.as_bytes()).await.unwrap();
+        let mut out = Vec::new();
+        tcp.read_to_end(&mut out).await.unwrap();
+        String::from_utf8_lossy(&out).into_owned()
+    };
+    let proxied = "Host: mac.example.com\r\nX-Forwarded-For: 10.8.0.3\r\nX-Forwarded-Proto: https\r\n";
+    f.rt.block_on(async {
+        let info = get(proxied).await;
+        assert!(info.contains("\"secure\":false"), "not believed until allowed: {info}");
+    });
+    config.allow_local_proxy = true;
+    f.host.update_config(config);
+    f.rt.block_on(async {
+        let info = get(proxied).await;
+        assert!(info.starts_with("HTTP/1.1 200") && info.contains("\"secure\":true"), "{info}");
+        let rewritten =
+            get("Host: 127.0.0.1:8790\r\nX-Forwarded-For: 10.8.0.3\r\nX-Forwarded-Host: evil.example\r\n").await;
+        assert!(rewritten.starts_with("HTTP/1.1 421"), "forwarded names are checked too: {rewritten}");
+
+        let tcp = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+        let request = tokio_tungstenite::tungstenite::http::Request::builder()
+            .uri(format!("ws://127.0.0.1:{port}/ws"))
+            .header("Host", "mac.example.com")
+            .header("Origin", "https://mac.example.com")
+            .header("X-Forwarded-For", "fd00:8::42")
+            .header("X-Forwarded-Proto", "https")
+            .header("Connection", "Upgrade")
+            .header("Upgrade", "websocket")
+            .header("Sec-WebSocket-Version", "13")
+            .header("Sec-WebSocket-Key", tokio_tungstenite::tungstenite::handshake::client::generate_key())
+            .body(())
+            .unwrap();
+        let (mut ws, _) = tokio_tungstenite::client_async(request, tcp).await.unwrap();
+        send(&mut ws, hello("phone", json!({"method": "pair", "code": code}))).await;
+        let welcome = recv(&mut ws).await;
+        assert_eq!(welcome["t"], "welcome");
+        assert_eq!(welcome["features"]["secure"], true, "HTTPS ended at the proxy still counts");
+    });
+    let device = &f.host.connected_devices()[0];
+    assert_eq!(device.address, "fd00:8::42");
+    assert!(device.secure);
+}
+
+#[test]
+fn custom_pairing_addresses() {
+    use crate::host::custom_link;
+    let pair = |a: &str, b: &str| Some((a.to_string(), b.to_string()));
+    assert_eq!(
+        custom_link("https://Mac.example.com/", 8790),
+        pair("https://Mac.example.com", "https://Mac.example.com"),
+        "a URL keeps its own port, so a proxy on 443 works"
+    );
+    assert_eq!(custom_link(" studio.lan ", 8790), pair("http://studio.lan:8790", "https://studio.lan:8790"));
+    assert_eq!(custom_link("studio.lan:9000", 8790), pair("http://studio.lan:9000", "https://studio.lan:9000"));
+    assert_eq!(custom_link("http://10.0.0.2:8790", 1), pair("http://10.0.0.2:8790", "https://10.0.0.2:8790"));
+    assert_eq!(
+        custom_link("fd7a:115c:a1e0::1", 8790),
+        pair("http://[fd7a:115c:a1e0::1]:8790", "https://[fd7a:115c:a1e0::1]:8790")
+    );
+    assert_eq!(custom_link("[::1]", 8790), pair("http://[::1]:8790", "https://[::1]:8790"));
+    for bad in ["", "   ", "ftp://studio", "studio/path", "user@studio", "https://", "studio?x"] {
+        assert_eq!(custom_link(bad, 8790), None, "{bad:?}");
+    }
+
+    let f = fixture();
+    let mut config = f.config.clone();
+    config.link_host = LinkHost::Custom { address: "https://cmdpalm.example.com".into() };
+    f.host.update_config(config);
+    let info = f.host.pairing_info();
+    assert!(info.link.starts_with("https://cmdpalm.example.com/#pair="), "{}", info.link);
+    assert_eq!(info.address, "https://cmdpalm.example.com");
+    f.rt.block_on(async {
+        let mut tcp = TcpStream::connect(("127.0.0.1", f.port)).await.unwrap();
+        tcp.write_all(b"GET /api/info HTTP/1.1\r\nHost: CMDPALM.example.com\r\nConnection: close\r\n\r\n")
+            .await
+            .unwrap();
+        let mut out = Vec::new();
+        tcp.read_to_end(&mut out).await.unwrap();
+        assert!(out.starts_with(b"HTTP/1.1 200"), "the custom name is served: {}", String::from_utf8_lossy(&out));
+    });
+
+    let mut config = f.config.clone();
+    config.link_host = LinkHost::Custom { address: "not a url/".into() };
+    f.host.update_config(config);
+    assert!(f.host.pairing_info().address.starts_with("http://Test.local:"), "an unusable address falls back");
 }
 
 #[test]

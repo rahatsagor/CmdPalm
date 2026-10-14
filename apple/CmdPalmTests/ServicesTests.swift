@@ -123,6 +123,24 @@ import Testing
         #expect(Preferences.LinkAddress.hostName.host(hostName: "  ", addresses: addresses) == nil)
         #expect(Preferences.LinkAddress.ipAddress.host(hostName: "Studio.local", addresses: addresses) == "192.168.1.5")
         #expect(Preferences.LinkAddress.ipAddress.host(hostName: "Studio.local", addresses: []) == nil)
+        #expect(Preferences.LinkAddress.custom.host(hostName: "Studio.local", addresses: addresses, custom: " https://mac.example.com ") == "https://mac.example.com")
+        #expect(Preferences.LinkAddress.custom.host(hostName: "Studio.local", addresses: addresses, custom: "  ") == nil)
+    }
+
+    @Test func customAddressReachesTheCore() throws {
+        let suite = "app.cmdpalm.tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let preferences = Preferences(defaults: defaults)
+        preferences.linkAddress = .custom
+        preferences.customLinkAddress = "https://mac.example.com"
+        #expect(preferences.linkHost == .custom(address: "https://mac.example.com"))
+        #expect(!preferences.allowLocalProxy, "proxies are trusted only when turned on")
+        preferences.allowLocalProxy = true
+        let reloaded = Preferences(defaults: defaults)
+        #expect(reloaded.linkAddress == .custom)
+        #expect(reloaded.customLinkAddress == "https://mac.example.com")
+        #expect(reloaded.allowLocalProxy)
     }
 
     @Test func labelsIncludeTheHostWhenKnown() {

@@ -15,15 +15,31 @@ pub struct HostConfig {
     /// The Mac's display name shown on the phone.
     pub computer_name: String,
     pub app_version: String,
-    /// Address used in the pairing link: the Bonjour name (survives IP
-    /// changes) or the current IP address (works on networks without mDNS).
-    pub link_uses_host_name: bool,
+    /// Address used in the pairing link.
+    pub link_host: LinkHost,
+    /// Believe `X-Forwarded-*` headers on connections from this Mac, for a
+    /// reverse proxy in front of CmdPalm. Off by default.
+    pub allow_local_proxy: bool,
     pub allow_pin: bool,
     pub allow_approval: bool,
     /// Lets deck buttons run shell commands. Off by default.
     pub allow_shell: bool,
     /// Whether the Mac can transcribe speech streamed from the phone.
     pub voice_available: bool,
+}
+
+/// Which address the pairing link and QR code use.
+#[derive(Debug, Clone, PartialEq, uniffi::Enum)]
+pub enum LinkHost {
+    /// The Bonjour name, which survives IP changes.
+    HostName,
+    /// The current LAN IP address, for networks without mDNS.
+    IpAddress,
+    /// An address chosen by the person: another of the Mac's addresses (a
+    /// VPN's, say), a name from their own DNS, or a URL such as
+    /// `https://mac.example.com` for a reverse proxy. Its host name is also
+    /// accepted by the server.
+    Custom { address: String },
 }
 
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
@@ -38,6 +54,8 @@ pub struct PairingInfo {
     pub expires_in_secs: u32,
     pub port: u16,
     pub addresses: Vec<String>,
+    /// The subset of `addresses` on VPN interfaces.
+    pub vpn_addresses: Vec<String>,
     pub ca_fingerprint: String,
 }
 

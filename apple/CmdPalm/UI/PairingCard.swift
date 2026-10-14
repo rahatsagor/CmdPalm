@@ -21,7 +21,7 @@ struct PairingCard: View {
                         .padding(.vertical, 8)
                 }
                 .cardBackground()
-                LinkAddressPicker(addresses: pairing.addresses)
+                LinkAddressPicker(pairing: pairing)
             } else {
                 ServerStatusPlaceholder()
                     .frame(height: qrSize)
@@ -201,7 +201,7 @@ struct AddressRow: View {
 
 struct LinkAddressPicker: View {
     @Environment(Preferences.self) private var preferences
-    let addresses: [String]
+    let pairing: PairingInfo
 
     var body: some View {
         @Bindable var preferences = preferences
@@ -235,7 +235,7 @@ struct LinkAddressPicker: View {
 
     private func picker(_ selection: Binding<Preferences.LinkAddress>) -> some View {
         Picker("Address in the QR code", selection: selection) {
-            ForEach(Preferences.LinkAddress.allCases) { option in
+            ForEach(options) { option in
                 Text(option.title).tag(option)
             }
         }
@@ -243,9 +243,14 @@ struct LinkAddressPicker: View {
         .labelsHidden()
         .controlSize(.small)
         .fixedSize()
-        .help(Preferences.LinkAddress.allCases
-            .map { $0.label(hostName: SystemInfo.bonjourHostName, addresses: addresses) }
+        .help(options
+            .map { pairing.label(for: $0, preferences: preferences) }
             .joined(separator: "\n"))
+    }
+
+    /// Custom is set up in Settings, so the menu only offers it once chosen.
+    private var options: [Preferences.LinkAddress] {
+        Preferences.LinkAddress.allCases.filter { $0 != .custom || preferences.linkAddress == .custom }
     }
 
     private var hint: String {
@@ -254,7 +259,39 @@ struct LinkAddressPicker: View {
             "Some Android phones can’t open .local names. If scanning doesn’t open CmdPalm, choose IP Address."
         case .ipAddress:
             "The IP address can change when this Mac rejoins the network. Mac Name keeps working."
+        case .custom:
+            "Change the custom address in Settings → Phone Setup."
         }
+    }
+}
+
+extension PairingInfo {
+    @MainActor func label(for option: Preferences.LinkAddress, preferences: Preferences) -> String {
+        option.label(
+            hostName: SystemInfo.bonjourHostName,
+            addresses: addresses,
+            custom: preferences.customLinkAddress
+        )
+    }
+}
+
+/// Without a network, a QR code would point the phone at itself.
+private struct NoNetworkPlaceholder: View {
+    var body: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "wifi.slash")
+                .symbolRenderingMode(.hierarchical)
+                .font(.title)
+                .foregroundStyle(.secondary)
+            Text("Not connected to a network")
+                .font(.headline)
+            Text("Connect this Mac to Wi-Fi or Ethernet, and the QR code appears here.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity)
     }
 }
 

@@ -18,13 +18,18 @@ struct AdvancedPane: View {
                 }
                 if let pairing = host.pairing, host.isRunning, !pairing.addresses.isEmpty {
                     LabeledContent(pairing.addresses.count == 1 ? "IP address" : "IP addresses") {
-                        Text(pairing.addresses.joined(separator: "\n"))
+                        Text(pairing.addresses.map { pairing.vpnAddresses.contains($0) ? "\($0) (VPN)" : $0 }.joined(separator: "\n"))
                             .font(.body.monospaced())
                             .multilineTextAlignment(.trailing)
                             .textSelection(.enabled)
                             .foregroundStyle(.secondary)
                     }
                 }
+                DescribedToggle(
+                    "Accept connections through a proxy on this Mac",
+                    detail: "Only for a reverse proxy you run on this Mac, such as Caddy, nginx or a VPN’s HTTPS sharing. CmdPalm then believes the proxy about which device is connecting and whether the connection is encrypted. Leave this off otherwise.",
+                    isOn: $preferences.allowLocalProxy
+                )
                 LabeledContent {
                     Button("Restart Server") { host.restart() }
                 } label: {

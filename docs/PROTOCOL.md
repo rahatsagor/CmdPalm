@@ -14,15 +14,26 @@ at the first byte of each connection to tell them apart.
 | Path | Purpose |
 | --- | --- |
 | `/` and other paths | The phone app (static files). |
-| `/ws` | The WebSocket. The `Origin` header, when present, must match `Host`. |
+| `/ws` | The WebSocket. The `Origin` header, when present, must match `Host` (see below for proxies). |
 | `/api/info` | `{"name", "version", "protocol", "secure"}`. No authentication. |
 | `/api/icon?id=<bundle id>&size=<px>&k=<session key>` | App icon as PNG, 64 to 512 px. Needs the `sessionKey` from `welcome`. |
 | `/cmdpalm.crt` | The Mac's certificate authority (DER), for installing on the phone. |
 
 Only `GET` and `HEAD` are accepted. The `Host` header must be present and be
-an IP address, `localhost` or a `.local` name; anything else gets `421`, so a
-website can't reach the server through DNS rebinding. Messages are limited to
-1 MiB.
+an IP address, `localhost`, a single-label name, a name under `.local`,
+`.home.arpa` or `.internal`, or the host of the custom pairing address set on
+the Mac. Anything else gets `421`,
+so a website can't reach the server through DNS rebinding. Messages are
+limited to 1 MiB.
+
+When **Accept connections through a proxy on this Mac** is on, a reverse
+proxy on the Mac itself may connect over loopback. For loopback connections
+with `X-Forwarded-For`, the server
+takes the client address from its last entry, treats `X-Forwarded-Proto:
+https` as encrypted, and checks `X-Forwarded-Host` (or `Host`) in place of
+`Host`, including for the WebSocket `Origin` check. The forwarded headers are
+ignored otherwise, and always on connections from other machines. The app must
+be served from `/`.
 
 Text frames carry JSON objects with a `t` field naming the message type.
 Field names are camelCase. Pointer data uses binary frames.
