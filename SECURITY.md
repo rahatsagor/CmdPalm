@@ -29,14 +29,17 @@ Only the latest release receives fixes.
   aren't pairing. After 5 wrong PINs an address is locked out, starting at
   30 seconds and doubling up to 15 minutes. IPv6 addresses are counted per
   /64 network, so one device can't dodge the lockout by switching addresses.
-  After 20 wrong PINs within a minute, from any mix of addresses, pairing by
-  PIN or approval pauses for everyone until the minute has passed. The QR
-  code is too long to guess, so it keeps working during a lockout.
-- **Approval requests.** Each address can wait on one request at a time.
-  After 3 requests in a row are declined or left unanswered, that address
-  has to wait before asking again, from 30 seconds up to 15 minutes. Device
-  names and models are shown without invisible formatting characters, so a
-  request can't disguise itself, and pressing Return never approves one.
+  Wrong PINs are forgotten after an hour without any, so occasional typos
+  don't add up to longer lockouts. After 20 wrong PINs within a minute, from
+  any mix of addresses, pairing by PIN or approval pauses for everyone until
+  the minute has passed. The QR code is too long to guess, so it keeps
+  working during a lockout.
+- **Approval requests.** Each address (or IPv6 /64 network) can wait on one
+  request at a time. After 3 requests in a row are declined or left
+  unanswered, that address has to wait before asking again, from 30 seconds
+  up to 15 minutes. Device names and models are shown without invisible
+  formatting characters, so a request can't disguise itself, and pressing
+  Return never approves one.
 - **Remembered devices** receive a random token. The Mac stores only a SHA-256
   hash of it, together with the device ID, in
   `~/Library/Application Support/CmdPalm`. Removing a device in

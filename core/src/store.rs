@@ -20,8 +20,10 @@ pub fn load<T: DeserializeOwned>(path: &Path) -> Option<T> {
     match serde_json::from_slice(&bytes) {
         Ok(value) => Some(value),
         Err(err) => {
-            // Keep the unreadable file for inspection instead of overwriting it.
-            let backup = path.with_extension("corrupt.json");
+            // Keep the unreadable file for inspection instead of overwriting
+            // it. The name must not end in `.json`, or loaders that read a
+            // whole folder would load and rename it again on every launch.
+            let backup = path.with_extension("json.corrupt");
             // serde's message can quote file contents, such as a deck snippet.
             let kind = format!("{:?}", err.classify());
             tracing::error!(path = %path.display(), kind, line = err.line(), column = err.column(), "ignoring corrupt file");
@@ -99,7 +101,9 @@ mod tests {
 
         fs::write(&path, b"{not json").unwrap();
         assert_eq!(load::<Vec<i32>>(&path), None);
-        assert!(path.with_extension("corrupt.json").exists());
+        let backup = dir.path().join("nested/value.json.corrupt");
+        assert!(backup.exists());
         assert!(!path.exists());
+        assert_eq!(backup.extension().unwrap(), "corrupt", "folder loaders skip the backup");
     }
 }

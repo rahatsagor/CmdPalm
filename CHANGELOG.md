@@ -18,6 +18,13 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - Starting and stopping voice typing quickly, or disconnecting while it
   started, could leave speech recognition running on the Mac. Stopping
   CmdPalm now stops it too.
+- Occasional wrong PINs are forgotten after an hour, so they no longer add
+  up to ever longer lockouts.
+- A device removed on the Mac can no longer bring its settings back by
+  saving them just as it is removed. Devices that aren't remembered can't
+  see other devices' settings.
+- A damaged settings file is no longer renamed again on every launch.
+- One IPv6 device can no longer hold every approval request slot.
 
 ## [0.1.1] - 2026-10-10
 

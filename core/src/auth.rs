@@ -27,6 +27,8 @@ const MAX_LOCKOUT: Duration = Duration::from_secs(15 * 60);
 const GLOBAL_WINDOW: Duration = Duration::from_secs(60);
 const GLOBAL_MAX_FAILURES: usize = 20;
 const MAX_DECLINES_PER_ADDRESS: u32 = 3;
+/// How long failures from an address count toward its next lockout.
+const FAILURE_MEMORY: Duration = Duration::from_secs(60 * 60);
 /// How long the PIN still works after the Mac stops showing it.
 const PIN_GRACE: Duration = Duration::from_secs(3 * 60);
 const MAX_DEVICES: usize = 64;
@@ -111,6 +113,10 @@ impl TrustStore {
                 tracing::error!(%err, "could not save trusted devices");
             }
         }
+    }
+
+    pub fn contains(&self, id: &str) -> bool {
+        self.devices.iter().any(|d| d.device.id == id)
     }
 
     pub fn devices(&self) -> Vec<TrustedDevice> {
@@ -230,11 +236,19 @@ struct Failures {
     count: u32,
     lockouts: u32,
     locked_until: Option<Instant>,
+    last: Option<Instant>,
 }
 
 impl Failures {
     /// Count one failure; returns the lockout when this one triggers it.
+    /// After a quiet hour the count starts over, so occasional typos days
+    /// apart don't add up to ever longer lockouts.
     fn add(&mut self, limit: u32, now: Instant) -> Option<Duration> {
+        let quiet = self.last.is_some_and(|last| now.duration_since(last) >= FAILURE_MEMORY);
+        if quiet && self.locked(now).is_none() {
+            *self = Self::default();
+        }
+        self.last = Some(now);
         self.count += 1;
         if self.count < limit {
             return None;
@@ -521,6 +535,34 @@ mod tests {
         let elsewhere: IpAddr = "2001:db8:1:3::1".parse().unwrap();
         let pin = pairing.pin().to_string();
         assert_eq!(pairing.check_pin(&pin, elsewhere, now), Verdict::Accepted);
+    }
+
+    #[test]
+    fn old_failures_are_forgotten() {
+        let start = Instant::now();
+        let mut failures = Failures::default();
+        // A typo now and then never adds up to a lockout.
+        for day in 0..10u64 {
+            let at = start + Duration::from_secs(day * 24 * 60 * 60);
+            assert_eq!(failures.add(MAX_FAILURES_PER_ADDRESS, at), None);
+        }
+        // A lockout escalates while guesses keep coming, then resets once quiet.
+        let mut now = start + Duration::from_secs(30 * 24 * 60 * 60);
+        let mut lockouts = Vec::new();
+        for _ in 0..2 {
+            for _ in 0..MAX_FAILURES_PER_ADDRESS {
+                if let Some(lockout) = failures.add(MAX_FAILURES_PER_ADDRESS, now) {
+                    lockouts.push(lockout);
+                    now += lockout;
+                }
+            }
+        }
+        assert_eq!(lockouts, [FIRST_LOCKOUT, FIRST_LOCKOUT * 2]);
+        now += FAILURE_MEMORY;
+        for _ in 0..MAX_FAILURES_PER_ADDRESS - 1 {
+            assert_eq!(failures.add(MAX_FAILURES_PER_ADDRESS, now), None);
+        }
+        assert_eq!(failures.add(MAX_FAILURES_PER_ADDRESS, now), Some(FIRST_LOCKOUT));
     }
 
     #[test]

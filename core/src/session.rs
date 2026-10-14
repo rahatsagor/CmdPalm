@@ -355,10 +355,12 @@ where
                 if let Some(wait) = state.pairing.approval_locked(peer, now) {
                     return Err(Some(Refusal(DenyReason::Blocked, Some(wait))));
                 }
-                let peer_text = peer.to_string();
-                if state.approvals.len() >= MAX_PENDING_APPROVALS
-                    || state.approvals.values().any(|p| p.request.address == peer_text)
-                {
+                // Counted like lockouts, so one IPv6 host can't fill every slot.
+                let key = auth::throttle_key(peer);
+                let waiting = |p: &PendingApproval| {
+                    p.request.address.parse::<IpAddr>().is_ok_and(|address| auth::throttle_key(address) == key)
+                };
+                if state.approvals.len() >= MAX_PENDING_APPROVALS || state.approvals.values().any(waiting) {
                     return Err(Some(Refusal(DenyReason::Busy, None)));
                 }
                 state.approvals.insert(id, PendingApproval { request: request.clone(), reply });
@@ -620,14 +622,26 @@ impl Connection {
                 let device = self.device_id.clone();
                 self.blocking(move |shared| {
                     let saved = SavedSettings { settings, updated_at };
-                    shared
-                        .device_settings()
-                        .set(&device, saved)
-                        .err()
-                        .map(|e| notice(NoticeLevel::Error, "settings", &e.to_string()))
+                    let mut store = shared.device_settings();
+                    // The device may have been removed on the Mac since it sent
+                    // these; saving them would bring its settings back.
+                    if !shared.state().trust.contains(&device) {
+                        return None;
+                    }
+                    store.set(&device, saved).err().map(|e| notice(NoticeLevel::Error, "settings", &e.to_string()))
                 });
                 None
             }
+            // Only remembered devices keep settings on the Mac, so only they
+            // may see and copy other devices' settings.
+            ClientMessage::SettingsList if !self.remembered => {
+                Some(ServerMessage::SettingsList { devices: Vec::new() })
+            }
+            ClientMessage::SettingsCopy { .. } if !self.remembered => Some(notice(
+                NoticeLevel::Warning,
+                "settings",
+                "Pair with “Remember this device” turned on to copy settings from another device.",
+            )),
             ClientMessage::SettingsList => {
                 let devices = self.shared.state().trust.devices();
                 let store = self.shared.device_settings();
