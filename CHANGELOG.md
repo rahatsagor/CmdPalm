@@ -9,6 +9,12 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-14
+
+A more dependable update. Typing, pasting and voice typing behave better,
+pairing copes with slow networks, and the QR code can now use any address
+for people who connect through a VPN or their own setup.
+
 ### Fixes
 
 - Pasting while the Mac was still typing earlier text could paste your
@@ -174,6 +180,7 @@ The first release.
   device, so they survive a cleared browser, and you can copy them from
   another device.
 
-[Unreleased]: https://github.com/rahatsagor/CmdPalm/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/rahatsagor/CmdPalm/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/rahatsagor/CmdPalm/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/rahatsagor/CmdPalm/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/rahatsagor/CmdPalm/releases/tag/v0.1.0
