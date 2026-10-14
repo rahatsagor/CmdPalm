@@ -18,6 +18,10 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - Starting and stopping voice typing quickly, or disconnecting while it
   started, could leave speech recognition running on the Mac. Stopping
   CmdPalm now stops it too.
+- Pairing with the QR code on a slow network tries again instead of quietly
+  falling back to the PIN screen, and says what to do if it can't connect.
+- The phone no longer waits forever for approval after the Mac goes to sleep
+  or drops off the network.
 - Occasional wrong PINs are forgotten after an hour, so they no longer add
   up to ever longer lockouts.
 - A device removed on the Mac can no longer bring its settings back by

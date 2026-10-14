@@ -42,6 +42,8 @@ const HEARTBEAT_MS = 2000
 const DEAD_AFTER_MS = 6000
 const OPEN_TIMEOUT_MS = 5000
 const BACKOFF_MS = [250, 500, 1000, 2000, 3500, 5000]
+const PAIR_ATTEMPTS = 3
+const PAIR_RETRY_MS = 1000
 const MAX_BUFFERED = 64 * 1024
 
 export const state = reactive({
@@ -73,6 +75,8 @@ export function onMessage(listener: Listener): () => void {
 
 let ws: WebSocket | null = null
 let pendingAuth: AuthRequest | null = null
+let answered = false
+let pairTries = 0
 let heartbeat: ReturnType<typeof setInterval> | undefined
 let retryTimer: ReturnType<typeof setTimeout> | undefined
 let openTimer: ReturnType<typeof setTimeout> | undefined
@@ -135,15 +139,21 @@ function teardown() {
 /** Connect with the stored token, or with `auth` when pairing. */
 export function connect(auth?: AuthRequest) {
   // A pairing in progress (code, PIN or approval) wins over the saved token.
-  if (!auth && ws && pendingAuth && pendingAuth.method !== 'token') return
+  if (!auth && (ws || retryTimer) && pendingAuth && pendingAuth.method !== 'token') return
   const saved = token.get()
   const request: AuthRequest | null = auth ?? (saved ? { method: 'token', token: saved } : null)
   if (!request) {
     if (!ws) state.status = 'idle'
     return
   }
+  pairTries = 0
+  open(request)
+}
+
+function open(request: AuthRequest) {
   teardown()
   pendingAuth = request
+  answered = false
   state.denied = null
   state.byeReason = ''
   // A live session stays 'reconnecting' so the shell, and every view's state, stays up.
@@ -154,13 +164,15 @@ export function connect(auth?: AuthRequest) {
   // An unreachable address can leave the socket connecting for a long time.
   openTimer = setTimeout(() => {
     if (ws !== socket) return
-    teardown()
-    scheduleReconnect()
+    connectionLost()
   }, OPEN_TIMEOUT_MS)
   socket.onopen = () => {
     clearTimeout(openTimer)
     openTimer = undefined
     lastHeard = Date.now()
+    // The Mac answers pings while an approval is pending, so a link that dies
+    // before the welcome is caught too.
+    startHeartbeat()
     const hello: ClientMessage = {
       t: 'hello',
       v: PROTOCOL_VERSION,
@@ -172,6 +184,7 @@ export function connect(auth?: AuthRequest) {
   }
   socket.onmessage = (event) => {
     lastHeard = Date.now()
+    answered = true
     if (typeof event.data !== 'string') return
     let message: ServerMessage
     try {
@@ -184,12 +197,34 @@ export function connect(auth?: AuthRequest) {
   socket.onclose = () => {
     if (ws !== socket) return
     ws = null
-    clearInterval(heartbeat)
-    clearTimeout(openTimer)
-    pointer.reset()
-    settleActions()
-    if (state.status === 'denied' || state.status === 'idle') return
+    if (state.status === 'denied' || state.status === 'idle') {
+      teardown()
+      return
+    }
+    connectionLost()
+  }
+}
+
+function connectionLost() {
+  teardown()
+  const request = pendingAuth
+  if (!request || request.method === 'token') {
     scheduleReconnect()
+    return
+  }
+  // Until the Mac answers, it hasn't used the code or PIN, so the same one can be tried again.
+  if (!answered && ++pairTries < PAIR_ATTEMPTS) {
+    retryTimer = setTimeout(() => open(request), PAIR_RETRY_MS)
+    return
+  }
+  pendingAuth = null
+  state.status = 'idle'
+  if (state.byeReason) return
+  if (answered) {
+    state.byeReason = 'Lost the connection to the Mac while waiting for approval. Check that this phone is on the same network as the Mac, then try again.'
+  } else {
+    const next = request.method === 'pair' ? 'scan the QR code again' : 'try again'
+    state.byeReason = `Couldn’t reach the Mac. Check that this phone is on the same network as the Mac, then ${next}.`
   }
 }
 
@@ -235,7 +270,6 @@ function handle(message: ServerMessage) {
       state.sessionKey = message.sessionKey
       labels.value = new LabelMap(message.layout)
       pendingAuth = null
-      startHeartbeat()
       break
     }
     case 'pending':
@@ -315,8 +349,7 @@ function startHeartbeat() {
     if (Date.now() - lastHeard > DEAD_AFTER_MS) {
       // The socket looks open but nothing is arriving (Wi-Fi dropped). Its
       // close handshake can take a minute on a half-open link, so don't wait.
-      teardown()
-      scheduleReconnect()
+      connectionLost()
       return
     }
     const id = ++pingId

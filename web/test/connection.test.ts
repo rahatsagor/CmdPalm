@@ -111,8 +111,77 @@ describe('reconnecting', () => {
     conn.connect({ method: 'approve' })
     last().open()
     last().receive({ t: 'pending' })
-    vi.advanceTimersByTime(60000)
+    const socket = last()
+    for (let i = 0; i < 30; i++) {
+      vi.advanceTimersByTime(2000)
+      const ping = socket.sent.at(-1) as { t: string; id: number }
+      if (ping.t === 'ping') socket.receive({ t: 'pong', id: ping.id })
+    }
     expect(conn.state.status).toBe('pending')
+    expect(FakeSocket.all).toHaveLength(1)
+  })
+
+  it('notices when the Mac goes quiet while waiting for approval', () => {
+    localStorage.clear()
+    conn.connect({ method: 'approve' })
+    last().open()
+    last().receive({ t: 'pending' })
+    vi.advanceTimersByTime(8000)
+    expect(conn.state.status).toBe('idle')
+    expect(conn.state.byeReason).toBe(
+      'Lost the connection to the Mac while waiting for approval. Check that this phone is on the same network as the Mac, then try again.',
+    )
+    vi.advanceTimersByTime(30000)
+    expect(FakeSocket.all).toHaveLength(1)
+  })
+})
+
+describe('pairing on a slow network', () => {
+  it('tries the same code again, then explains what to do', () => {
+    localStorage.clear()
+    conn.connect({ method: 'pair', code: 'abc' })
+    vi.advanceTimersByTime(5000)
+    expect(conn.state.status).toBe('connecting')
+    expect(conn.state.byeReason).toBe('')
+    vi.advanceTimersByTime(1000)
+    expect(FakeSocket.all).toHaveLength(2)
+    conn.connect()
+    expect(FakeSocket.all).toHaveLength(2)
+
+    last().open()
+    expect(last().sent).toMatchObject([{ t: 'hello', auth: { method: 'pair', code: 'abc' } }])
+    last().drop()
+    expect(conn.state.status).toBe('connecting')
+    vi.advanceTimersByTime(1000)
+    expect(FakeSocket.all).toHaveLength(3)
+
+    vi.advanceTimersByTime(5000)
+    expect(conn.state.status).toBe('idle')
+    expect(conn.state.byeReason).toBe(
+      'Couldn’t reach the Mac. Check that this phone is on the same network as the Mac, then scan the QR code again.',
+    )
+    vi.advanceTimersByTime(30000)
+    expect(FakeSocket.all).toHaveLength(3)
+  })
+
+  it('connects when a retry gets through', () => {
+    localStorage.clear()
+    conn.connect({ method: 'pair', code: 'abc' })
+    vi.advanceTimersByTime(6000)
+    last().open()
+    last().receive({ ...welcome, token: 'new' })
+    expect(conn.state.status).toBe('connected')
+    expect(localStorage.getItem('cmdpalm.token')).toBe('new')
+  })
+
+  it('does not try again once the Mac has answered', () => {
+    localStorage.clear()
+    conn.connect({ method: 'pair', code: 'abc' })
+    last().open()
+    last().receive({ t: 'denied', reason: 'expiredCode' })
+    last().drop()
+    vi.advanceTimersByTime(30000)
+    expect(conn.state.status).toBe('denied')
     expect(FakeSocket.all).toHaveLength(1)
   })
 })
