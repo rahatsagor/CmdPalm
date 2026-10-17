@@ -11,6 +11,9 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ### Fixes
 
+- CmdPalm could crash on macOS 27 when an app that reads the screen through
+  accessibility, such as Screenpipe, looked at the pairing PIN in the welcome
+  guide, the menu or Settings.
 - The return key on the phone's keyboard showed an emoji on iPhone and iPad.
   It now shows the ⏎ symbol, like the other keys. Home and End in shortcut
   labels use ⇱ and ⇲ for the same reason.

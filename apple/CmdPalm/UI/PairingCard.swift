@@ -48,8 +48,12 @@ private struct PinRow: View {
                 Text(Self.format(pin))
                     .font(.system(size: 22, weight: .semibold, design: .monospaced))
                     .textSelection(.enabled)
-                    .accessibilityLabel("PIN \(pin.map(String.init).joined(separator: " "))")
             }
+            // Not on the selectable text itself: on macOS 27, reading that
+            // label recursed until the app ran out of stack.
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("PIN \(pin.map(String.init).joined(separator: " "))")
+            .accessibilityAddTraits(.isStaticText)
             Spacer(minLength: 8)
             countdown
             Button(action: renew) {
