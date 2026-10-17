@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { Key, LabelMap, comboLabel } from '../src/lib/keys'
+import { Key, LabelMap, SPECIAL_KEYS, comboLabel, keyName, keyboardRows } from '../src/lib/keys'
 import { Mod } from '../src/lib/protocol'
 import { migrate } from '../src/lib/settings'
 
@@ -27,6 +27,15 @@ describe('layout labels', () => {
   it('formats combos in Mac order', () => {
     expect(comboLabel(Key.Four, Mod.Command | Mod.Shift, new LabelMap())).toBe('⇧⌘4')
     expect(comboLabel(Key.Left, Mod.Control, new LabelMap())).toBe('⌃←')
+  })
+
+  it('uses key symbols that phones draw as text, not emoji', () => {
+    const labels = new LabelMap()
+    const symbols = [
+      ...[false, true].flatMap((iso) => keyboardRows(iso).flat()).flatMap((spec) => ('symbol' in spec ? [spec.symbol] : [])),
+      ...[...SPECIAL_KEYS.map((k) => k.code), Key.CapsLock].map((code) => keyName(code, labels)),
+    ]
+    for (const symbol of symbols) expect(symbol, symbol).not.toMatch(/\p{Extended_Pictographic}/u)
   })
 })
 

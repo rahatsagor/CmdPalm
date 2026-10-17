@@ -137,6 +137,10 @@ export type KeySpec =
 
 const char = (code: number, width?: number): KeySpec => ({ kind: 'char', code, width })
 
+// Not ↩: iOS draws it as an emoji, and with a text variation selector it
+// falls back to a glyph much smaller than ⌫ and ⇥.
+const RETURN = '⏎'
+
 export function keyboardRows(iso: boolean): KeySpec[][] {
   return [
     [
@@ -171,7 +175,7 @@ export function keyboardRows(iso: boolean): KeySpec[][] {
       { kind: 'special', code: Key.CapsLock, label: 'caps', symbol: '⇪', width: 1.8, align: 'left' },
       char(Key.A), char(Key.S), char(Key.D), char(Key.F), char(Key.G), char(Key.H), char(Key.J),
       char(Key.K), char(Key.L), char(Key.Semicolon), char(Key.Quote),
-      { kind: 'special', code: Key.Return, label: 'return', symbol: '↩', width: 1.7, align: 'right' },
+      { kind: 'special', code: Key.Return, label: 'return', symbol: RETURN, width: 1.7, align: 'right' },
     ],
     [
       { kind: 'mod', code: Key.Shift, mod: Mod.Shift, label: 'shift', symbol: '⇧', width: iso ? 1.25 : 2.3, align: 'left' },
@@ -196,9 +200,9 @@ export function keyboardRows(iso: boolean): KeySpec[][] {
 /** Human-readable name for a key position, used in combo labels. */
 export function keyName(code: number, labels: LabelMap): string {
   const special: Record<number, string> = {
-    [Key.Return]: '↩', [Key.Tab]: '⇥', [Key.Space]: 'Space', [Key.Delete]: '⌫', [Key.Escape]: 'esc',
+    [Key.Return]: RETURN, [Key.Tab]: '⇥', [Key.Space]: 'Space', [Key.Delete]: '⌫', [Key.Escape]: 'esc',
     [Key.ForwardDelete]: '⌦', [Key.Left]: '←', [Key.Right]: '→', [Key.Up]: '↑', [Key.Down]: '↓',
-    [Key.Home]: '↖', [Key.End]: '↘', [Key.PageUp]: '⇞', [Key.PageDown]: '⇟', [Key.CapsLock]: '⇪',
+    [Key.Home]: '⇱', [Key.End]: '⇲', [Key.PageUp]: '⇞', [Key.PageDown]: '⇟', [Key.CapsLock]: '⇪',
     [Key.F1]: 'F1', [Key.F2]: 'F2', [Key.F3]: 'F3', [Key.F4]: 'F4', [Key.F5]: 'F5', [Key.F6]: 'F6',
     [Key.F7]: 'F7', [Key.F8]: 'F8', [Key.F9]: 'F9', [Key.F10]: 'F10', [Key.F11]: 'F11', [Key.F12]: 'F12',
   }
