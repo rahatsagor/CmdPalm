@@ -39,7 +39,7 @@ async function toggleTyping() {
       </ModifierStrip>
 
       <TrackpadSurface class="min-h-0 min-w-0 flex-1" @pointerdown.capture="touched = true">
-        <ScrollRail v-if="settings.scrollRail !== 'off'" />
+        <ScrollRail v-if="settings.scrollStrip !== 'off'" />
         <div
           v-if="!touched"
           class="pointer-events-none absolute inset-0 grid place-items-center px-10 text-center text-[13px] leading-relaxed text-faint transition-opacity"

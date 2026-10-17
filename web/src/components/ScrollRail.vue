@@ -7,9 +7,10 @@ import { beginPointerGesture } from '@/lib/input'
 import { ScrollPhase } from '@/lib/protocol'
 import { settings } from '@/lib/settings'
 
-// A one-finger scroll handle along the edge of the trackpad. Dragging it
-// scrolls with the finger. Holding it against either end keeps scrolling,
-// faster the further the finger goes past the end.
+// A one-finger scroll strip along the edge of the trackpad, as a short handle
+// or the full height of it. Dragging either scrolls with the finger. Holding
+// the short handle against either end keeps scrolling, faster the further the
+// finger goes past the end.
 
 /** Finger speed, in px per second, once the handle reaches an end. */
 const HOLD_SPEED = 360
@@ -62,7 +63,8 @@ function stopHold() {
 
 function updateHold(along: number) {
   past = Math.abs(along) - travel
-  const direction = settings.scrollHold && along !== 0 && past >= 0 ? Math.sign(along) : 0
+  const holds = settings.scrollStrip === 'short' && settings.scrollHold
+  const direction = holds && along !== 0 && past >= 0 ? Math.sign(along) : 0
   if (direction === holding.value) return
   stopHold()
   if (!direction) return
@@ -133,26 +135,42 @@ watch(
     if (status !== 'connected') abandon()
   },
 )
+watch(() => settings.scrollStrip, abandon)
 onDeactivated(abandon)
 onBeforeUnmount(() => {
   document.removeEventListener('visibilitychange', onVisibility)
   abandon()
 })
+
+const listeners = {
+  pointerdown: down,
+  pointermove: move,
+  pointerup: (event: PointerEvent) => up(event),
+  pointercancel: (event: PointerEvent) => up(event, true),
+  lostpointercapture: (event: PointerEvent) => up(event, true),
+}
 </script>
 
 <template>
-  <div ref="track" class="pointer-events-none absolute inset-y-3 w-9" :class="settings.scrollRail === 'left' ? 'left-1.5' : 'right-1.5'">
+  <div
+    v-if="settings.scrollStrip === 'long'"
+    class="absolute inset-y-3 w-9 touch-none rounded-full transition-colors"
+    :class="[settings.scrollStripSide === 'left' ? 'left-1.5' : 'right-1.5', active !== null ? 'bg-text/10' : 'bg-text/[0.035]']"
+    aria-label="Scroll strip"
+    v-on="listeners"
+  >
+    <div class="absolute inset-x-0 top-1/2 mx-auto flex w-1 -translate-y-1/2 flex-col gap-1.5">
+      <span v-for="i in 3" :key="i" class="h-1 w-1 rounded-full bg-text/25" />
+    </div>
+  </div>
+  <div v-else ref="track" class="pointer-events-none absolute inset-y-3 w-9" :class="settings.scrollStripSide === 'left' ? 'left-1.5' : 'right-1.5'">
     <div
       ref="handle"
       class="pointer-events-auto absolute inset-x-0 top-1/2 flex h-24 max-h-full touch-none flex-col items-center justify-between rounded-full py-2"
       :class="[active !== null ? 'bg-text/10' : 'bg-text/[0.05] transition-[transform,background-color] duration-200']"
       :style="{ transform: `translateY(calc(-50% + ${offset}px))` }"
       aria-label="Scroll strip"
-      @pointerdown="down"
-      @pointermove="move"
-      @pointerup="up($event)"
-      @pointercancel="up($event, true)"
-      @lostpointercapture="up($event, true)"
+      v-on="listeners"
     >
       <ChevronUp :size="15" :stroke-width="2.2" class="transition-colors" :class="holding < 0 ? 'text-text/70' : 'text-text/30'" />
       <ChevronDown :size="15" :stroke-width="2.2" class="transition-colors" :class="holding > 0 ? 'text-text/70' : 'text-text/30'" />

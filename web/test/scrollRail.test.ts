@@ -131,6 +131,27 @@ describe('scroll strip', () => {
     view.unmount()
   })
 
+  it('keeps the long strip to scrolling with the finger', async () => {
+    const { settings } = await import('../src/lib/settings')
+    settings.scrollStrip = 'long'
+    const socket = connected()
+    const { default: ScrollRail } = await import('../src/components/ScrollRail.vue')
+    const view = mount(ScrollRail, { attachTo: document.body })
+    const strip = view.element as HTMLElement
+    expect(strip.getAttribute('aria-label')).toBe('Scroll strip')
+    expect(view.findAll('[aria-label="Scroll strip"]')).toHaveLength(1)
+    strip.setPointerCapture = () => {}
+    const fire = (type: string, clientY: number) => strip.dispatchEvent(new PointerEvent(type, { pointerId: 1, clientY, bubbles: true }))
+    fire('pointerdown', 300)
+    fire('pointermove', 900)
+    await settle(500)
+    expect(scrolls(socket)).toEqual([{ phase: ScrollPhase.Began, dy: 960 }])
+    fire('pointerup', 900)
+    await settle()
+    expect(scrolls(socket).at(-1)!.phase).toBe(ScrollPhase.Ended)
+    view.unmount()
+  })
+
   it('only follows the finger when holding is turned off', async () => {
     const { settings } = await import('../src/lib/settings')
     settings.scrollHold = false

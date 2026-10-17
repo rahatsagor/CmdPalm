@@ -251,14 +251,15 @@ another language.
 | Touch and hold, then move | Drag |
 | Tap, then touch again and move | Drag |
 | Two-finger move | Scroll |
-| Drag the handle on the edge | Scroll; hold it at the top or bottom to keep going |
+| Drag the scroll strip on the edge | Scroll; hold the short strip at the top or bottom to keep going |
 | Pinch | Zoom (⌘+ and ⌘−) |
 | Three-finger swipe up / down | Mission Control / App Exposé |
 | Three-finger swipe left / right | Switch spaces |
 | Three-finger tap | Middle click |
 | Four-finger swipe up / down | Apps (Launchpad on macOS 15) / Show Desktop |
 
-Every gesture can be changed in the phone's settings. Turn on **Show advanced
+The scroll strip can be short, long or hidden under **Scrolling & zoom** in
+the phone's settings. Every gesture can be changed in the phone's settings. Turn on **Show advanced
 settings** for pointer acceleration, gesture mapping and text options.
 
 **Modifiers** work three ways: tap for the next key only, double-tap to lock,

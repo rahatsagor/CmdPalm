@@ -9,6 +9,16 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Trackpad
+
+- **Scroll strip** under **Settings → Scrolling & zoom** now offers Short,
+  Long and Hide. Long brings back the full-height strip, which scrolls only
+  while your finger moves. Short is the handle from 0.3.0 that keeps
+  scrolling while you hold it at either end.
+- Which side the strip is on is now its own setting, **Scroll strip side**,
+  in the advanced settings. A strip you had hidden or moved to the left
+  stays that way.
+
 ## [0.3.0] - 2026-10-17
 
 Scroll long pages with one thumb, and a crash on macOS 27 is fixed. The

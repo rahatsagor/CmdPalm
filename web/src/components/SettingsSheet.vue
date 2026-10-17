@@ -121,21 +121,30 @@ const times = (v: number) => `${v.toFixed(1)}×`
       <Toggle v-model="settings.momentum" label="Momentum" hint="Keep scrolling after a flick." />
       <Toggle v-model="settings.pinchToZoom" label="Pinch to zoom" hint="Sends ⌘+ and ⌘−." />
       <Segmented
-        v-if="settings.showAdvanced"
-        v-model="settings.scrollRail"
+        v-model="settings.scrollStrip"
         label="Scroll strip"
         :options="[
-          { value: 'right', label: 'Right' },
-          { value: 'left', label: 'Left' },
-          { value: 'off', label: 'Off' },
+          { value: 'short', label: 'Short' },
+          { value: 'long', label: 'Long' },
+          { value: 'off', label: 'Hide' },
         ]"
       />
-      <Toggle
-        v-if="settings.showAdvanced && settings.scrollRail !== 'off'"
-        v-model="settings.scrollHold"
-        label="Hold to keep scrolling"
-        hint="Drag the scroll strip's handle to the top or bottom and hold it there."
-      />
+      <template v-if="settings.showAdvanced && settings.scrollStrip !== 'off'">
+        <Segmented
+          v-model="settings.scrollStripSide"
+          label="Scroll strip side"
+          :options="[
+            { value: 'right', label: 'Right' },
+            { value: 'left', label: 'Left' },
+          ]"
+        />
+        <Toggle
+          v-if="settings.scrollStrip === 'short'"
+          v-model="settings.scrollHold"
+          label="Hold to keep scrolling"
+          hint="Drag the scroll strip's handle to the top or bottom and hold it there."
+        />
+      </template>
     </section>
 
     <template v-if="settings.showAdvanced">

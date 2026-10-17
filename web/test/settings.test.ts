@@ -18,6 +18,14 @@ describe('migrating stored settings', () => {
     expect(out.threeFinger).not.toHaveProperty('extra')
   })
 
+  it('carries the old scroll strip setting over to style and side', () => {
+    expect(migrate({ scrollRail: 'off' })).toMatchObject({ scrollStrip: 'off', scrollStripSide: 'right' })
+    expect(migrate({ scrollRail: 'left' })).toMatchObject({ scrollStrip: 'short', scrollStripSide: 'left' })
+    expect(migrate({ scrollRail: 'off', scrollStrip: 'long', scrollStripSide: 'right' })).toMatchObject({ scrollStrip: 'long', scrollStripSide: 'right' })
+    expect(migrate({})).toMatchObject({ scrollStrip: 'short', scrollStripSide: 'right' })
+    expect(migrate({ scrollRail: 'left' })).not.toHaveProperty('scrollRail')
+  })
+
   it('drops values of the wrong type or outside the choices', () => {
     const out = migrate({ theme: 'sepia', haptics: 'yes', scrollSpeed: 99 })
     expect(out.theme).toBe('system')

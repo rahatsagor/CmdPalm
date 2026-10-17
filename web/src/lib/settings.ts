@@ -17,7 +17,8 @@ export interface Settings {
   scrollSpeed: number
   naturalScroll: boolean
   momentum: boolean
-  scrollRail: 'right' | 'left' | 'off'
+  scrollStrip: 'short' | 'long' | 'off'
+  scrollStripSide: 'right' | 'left'
   scrollHold: boolean
   pinchToZoom: boolean
   threeFinger: GestureMap
@@ -56,7 +57,8 @@ export function defaultSettings(): Settings {
     scrollSpeed: 1,
     naturalScroll: true,
     momentum: true,
-    scrollRail: 'right',
+    scrollStrip: 'short',
+    scrollStripSide: 'right',
     scrollHold: true,
     pinchToZoom: true,
     threeFinger: {
@@ -99,7 +101,8 @@ const clamp = (value: unknown, lo: number, hi: number, fallback: number) =>
 // A value saved by a newer or older version may no longer be offered.
 const CHOICES: Partial<Record<keyof Settings, readonly string[]>> = {
   longPress: ['drag', 'rightClick', 'off'],
-  scrollRail: ['right', 'left', 'off'],
+  scrollStrip: ['short', 'long', 'off'],
+  scrollStripSide: ['right', 'left'],
   keyboard: ['auto', 'mac', 'custom', 'phone'],
   functionRow: ['media', 'function'],
   textMode: ['unicode', 'keystrokes', 'paste'],
@@ -134,6 +137,10 @@ export function migrate(raw: unknown): Settings {
   out.pointerSpeed = clamp(out.pointerSpeed, 0.2, 4, defaults.pointerSpeed)
   out.pointerAcceleration = clamp(out.pointerAcceleration, 0, 1, defaults.pointerAcceleration)
   out.scrollSpeed = clamp(out.scrollSpeed, 0.2, 4, defaults.scrollSpeed)
+  // Up to 0.3.0, one setting held both the side and whether the strip showed.
+  const legacy = (raw as { scrollRail?: unknown }).scrollRail
+  if (stored.scrollStrip === undefined && legacy === 'off') out.scrollStrip = 'off'
+  if (stored.scrollStripSide === undefined && legacy === 'left') out.scrollStripSide = 'left'
   return out
 }
 
