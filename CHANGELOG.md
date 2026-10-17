@@ -9,6 +9,13 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Trackpad
+
+- The scroll strip is now a short handle with arrows, so it no longer looks
+  like a menu button. Drag it to scroll, or drag it to the top or bottom of
+  the trackpad and hold it there to keep scrolling, faster the further you
+  go. Turn this off with **Hold to keep scrolling** in the advanced settings.
+
 ### Fixes
 
 - CmdPalm could crash on macOS 27 when an app that reads the screen through

@@ -130,6 +130,12 @@ const times = (v: number) => `${v.toFixed(1)}×`
           { value: 'off', label: 'Off' },
         ]"
       />
+      <Toggle
+        v-if="settings.showAdvanced && settings.scrollRail !== 'off'"
+        v-model="settings.scrollHold"
+        label="Hold to keep scrolling"
+        hint="Drag the scroll strip's handle to the top or bottom and hold it there."
+      />
     </section>
 
     <template v-if="settings.showAdvanced">

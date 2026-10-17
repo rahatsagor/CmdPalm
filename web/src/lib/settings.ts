@@ -18,6 +18,7 @@ export interface Settings {
   naturalScroll: boolean
   momentum: boolean
   scrollRail: 'right' | 'left' | 'off'
+  scrollHold: boolean
   pinchToZoom: boolean
   threeFinger: GestureMap
   fourFinger: GestureMap
@@ -56,6 +57,7 @@ export function defaultSettings(): Settings {
     naturalScroll: true,
     momentum: true,
     scrollRail: 'right',
+    scrollHold: true,
     pinchToZoom: true,
     threeFinger: {
       up: sys('missionControl'),

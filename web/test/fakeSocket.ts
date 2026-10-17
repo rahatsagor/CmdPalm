@@ -9,6 +9,7 @@ export class FakeSocket {
   binaryType = ''
   bufferedAmount = 0
   sent: Record<string, unknown>[] = []
+  binary: ArrayBuffer[] = []
   onopen: (() => void) | null = null
   onclose: (() => void) | null = null
   onmessage: ((event: { data: unknown }) => void) | null = null
@@ -19,6 +20,7 @@ export class FakeSocket {
   }
   send(data: unknown) {
     if (typeof data === 'string') this.sent.push(JSON.parse(data))
+    else if (data instanceof ArrayBuffer) this.binary.push(data)
   }
   close() {
     this.readyState = FakeSocket.CLOSING

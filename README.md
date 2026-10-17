@@ -251,6 +251,7 @@ another language.
 | Touch and hold, then move | Drag |
 | Tap, then touch again and move | Drag |
 | Two-finger move | Scroll |
+| Drag the handle on the edge | Scroll; hold it at the top or bottom to keep going |
 | Pinch | Zoom (⌘+ and ⌘−) |
 | Three-finger swipe up / down | Mission Control / App Exposé |
 | Three-finger swipe left / right | Switch spaces |
