@@ -125,6 +125,19 @@ the tagged source, signed with the same self-signed certificate every time
 and with the hardened runtime turned on, and `SHA256SUMS` is attached to
 every release.
 
+Every release file also has a signed
+[build attestation](https://github.com/rahatsagor/CmdPalm/attestations). It
+proves the file was built by this repository's release workflow, and from
+which commit. To check a download, install the [GitHub CLI](https://cli.github.com)
+and run:
+
+```sh
+gh attestation verify CmdPalm.dmg --repo rahatsagor/CmdPalm
+```
+
+An attestation shows where a file came from, not that the code is free of
+bugs. Version 0.2.0 and earlier don't have one.
+
 ## Logs
 
 Logs in `~/Library/Logs/CmdPalm` record connections, errors and timing. They

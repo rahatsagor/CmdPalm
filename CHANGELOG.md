@@ -19,6 +19,12 @@ and versions follow [Semantic Versioning](https://semver.org/).
   labels use ⇱ and ⇲ for the same reason.
 - The F8 key now tells screen readers it plays and pauses.
 
+### Privacy and security
+
+- Every release file now has a signed build attestation, which proves it was
+  built by this repository's release workflow and from which commit.
+  [SECURITY.md](SECURITY.md#updates) shows how to check a download.
+
 ## [0.2.0] - 2026-10-14
 
 A more dependable update. Typing, pasting and voice typing behave better,

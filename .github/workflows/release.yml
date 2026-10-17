@@ -35,6 +35,9 @@ jobs:
     timeout-minutes: 40
     permissions:
       contents: write
+      # Sign and store build provenance for the release files.
+      id-token: write
+      attestations: write
     env:
       HAS_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN != '' }}
     steps:
@@ -123,6 +126,11 @@ jobs:
           cd dist
           shasum -a 256 "CmdPalm-$VERSION.zip" "CmdPalm-$VERSION.dmg" CmdPalm.dmg appcast.xml > SHA256SUMS
           shasum -a 256 -c SHA256SUMS
+
+      - name: Attest build provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-checksums: dist/SHA256SUMS
 
       - name: Publish release
         env:
