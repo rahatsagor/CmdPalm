@@ -9,6 +9,13 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-17
+
+Scroll long pages with one thumb, and a crash on macOS 27 is fixed. The
+scroll strip gets a shorter handle that keeps scrolling while you hold it,
+the keyboard's return key no longer turns into an emoji, and every download
+can now be checked against the source it was built from.
+
 ### Trackpad
 
 - The scroll strip is now a short handle with arrows, so it no longer looks
@@ -30,7 +37,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 - Every release file now has a signed build attestation, which proves it was
   built by this repository's release workflow and from which commit.
-  [SECURITY.md](SECURITY.md#updates) shows how to check a download.
+  [SECURITY.md](https://github.com/rahatsagor/CmdPalm/blob/main/SECURITY.md#updates)
+  shows how to check a download.
 
 ## [0.2.0] - 2026-10-14
 
@@ -203,7 +211,8 @@ The first release.
   device, so they survive a cleared browser, and you can copy them from
   another device.
 
-[Unreleased]: https://github.com/rahatsagor/CmdPalm/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/rahatsagor/CmdPalm/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/rahatsagor/CmdPalm/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/rahatsagor/CmdPalm/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/rahatsagor/CmdPalm/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/rahatsagor/CmdPalm/releases/tag/v0.1.0
