@@ -14,6 +14,7 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - The return key on the phone's keyboard showed an emoji on iPhone and iPad.
   It now shows the ⏎ symbol, like the other keys. Home and End in shortcut
   labels use ⇱ and ⇲ for the same reason.
+- The F8 key now tells screen readers it plays and pauses.
 
 ## [0.2.0] - 2026-10-14
 

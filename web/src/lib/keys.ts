@@ -152,7 +152,7 @@ export function keyboardRows(iso: boolean): KeySpec[][] {
       { kind: 'fn', code: Key.F5, label: 'F5', media: 'illuminationDown', mediaLabel: 'backlight down' },
       { kind: 'fn', code: Key.F6, label: 'F6', media: 'illuminationUp', mediaLabel: 'backlight up' },
       { kind: 'fn', code: Key.F7, label: 'F7', media: 'previous', mediaLabel: 'previous' },
-      { kind: 'fn', code: Key.F8, label: 'F8', media: 'playPause', mediaLabel: 'play' },
+      { kind: 'fn', code: Key.F8, label: 'F8', media: 'playPause', mediaLabel: 'play/pause' },
       { kind: 'fn', code: Key.F9, label: 'F9', media: 'next', mediaLabel: 'next' },
       { kind: 'fn', code: Key.F10, label: 'F10', media: 'mute', mediaLabel: 'mute' },
       { kind: 'fn', code: Key.F11, label: 'F11', media: 'volumeDown', mediaLabel: 'volume down' },
