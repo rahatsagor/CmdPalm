@@ -9,6 +9,11 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-10-17
+
+Pick the scroll strip you like: the new short handle, the long strip from
+earlier versions, or none at all.
+
 ### Trackpad
 
 - **Scroll strip** under **Settings → Scrolling & zoom** now offers Short,
@@ -221,7 +226,8 @@ The first release.
   device, so they survive a cleared browser, and you can copy them from
   another device.
 
-[Unreleased]: https://github.com/rahatsagor/CmdPalm/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/rahatsagor/CmdPalm/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/rahatsagor/CmdPalm/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/rahatsagor/CmdPalm/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/rahatsagor/CmdPalm/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/rahatsagor/CmdPalm/compare/v0.1.0...v0.1.1
