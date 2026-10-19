@@ -81,6 +81,8 @@ let heartbeat: ReturnType<typeof setInterval> | undefined
 let retryTimer: ReturnType<typeof setTimeout> | undefined
 let openTimer: ReturnType<typeof setTimeout> | undefined
 let lastHeard = 0
+/** When the current socket was created. */
+let openedAt = 0
 let pingId = 0
 let pingSent = new Map<number, number>()
 let noticeId = 0
@@ -161,6 +163,7 @@ function open(request: AuthRequest) {
   const socket = new WebSocket(socketUrl())
   socket.binaryType = 'arraybuffer'
   ws = socket
+  openedAt = Date.now()
   // An unreachable address can leave the socket connecting for a long time.
   openTimer = setTimeout(() => {
     if (ws !== socket) return
@@ -243,10 +246,13 @@ function scheduleReconnect() {
 
 /** Reconnect now (e.g. when the page becomes visible again). */
 export function reconnectSoon() {
-  if (state.status === 'reconnecting' || (state.status === 'connected' && Date.now() - lastHeard > DEAD_AFTER_MS)) {
-    state.attempts = 0
-    connect()
-  }
+  const stale = state.status === 'connected' && Date.now() - lastHeard > DEAD_AFTER_MS
+  if (state.status !== 'reconnecting' && !stale) return
+  state.attempts = 0
+  // visibilitychange, online and pageshow often arrive together; each would
+  // otherwise throw away the attempt the previous one just started.
+  if (!stale && ws && Date.now() - openedAt < OPEN_TIMEOUT_MS) return
+  connect()
 }
 
 export function disconnect(forget: boolean) {

@@ -111,6 +111,20 @@ describe('one finger', () => {
     expect(names()).toEqual(['click', 'click', 'click'])
   })
 
+  it('a tap held back for a double tap still clicks when more fingers join', () => {
+    const { g, calls } = setup({ tapAndDrag: true, longPress: 'off' })
+    g.down(1, 100, 100, 0)
+    g.up(1, 60)
+    g.down(2, 102, 101, 150)
+    g.down(3, 150, 101, 160)
+    g.up(2, 200)
+    g.up(3, 210)
+    expect(calls.filter((c) => c[0] === 'click')).toEqual([
+      ['click', 'left'],
+      ['click', 'right'],
+    ])
+  })
+
   it('a slow touch without movement is not a tap', () => {
     const { g, names } = setup({ longPress: 'off' })
     g.down(1, 100, 100, 0)

@@ -30,6 +30,18 @@ describe('modifier keys', () => {
     expect(mods.status(Mod.Command)).toBe('off')
   })
 
+  it('forgets fingers lost while the page was hidden without sending key-ups', () => {
+    const { mods, events } = setup()
+    mods.press(1, Mod.Shift)
+    mods.use()
+    expect(events).toEqual([`down:${Key.Shift}`])
+    mods.dropTouches()
+    expect(mods.status(Mod.Shift)).toBe('off')
+    mods.use()
+    mods.release(1)
+    expect(events).toEqual([`down:${Key.Shift}`])
+  })
+
   it('double tap locks by holding the key on the Mac; a third tap unlocks', () => {
     const { mods, events, advance } = setup()
     for (let i = 0; i < 2; i++) {

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { EyeOff, LoaderCircle, Power, RefreshCw, Search, SquarePlus, SquareArrowOutUpRight } from '@lucide/vue'
-import { computed, onMounted, ref } from 'vue'
+import { computed, onActivated, onMounted, ref } from 'vue'
 import AppIcon from '@/components/AppIcon.vue'
 import Segmented from '@/components/Segmented.vue'
 import Sheet from '@/components/Sheet.vue'
@@ -16,6 +16,8 @@ const query = ref('')
 const menu = ref<AppEntry | null>(null)
 
 onMounted(() => loadApps(true))
+// Kept alive between tabs, so refresh (at most every few seconds) on return.
+onActivated(() => loadApps())
 
 const apps = computed(() => {
   const q = query.value.trim().toLowerCase()
@@ -26,14 +28,18 @@ const apps = computed(() => {
 })
 
 function act(app: AppEntry, op: AppOp) {
-  send({ t: 'appAction', id: app.id, op })
-  haptic('light')
   menu.value = null
+  if (!send({ t: 'appAction', id: app.id, op })) {
+    notify('Not connected to the Mac.', 'warning')
+    return
+  }
+  haptic('light')
 }
 
 function addToDeck(app: AppEntry) {
   menu.value = null
   const page = addTileToCurrentPage(newTile({ kind: 'app', id: app.id, op: 'toggle' }, app.name), settings.deckPage)
+  if (page === null) return
   notify(page ? `Added ${app.name} to “${page}”.` : 'That deck page is full.', page ? 'info' : 'warning')
 }
 

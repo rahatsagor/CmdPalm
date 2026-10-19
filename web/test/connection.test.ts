@@ -88,6 +88,20 @@ describe('reconnecting', () => {
     expect(FakeSocket.all).toHaveLength(2)
   })
 
+  it('keeps an attempt that is still under way when the page comes back', () => {
+    const first = connected()
+    first.drop()
+    vi.advanceTimersByTime(1000)
+    expect(FakeSocket.all).toHaveLength(2)
+    conn.reconnectSoon()
+    document.dispatchEvent(new Event('visibilitychange'))
+    dispatchEvent(new Event('online'))
+    expect(FakeSocket.all).toHaveLength(2)
+    last().open()
+    last().receive(welcome)
+    expect(conn.state.status).toBe('connected')
+  })
+
   it('reconnects as soon as the heartbeat finds the socket dead', () => {
     const first = connected()
     vi.advanceTimersByTime(8000)
@@ -212,6 +226,38 @@ describe('bye', () => {
     conn.connect()
     expect(conn.state.byeReason).toBe('')
     expect(FakeSocket.all).toHaveLength(2)
+  })
+})
+
+describe('while reconnecting', () => {
+  it('doesn’t show deck changes the Mac never received', async () => {
+    const deck = await import('../src/lib/deck')
+    const first = connected()
+    expect(deck.saveDeck({ version: 1, pages: [deck.newPage('New')] })).toBe(true)
+    first.drop()
+    expect(deck.saveDeck({ version: 1, pages: [] })).toBe(false)
+    // The last deck the Mac confirmed, not either edit.
+    expect(conn.state.deck?.pages).toEqual([])
+    expect(conn.state.notices.at(-1)?.code).toBe('deck')
+  })
+
+  it('restores the confirmed deck after an edit in place is rejected', async () => {
+    const deck = await import('../src/lib/deck')
+    const socket = connected()
+    conn.state.deck!.pages.push(deck.newPage('Dragged'))
+    socket.receive({ t: 'notice', level: 'error', code: 'deck', message: 'Too many pages.' })
+    expect(conn.state.deck?.pages).toEqual([])
+  })
+
+  it('asks for the app list again once connected', async () => {
+    const apps = await import('../src/lib/apps')
+    const first = connected()
+    first.drop()
+    apps.loadApps(true)
+    vi.advanceTimersByTime(1000)
+    last().open()
+    last().receive(welcome)
+    expect(last().sent).toContainEqual({ t: 'apps' })
   })
 })
 

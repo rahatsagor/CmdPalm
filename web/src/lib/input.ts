@@ -32,7 +32,11 @@ onMessage((message) => {
 
 if (typeof document !== 'undefined') {
   // The connection sends a release when the page hides.
-  document.addEventListener('visibilitychange', () => macReleased(document.visibilityState === 'visible' && isOpen()))
+  document.addEventListener('visibilitychange', () => {
+    const visible = document.visibilityState === 'visible'
+    if (!visible) modifiers.dropTouches()
+    macReleased(visible && isOpen())
+  })
 
   // A control removed mid-press (a tab switch, a view swap) never sees its
   // finger lift; the lift still reaches the document.

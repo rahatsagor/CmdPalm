@@ -30,6 +30,20 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - Saving the certificate in **Settings → Phone Setup** says so if it fails.
 - Problems found while loading saved files at launch now appear in the logs.
 
+### Phone and tablet
+
+- Deck changes made while the phone is reconnecting are no longer shown and
+  then quietly lost. The phone says the change wasn't saved.
+- Voice typing can no longer start while the phone is reconnecting and then
+  stay stuck listening.
+- The Apps tab no longer keeps loading when you open it while the phone
+  reconnects, and it refreshes after a reconnect.
+- With **Tap, then drag** on, a tap followed quickly by a two-finger
+  gesture no longer loses the click.
+- After locking the phone mid-press, modifiers, click buttons and media keys
+  no longer stay held on screen or block the next press.
+- A setting changed just before you close CmdPalm is saved.
+
 ### Privacy and security
 
 - A device that asks for approval and leaves before you answer now has to

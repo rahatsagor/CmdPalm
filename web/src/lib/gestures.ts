@@ -96,6 +96,7 @@ export class GestureRecognizer {
     } else if (this.mode === 'pending' || this.mode === 'pointing') {
       // More fingers turn a touch into a multi-finger gesture.
       this.cancelLongPress()
+      this.releaseHeldTap()
       this.mode = 'pending'
       for (const p of this.points.values()) {
         p.startX = p.x
@@ -331,6 +332,13 @@ export class GestureRecognizer {
     if (duration <= TAP_MS * 1.5) this.handler.multiTap(Math.min(this.maxFingers, 4))
   }
 
+  /** The tap held back for a possible double tap was a plain click after all. */
+  private releaseHeldTap() {
+    if (!this.secondTap) return
+    this.secondTap = false
+    this.handler.click('left')
+  }
+
   private fireDeferredClick() {
     if (this.deferredClick === undefined) return
     clearTimeout(this.deferredClick)
@@ -349,6 +357,7 @@ export class GestureRecognizer {
     if (!this.points.delete(id)) return
     if (this.points.size > 0) return
     this.cancelLongPress()
+    this.releaseHeldTap()
     if (this.mode === 'dragging' && !this.dragLocked) this.handler.buttonUp('left')
     if (this.mode === 'scrolling') this.handler.scroll(ScrollPhase.Cancelled, 0, 0)
     this.mode = 'idle'

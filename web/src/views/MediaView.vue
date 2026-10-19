@@ -5,6 +5,7 @@ import {
 import { computed, onBeforeUnmount, onDeactivated, ref, watch } from 'vue'
 import { send, state } from '@/lib/connection'
 import { haptic } from '@/lib/haptics'
+import { onPageHidden } from '@/lib/heldPointers'
 import { pressMedia } from '@/lib/input'
 import type { MediaKey } from '@/lib/protocol'
 
@@ -34,6 +35,7 @@ function letGo() {
 // The finger may still be down when the tab changes; its lift never arrives.
 onDeactivated(letGo)
 onBeforeUnmount(letGo)
+onPageHidden(letGo)
 
 // The slider shows our own value while dragging, then follows the Mac.
 const dragging = ref(false)

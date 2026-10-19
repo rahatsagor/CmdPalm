@@ -255,20 +255,29 @@ function load(): Stored {
 export const keyboards = reactive<Stored>(load())
 
 let saveTimer: ReturnType<typeof setTimeout> | undefined
+function store() {
+  clearTimeout(saveTimer)
+  saveTimer = undefined
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(keyboards))
+  } catch {
+    // Storage unavailable: changes last for this session.
+  }
+}
 watch(
   keyboards,
   () => {
     clearTimeout(saveTimer)
-    saveTimer = setTimeout(() => {
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(keyboards))
-      } catch {
-        // Storage unavailable: changes last for this session.
-      }
-    }, 200)
+    saveTimer = setTimeout(store, 200)
   },
   { deep: true },
 )
+if (typeof document !== 'undefined') {
+  // A hidden page can be closed before the delay runs out.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden' && saveTimer !== undefined) store()
+  })
+}
 
 export function activeBoard(): CustomKeyboard {
   return keyboards.boards.find((b) => b.id === keyboards.active) ?? keyboards.boards[0]!

@@ -155,20 +155,29 @@ function load(): Settings {
 export const settings = reactive<Settings>(load())
 
 let saveTimer: ReturnType<typeof setTimeout> | undefined
+function store() {
+  clearTimeout(saveTimer)
+  saveTimer = undefined
+  try {
+    localStorage.setItem(KEY, JSON.stringify(settings))
+  } catch {
+    // Private browsing or full storage: settings last for this session.
+  }
+}
 watch(
   settings,
   () => {
     clearTimeout(saveTimer)
-    saveTimer = setTimeout(() => {
-      try {
-        localStorage.setItem(KEY, JSON.stringify(settings))
-      } catch {
-        // Private browsing or full storage: settings last for this session.
-      }
-    }, 150)
+    saveTimer = setTimeout(store, 150)
   },
   { deep: true },
 )
+if (typeof document !== 'undefined') {
+  // A hidden page can be closed before the delay runs out.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden' && saveTimer !== undefined) store()
+  })
+}
 
 export function resetSettings(section?: (keyof Settings)[]) {
   const defaults = defaultSettings()

@@ -1,5 +1,15 @@
 import { onBeforeUnmount, onDeactivated } from 'vue'
 
+/** Runs `fn` when the page is hidden: a finger lift after that never arrives. */
+export function onPageHidden(fn: () => void) {
+  if (typeof document === 'undefined') return
+  const listener = () => {
+    if (document.visibilityState === 'hidden') fn()
+  }
+  document.addEventListener('visibilitychange', listener)
+  onBeforeUnmount(() => document.removeEventListener('visibilitychange', listener))
+}
+
 /**
  * Fingers a component is holding something with. When the component hides
  * (a tab switch) or unmounts, its elements never hear those fingers lift, so

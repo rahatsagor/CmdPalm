@@ -63,6 +63,11 @@ export async function startVoice(onFinal: (text: string) => void, locale = navig
   if (voice.active || starting) return
   voice.error = ''
   voice.partial = ''
+  // Reconnecting keeps the last features; a start now would never reach the Mac.
+  if (conn.status !== 'connected') {
+    voice.error = 'Not connected to the Mac.'
+    return
+  }
   if (!conn.features.voice) {
     voice.error = 'Speech recognition is turned off on the Mac.'
     return
@@ -109,7 +114,10 @@ export async function startVoice(onFinal: (text: string) => void, locale = navig
     node = worklet
     finals = onFinal
     voice.active = true
-    send({ t: 'voiceStart', locale })
+    if (!send({ t: 'voiceStart', locale })) {
+      voice.error = 'Not connected to the Mac.'
+      await stopVoice(true, false)
+    }
   } catch (error) {
     discard()
     if (run !== generation) return

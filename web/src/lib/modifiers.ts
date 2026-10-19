@@ -184,6 +184,15 @@ export class Modifiers {
   }
 
   /**
+   * Forget fingers whose lift will never arrive (the page was hidden),
+   * without key-ups: the Mac already released everything this device held.
+   */
+  dropTouches() {
+    this.touches.clear()
+    this.state.touching = 0
+  }
+
+  /**
    * The Mac released everything (reconnect, pause, page hidden): press locks
    * again, and press held modifiers again the next time they are used.
    */

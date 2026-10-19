@@ -1,7 +1,7 @@
 // Deck editing helpers. Limits mirror core/src/deck.rs so the editor can
 // explain a problem before the Mac rejects the save.
 
-import { onMessage, send, state } from './connection'
+import { notify, onMessage, send, state } from './connection'
 import type { Action, Deck, DeckPage, Tile } from './protocol'
 
 export const LIMITS = { pages: 24, tiles: 64, label: 80, text: 4096, steps: 64, depth: 3, delayMs: 10_000 }
@@ -58,17 +58,26 @@ export function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
 }
 
-/** The last deck the Mac accepted, restored if a save is rejected. */
+/** The last deck the Mac accepted, restored if a save is rejected. A copy,
+ * because editing (dragging tiles) changes the shown deck in place. */
 let confirmed: Deck | null = null
 onMessage((message) => {
-  if (message.t === 'welcome' || message.t === 'deck') confirmed = message.deck
-  else if (message.t === 'notice' && message.code === 'deck' && confirmed) state.deck = confirmed
+  if (message.t === 'welcome' || message.t === 'deck') confirmed = clone(message.deck)
+  else if (message.t === 'notice' && message.code === 'deck' && confirmed) state.deck = clone(confirmed)
 })
 
-export function saveDeck(deck: Deck) {
-  // Show the change immediately; the Mac echoes the saved deck to every device.
-  state.deck = clone(deck)
-  send({ t: 'deckSave', deck: clone(deck) })
+/** Returns whether the change went to the Mac. */
+export function saveDeck(deck: Deck): boolean {
+  if (send({ t: 'deckSave', deck: clone(deck) })) {
+    // Show the change immediately; the Mac echoes the saved deck to every device.
+    state.deck = clone(deck)
+    return true
+  }
+  // While reconnecting, the change would be shown and then replaced by the
+  // Mac's deck without a word.
+  if (confirmed) state.deck = clone(confirmed)
+  notify('Not connected to the Mac, so the deck wasn’t changed.', 'warning', 'deck')
+  return false
 }
 
 export function newPage(name: string, columns = 4): DeckPage {
@@ -79,15 +88,15 @@ export function newTile(action: Action, label = ''): Tile {
   return { id: newId(), label, action }
 }
 
-/** Add a tile to the page the user last looked at. Returns the page name, or '' if it is full. */
-export function addTileToCurrentPage(tile: Tile, pageId: string): string {
+/** Add a tile to the page the user last looked at. Returns the page name,
+ * '' if it is full, or null if it couldn't be saved (already explained). */
+export function addTileToCurrentPage(tile: Tile, pageId: string): string | null {
   if (!state.deck) return ''
   const deck = clone(state.deck)
   const page = deck.pages.find((p) => p.id === pageId) ?? deck.pages[0]
   if (!page || page.tiles.length >= LIMITS.tiles) return ''
   page.tiles.push(tile)
-  saveDeck(deck)
-  return page.name
+  return saveDeck(deck) ? page.name : null
 }
 
 export const COLORS = ['#ff8a3d', '#ff5f57', '#f5b942', '#3ecf8e', '#2ec4d6', '#4f8cff', '#8b6cff', '#e85fb5', '#8d949e']

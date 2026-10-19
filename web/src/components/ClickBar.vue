@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onDeactivated, ref } from 'vue'
 import { haptic } from '@/lib/haptics'
+import { onPageHidden } from '@/lib/heldPointers'
 import { buttonDown, buttonUp } from '@/lib/input'
 import type { MouseButton } from '@/lib/protocol'
 
@@ -35,6 +36,7 @@ function letGo() {
 }
 onDeactivated(letGo)
 onBeforeUnmount(letGo)
+onPageHidden(letGo)
 </script>
 
 <template>

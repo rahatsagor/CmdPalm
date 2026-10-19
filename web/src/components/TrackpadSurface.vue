@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onDeactivated, reactive, ref, watch } from '
 import { pointer, runAction, state } from '@/lib/connection'
 import { GestureRecognizer, type Direction, type GestureHandler } from '@/lib/gestures'
 import { haptic } from '@/lib/haptics'
+import { onPageHidden } from '@/lib/heldPointers'
 import { beginPointerGesture, buttonDown, buttonUp, click, tap } from '@/lib/input'
 import { Key } from '@/lib/keys'
 import { Mod, ScrollPhase } from '@/lib/protocol'
@@ -88,24 +89,23 @@ const options = computed(() => ({
 
 const recognizer = new GestureRecognizer(handler, options.value)
 watch(options, (value) => (recognizer.options = value))
-watch(
-  () => state.status,
-  (status) => {
-    if (status !== 'connected') {
-      recognizer.reset()
-      dragging.value = false
-      touches.clear()
-    }
-  },
-)
-onBeforeUnmount(() => recognizer.reset())
-// A finger down when the tab changes never reports lifting; without this it
-// would count as a second finger on return, turning pointing into scrolling.
-onDeactivated(() => {
+function resetSurface() {
   recognizer.reset()
   dragging.value = false
   touches.clear()
-})
+}
+watch(
+  () => state.status,
+  (status) => {
+    if (status !== 'connected') resetSurface()
+  },
+)
+onBeforeUnmount(() => recognizer.reset())
+// A finger down when the tab changes or the page hides never reports
+// lifting; without this it would count as a second finger on return,
+// turning pointing into scrolling.
+onDeactivated(resetSurface)
+onPageHidden(resetSurface)
 
 function local(event: PointerEvent) {
   const rect = surface.value!.getBoundingClientRect()
