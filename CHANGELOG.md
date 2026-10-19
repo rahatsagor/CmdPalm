@@ -9,6 +9,13 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-10-20
+
+A steadier CmdPalm. Pause stops a deck button at once, a held key or drag
+survives a weak moment on Wi-Fi, and the phone no longer loses changes or
+gets stuck while it reconnects. Other devices on the network also have
+fewer ways to get in the way.
+
 ### Fixes
 
 - **Pause** and disconnecting now stop a deck button's remaining shortcuts
@@ -275,7 +282,8 @@ The first release.
   device, so they survive a cleared browser, and you can copy them from
   another device.
 
-[Unreleased]: https://github.com/rahatsagor/CmdPalm/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/rahatsagor/CmdPalm/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/rahatsagor/CmdPalm/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/rahatsagor/CmdPalm/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/rahatsagor/CmdPalm/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/rahatsagor/CmdPalm/compare/v0.1.1...v0.2.0
