@@ -8,12 +8,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var debugWindow: NSWindow?
     #endif
 
-    func applicationWillFinishLaunching(_ notification: Notification) {
+    /// Runs before anything creates the core, so messages it logs while
+    /// loading its files, such as a damaged settings file, are kept.
+    static func startLogging() {
         // Unit tests run inside the app; don't log, serve or prompt.
         guard !SystemInfo.isRunningTests else { return }
         SystemInfo.redirectLogs()
-        let level = AppModel.shared.preferences.logLevel.rawValue
-        initLogging(filter: "warn,cmdpalm_core=\(level)")
+        initLogging(filter: "warn,cmdpalm_core=\(Preferences.storedLogLevel().rawValue)")
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {

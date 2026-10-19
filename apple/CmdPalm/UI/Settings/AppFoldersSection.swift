@@ -54,6 +54,8 @@ struct AppFoldersSection: View {
                 (path, AppCatalog.apps(in: URL(fileURLWithPath: path, isDirectory: true)).map(\.count))
             })
         }.value
+        // A slower scan of an older folder list must not replace a newer one.
+        guard !Task.isCancelled, paths == preferences.appFolders else { return }
         counts = result
     }
 }
@@ -72,6 +74,7 @@ private struct FolderRow: View {
             .buttonStyle(.borderless)
             .foregroundStyle(.secondary)
             .help("Remove this folder")
+            .accessibilityLabel("Remove \(FileManager.default.displayName(atPath: path))")
         } label: {
             Label {
                 VStack(alignment: .leading, spacing: 2) {

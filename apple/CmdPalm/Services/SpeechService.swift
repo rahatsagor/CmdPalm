@@ -12,6 +12,10 @@ final class SpeechService: @unchecked Sendable {
     private let queue = DispatchQueue(label: "app.cmdpalm.speech", qos: .userInitiated)
     private let handlerQueue: OperationQueue
     private var sessions: [UInt64: Session] = [:]
+    /// Counts utterances across sessions. A phone keeps its session id for
+    /// every dictation, so a cancelled task's late callback must never match
+    /// an utterance of the next one.
+    private var generation = 0
     private let update: @Sendable (UInt64, VoiceUpdate) -> Void
 
     private static let pause: TimeInterval = 1.2
@@ -35,7 +39,6 @@ final class SpeechService: @unchecked Sendable {
         var current: Utterance?
         /// Utterances whose audio has ended but whose final text has not arrived.
         var closing: [Int: Utterance] = [:]
-        var generation = 0
         var stopping = false
         var pauseTimer: DispatchWorkItem?
         /// Phrases in a row that ended without any text; guards against a
@@ -97,7 +100,9 @@ final class SpeechService: @unchecked Sendable {
     /// 16 kHz mono signed 16-bit little-endian samples.
     func append(session id: UInt64, pcm: Data) {
         queue.async { [self] in
-            guard let utterance = sessions[id]?.current, let buffer = Self.buffer(from: pcm) else { return }
+            guard let session = sessions[id], !session.stopping, let utterance = session.current,
+                  let buffer = Self.buffer(from: pcm)
+            else { return }
             utterance.request.append(buffer)
         }
     }
@@ -148,8 +153,8 @@ final class SpeechService: @unchecked Sendable {
         request.taskHint = .dictation
         request.addsPunctuation = true
         request.requiresOnDeviceRecognition = true
-        session.generation += 1
-        let utterance = Utterance(generation: session.generation, request: request)
+        self.generation += 1
+        let utterance = Utterance(generation: self.generation, request: request)
         let generation = utterance.generation
         utterance.task = session.recognizer.recognitionTask(with: request) { [weak self] result, error in
             self?.handle(id, generation, result, error)

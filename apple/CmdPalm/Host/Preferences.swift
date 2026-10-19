@@ -121,9 +121,13 @@ final class Preferences {
         allowApproval = defaults.bool(forKey: Key.allowApproval)
         allowShell = defaults.bool(forKey: Key.allowShell)
         voiceEnabled = defaults.bool(forKey: Key.voiceEnabled)
-        logLevel = LogLevel(rawValue: defaults.string(forKey: Key.logLevel) ?? "") ?? .info
+        logLevel = Self.storedLogLevel(in: defaults)
         onboarded = defaults.bool(forKey: Key.onboarded)
         appFolders = Self.uniqueFolders(defaults.stringArray(forKey: Key.appFolders) ?? [])
+    }
+
+    static func storedLogLevel(in defaults: UserDefaults = .standard) -> LogLevel {
+        LogLevel(rawValue: defaults.string(forKey: Key.logLevel) ?? "") ?? .info
     }
 
     var linkHost: LinkHost {

@@ -48,8 +48,10 @@ final class Permissions {
 
     /// Shows the system prompt (first time) and opens the Accessibility list.
     func requestControl() {
-        // Adds CmdPalm to the Accessibility list so there is a switch to turn on.
-        if !CGRequestPostEventAccess() && !Self.isTrusted() {
+        // Adds CmdPalm to the Accessibility list so there is a switch to turn
+        // on. Its answer can be stale, like CGPreflightPostEventAccess.
+        _ = CGRequestPostEventAccess()
+        if !Self.isTrusted() {
             Self.openSettings("Privacy_Accessibility")
         }
         refresh()

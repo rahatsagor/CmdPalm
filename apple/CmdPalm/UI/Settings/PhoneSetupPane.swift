@@ -305,8 +305,11 @@ private struct EncryptedConnectionSection: View {
         panel.nameFieldStringValue = "CmdPalm.crt"
         panel.allowedContentTypes = [UTType(filenameExtension: "crt") ?? .x509Certificate]
         AppActivation.shared.present {
-            if panel.runModal() == .OK, let url = panel.url {
-                try? data.write(to: url)
+            guard panel.runModal() == .OK, let url = panel.url else { return }
+            do {
+                try data.write(to: url, options: .atomic)
+            } catch {
+                NSAlert(error: error).runModal()
             }
         }
     }

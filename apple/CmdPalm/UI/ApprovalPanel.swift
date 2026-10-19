@@ -10,8 +10,12 @@ enum ApprovalPanel {
     static func update() {
         let host = AppModel.shared.host
         guard !host.approvals.isEmpty else {
-            panel?.orderOut(nil)
+            guard let closing = panel else { return }
             panel = nil
+            closing.orderOut(nil)
+            // This runs inside the panel's own button action, so the panel and
+            // its hosting view must outlive the event being handled.
+            DispatchQueue.main.async { withExtendedLifetime(closing) {} }
             return
         }
         if panel == nil {

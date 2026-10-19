@@ -16,11 +16,19 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - A held key, drag or modifier is no longer let go when one of the phone's
   check-ins arrives late. If the phone really drops off the network, a held
   key still stops repeating within 3 seconds.
+- Changing a setting while CmdPalm restarts its server, such as turning off
+  shell commands, is no longer undone when the restart finishes.
 - After you rename the Mac, or it gets a new name when it joins a network,
   the QR code and the encrypted connection use the new name without
   restarting CmdPalm.
+- Starting voice typing again right after stopping it could type old text
+  or leave speech recognition running on the Mac.
 - Momentum scrolling no longer jumps after the Mac was busy typing, and a
   scroll from a second device properly ends the first one.
+- **Open Settings** for Accessibility works when the permission was turned
+  off while CmdPalm was running.
+- Saving the certificate in **Settings → Phone Setup** says so if it fails.
+- Problems found while loading saved files at launch now appear in the logs.
 
 ### Privacy and security
 

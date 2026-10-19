@@ -6,6 +6,7 @@ struct CmdPalmApp: App {
 
     init() {
         AppDelegate.handOffToRunningCopy()
+        AppDelegate.startLogging()
     }
 
     var body: some Scene {

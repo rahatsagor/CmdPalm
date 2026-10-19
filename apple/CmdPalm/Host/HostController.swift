@@ -111,10 +111,12 @@ final class HostController {
 
     func restart() {
         configuredPort = preferences.port
-        let config = makeConfig()
+        // Applied now, not by the queued task: the port only takes effect at
+        // start, and a config captured for later would undo settings changed
+        // while the server restarts, such as turning shell commands off.
+        host.updateConfig(config: makeConfig())
         launch { host in
             host.stop()
-            host.updateConfig(config: config)
             _ = try host.start()
         }
     }
@@ -348,12 +350,11 @@ final class HostController {
             MainActor.assumeIsolated { self?.refreshNames() }
         })
 
+        // Joining a network can also change the Bonjour name, such as to
+        // Studio-2.local when another Mac already uses Studio.local.
         network.pathUpdateHandler = { [weak self] _ in
             DispatchQueue.main.async {
-                MainActor.assumeIsolated {
-                    guard let self, self.isRunning else { return }
-                    self.refreshPairing()
-                }
+                MainActor.assumeIsolated { self?.refreshNames() }
             }
         }
         network.start(queue: DispatchQueue(label: "app.cmdpalm.network"))
