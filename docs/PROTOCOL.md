@@ -108,7 +108,8 @@ Otherwise the Mac sends `denied` and closes the connection:
 The phone sends `ping` (`{"t":"ping","id":n}`) every two seconds and the Mac
 answers `pong` with the same `id`. A connection silent for 8 seconds is
 treated as gone, and everything that device was holding (keys, buttons) is
-released.
+released. Before that, a held key stops repeating after 3 seconds without any
+message, and held keys and buttons are released after 6.
 
 ## Phone → Mac
 
@@ -142,7 +143,7 @@ Little-endian. The first byte is the type.
 | Byte | Layout | Meaning |
 | --- | --- | --- |
 | `0x01` | `dx: f32, dy: f32` | Move the pointer by this many points. |
-| `0x02` | `phase: u8, dx: f32, dy: f32` | Scroll by pixels. Phases: 1 began, 2 changed, 4 ended, 8 cancelled. |
+| `0x02` | `phase: u8, dx: f32, dy: f32` | Scroll by pixels. Phases: 0 none (a plain wheel step), 1 began, 2 changed, 4 ended, 8 cancelled. A new `began` ends a gesture still in progress. |
 | `0x03` | `vx: f32, vy: f32` | Fingers lifted while scrolling at this velocity (px/s). The Mac continues with momentum. |
 | `0x04` | | A finger touched the surface; stops momentum. |
 | `0x10` | `pcm: i16…` | Microphone audio for voice typing: 16 kHz, mono. |

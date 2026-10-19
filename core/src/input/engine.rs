@@ -32,8 +32,12 @@ pub const TAP_HOLD: Duration = Duration::from_millis(12);
 pub const KEYSTROKE_HOLD: Duration = Duration::from_millis(2);
 /// Gap between Unicode text events; some apps drop characters when flooded.
 pub const TEXT_GAP: Duration = Duration::from_millis(2);
-/// Release a device's held input when it has been silent this long.
-pub const WATCHDOG_TIMEOUT: Duration = Duration::from_millis(3000);
+/// Stop a silent device's key repeat this soon, so a held ⌫ on a dropped
+/// link doesn't keep deleting.
+pub const REPEAT_WATCHDOG: Duration = Duration::from_millis(3000);
+/// Release a device's held input when it has been silent this long. Phones
+/// ping every two seconds, so one late ping must not drop a held key or drag.
+pub const WATCHDOG_TIMEOUT: Duration = Duration::from_millis(6000);
 const WATCHDOG_PERIOD: Duration = Duration::from_millis(250);
 const MAX_REPEAT: Duration = Duration::from_secs(60);
 /// Ended sessions remembered so late input for them is dropped.
@@ -118,6 +122,8 @@ impl InputEngine {
 
 impl Drop for InputEngine {
     fn drop(&mut self) {
+        // Skip input still queued ahead of Shutdown, which releases everything.
+        self.interrupts.set_paused(true);
         let _ = self.tx.send(Command::Shutdown);
         if let Some(thread) = self.thread.take() {
             let _ = thread.join();
@@ -428,6 +434,12 @@ impl<S: EventSink> Engine<S> {
         }
         if now.duration_since(self.last_watchdog) >= WATCHDOG_PERIOD {
             self.last_watchdog = now;
+            let silent = |id: &SessionId, after: Duration| {
+                self.sessions.get(id).is_some_and(|s| now.duration_since(s.last_alive) >= after)
+            };
+            if self.repeat.as_ref().is_some_and(|r| silent(&r.session, REPEAT_WATCHDOG)) {
+                self.repeat = None;
+            }
             let stale: Vec<SessionId> = self
                 .sessions
                 .iter()
@@ -442,7 +454,9 @@ impl<S: EventSink> Engine<S> {
     }
 
     fn input(&mut self, session: SessionId, input: Input, now: Instant) {
-        if self.paused && input != Input::ReleaseAll {
+        // Interrupts change the moment Pause is pressed or a device leaves,
+        // while the matching command can wait behind a long queue of deck steps.
+        if input != Input::ReleaseAll && (self.paused || self.interrupts.should_stop(session)) {
             return;
         }
         // Clicks, keys and scrolls act where the pointer is meant to be now.
@@ -826,6 +840,11 @@ impl<S: EventSink> Engine<S> {
         self.stop_momentum();
         match phase {
             scroll_phase::BEGAN | scroll_phase::CHANGED => {
+                // A gesture that never ended, such as another device's, is
+                // closed before a new one begins.
+                if phase == scroll_phase::BEGAN && self.scroll.take().is_some() {
+                    self.post_scroll(0.0, 0.0, scroll_phase::ENDED, momentum_phase::NONE);
+                }
                 let phase = if self.scroll.is_some() && phase == scroll_phase::CHANGED {
                     scroll_phase::CHANGED
                 } else {
@@ -885,7 +904,9 @@ impl<S: EventSink> Engine<S> {
             self.stop_momentum();
             return;
         }
-        let (dx, dy) = (m.vx * dt, m.vy * dt);
+        // After a stall, such as long typing, glide on instead of jumping.
+        let step = dt.min(MOMENTUM_FRAME.as_secs_f64() * 3.0);
+        let (dx, dy) = (m.vx * step, m.vy * step);
         let phase = if m.began { momentum_phase::CONTINUE } else { momentum_phase::BEGIN };
         m.began = true;
         self.post_scroll(dx, dy, scroll_phase::NONE, phase);
@@ -1211,10 +1232,49 @@ mod tests {
         h.take();
         h.advance(1000);
         h.cmd(Command::Alive(A));
-        h.advance(2500);
-        assert!(h.take().is_empty(), "heartbeats keep input held");
+        h.advance(3500);
+        assert!(h.take().is_empty(), "one late heartbeat keeps input held");
+        h.advance(2000);
+        assert!(h.take().is_empty());
         h.advance(600);
         assert_eq!(h.take(), vec![flags_ev(KEY_OPTION, 0)]);
+    }
+
+    #[test]
+    fn a_silent_device_stops_repeating_before_it_is_released() {
+        let mut h = Harness::new();
+        h.input(A, Input::Key { code: KEY_DELETE, down: true, mods: 0, repeat: true });
+        h.take();
+        h.advance(REPEAT_WATCHDOG.as_millis() as u64);
+        assert!(h.engine.repeat.is_none(), "repeat stops on a link that went quiet");
+        h.take();
+        h.advance(1000);
+        assert!(h.take().is_empty(), "the key stays down without repeating");
+        h.advance(2000);
+        assert_eq!(h.take(), vec![key_ev(KEY_DELETE, false, 0)]);
+    }
+
+    #[test]
+    fn input_already_queued_stops_when_paused_or_disconnected() {
+        let mut h = Harness::new();
+        h.key(A, KEY_COMMAND, true);
+        h.take();
+        // The host flips the interrupt at once; SetPaused is still queued.
+        h.engine.interrupts.set_paused(true);
+        h.input(A, Input::Tap { code: KEY_A, mods: mods::SHIFT });
+        h.input(A, Input::Button { button: MouseButton::Left, op: PressOp::Click, mods: 0 });
+        h.input(A, Input::Media { key: MediaKey::PlayPause, op: PressOp::Click });
+        assert!(h.take().is_empty(), "queued steps are dropped");
+        h.cmd(Command::SetPaused(true));
+        assert_eq!(h.take(), vec![flags_ev(KEY_COMMAND, 0)]);
+        h.engine.interrupts.set_paused(false);
+        h.cmd(Command::SetPaused(false));
+
+        h.engine.interrupts.end(B);
+        h.input(B, Input::Tap { code: KEY_A, mods: 0 });
+        assert!(h.take().is_empty(), "a device that left can't type");
+        h.input(A, Input::Tap { code: KEY_A, mods: 0 });
+        assert_eq!(h.take().len(), 2, "other devices are unaffected");
     }
 
     #[test]
@@ -1424,6 +1484,32 @@ mod tests {
         let events = h.take();
         assert!(matches!(events.last(), Some(Synth::Scroll { momentum: momentum_phase::END, .. })));
         assert!(h.engine.momentum.is_none());
+    }
+
+    #[test]
+    fn a_new_scroll_gesture_ends_the_previous_one() {
+        let mut h = Harness::new();
+        h.input(A, Input::Scroll { phase: scroll_phase::BEGAN, dx: 0.0, dy: 1.0 });
+        h.input(B, Input::Scroll { phase: scroll_phase::BEGAN, dx: 0.0, dy: 2.0 });
+        h.input(B, Input::Scroll { phase: scroll_phase::ENDED, dx: 0.0, dy: 0.0 });
+        let phases: Vec<u8> = h
+            .take()
+            .into_iter()
+            .filter_map(|e| match e {
+                Synth::Scroll { phase, .. } => Some(phase),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(phases, [scroll_phase::BEGAN, scroll_phase::ENDED, scroll_phase::BEGAN, scroll_phase::ENDED]);
+    }
+
+    #[test]
+    fn momentum_glides_on_after_a_stall() {
+        let mut h = Harness::new();
+        h.input(A, Input::Fling { vx: 0.0, vy: 3000.0 });
+        h.advance(500);
+        let [Synth::Scroll { dy, .. }] = h.take()[..] else { panic!("one momentum frame") };
+        assert!(dy > 0.0 && dy < 3000.0 * MOMENTUM_FRAME.as_secs_f64() * 3.0, "{dy}");
     }
 
     #[test]

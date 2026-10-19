@@ -9,6 +9,16 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixes
+
+- **Pause** and disconnecting now stop a deck button's remaining shortcuts
+  and clicks at once, instead of after the whole sequence has played.
+- A held key, drag or modifier is no longer let go when one of the phone's
+  check-ins arrives late. If the phone really drops off the network, a held
+  key still stops repeating within 3 seconds.
+- Momentum scrolling no longer jumps after the Mac was busy typing, and a
+  scroll from a second device properly ends the first one.
+
 ## [0.3.1] - 2026-10-17
 
 Pick the scroll strip you like: the new short handle, the long strip from

@@ -246,7 +246,13 @@ impl MacSink {
         let mut count = 0_u32;
         let error = unsafe { CGGetActiveDisplayList(MAX_DISPLAYS as u32, ids.as_mut_ptr(), &mut count) };
         if error.0 == 0 {
-            self.displays = ids[..count as usize].iter().map(|id| CGDisplayBounds(*id)).collect();
+            // A display removed mid-query reports an empty rect, which would
+            // make the edge clamp panic.
+            self.displays = ids[..count as usize]
+                .iter()
+                .map(|id| CGDisplayBounds(*id))
+                .filter(|r| r.size.width >= 1.0 && r.size.height >= 1.0)
+                .collect();
         }
         self.displays_at = Some(Instant::now());
     }
