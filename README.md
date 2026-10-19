@@ -63,9 +63,10 @@ deck for your Mac.<br />
 <img src="docs/media/trackpad.webp" width="100%" alt="Tapping, scrolling and pinching on the phone moves and zooms on the Mac" />
 
 #### Trackpad
-Tap to click, drag, two-finger scrolling with real momentum, pinch to zoom,
-and three- and four-finger gestures you can assign. The pointer glides
-smoothly even on busy Wi-Fi.
+Tap to click, drag, two-finger scrolling with real momentum, a one-thumb
+scroll strip that keeps going while you hold it, pinch to zoom, and three-
+and four-finger gestures you can assign. The pointer glides smoothly even on
+busy Wi-Fi.
 
 </td>
 <td width="50%" valign="top">
@@ -96,8 +97,9 @@ touch it.
 
 #### Deck
 A button grid like a Stream Deck: shortcuts, text snippets, apps, websites,
-system actions, Shortcuts automations and multi-step sequences, shared by
-all your devices.
+system actions, Shortcuts automations, mouse clicks and multi-step
+sequences, shared by all your devices. Shell commands work too, once you
+allow them.
 
 </td>
 </tr>
@@ -108,7 +110,8 @@ all your devices.
 
 #### Apps and media
 Launch, switch, hide and quit apps with their real icons, including apps on
-an external drive. Play, pause, skip and set the volume.
+an external drive. Play, pause and skip, and set the volume, display
+brightness and keyboard backlight.
 
 </td>
 <td valign="top">
@@ -123,17 +126,64 @@ on the Mac itself and never sent to a server.
 </tr>
 </table>
 
-Your phone settings, custom keyboards and gestures are kept on your Mac too,
-so they survive a cleared browser. Set up a new phone in one tap with **Copy
-settings from another device**.
+Pair as many phones and tablets as you like. Each one's settings, custom
+keyboards and gestures are kept on your Mac too, so they survive a cleared
+browser. Set up a new phone in one tap with **Copy settings from another
+device**.
 
 <div align="center">
 
 <a href="https://cmdpalm.app/#film"><img src="docs/media/film.jpg" width="640" alt="Watch the CmdPalm film" /></a>
 
-<sub><a href="https://cmdpalm.app/#film">▶ Watch the film on cmdpalm.app</a></sub>
+<sub><a href="https://cmdpalm.app/#film">▶ Watch the 86-second film on cmdpalm.app</a></sub>
 
 </div>
+
+## Made for real life
+
+<table>
+<tr>
+<td width="33%" valign="top">
+
+**Presenting**<br />
+<sub>A custom keyboard with giant ← and → keys, and B for a black screen.
+Walk the stage.</sub>
+
+</td>
+<td width="33%" valign="top">
+
+**Movie night**<br />
+<sub>Play, pause, skip, volume and brightness without leaving the couch.</sub>
+
+</td>
+<td width="33%" valign="top">
+
+**Cooking**<br />
+<sub>Prop the phone on the counter and scroll the recipe with messy hands.</sub>
+
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+**Gaming**<br />
+<sub>A WASD layout where every key stays pressed for as long as you hold it.</sub>
+
+</td>
+<td valign="top">
+
+**Streaming**<br />
+<sub>Go live, mute the mic and switch scenes from a page on your Deck.</sub>
+
+</td>
+<td valign="top">
+
+**Quick replies**<br />
+<sub>Tap the mic, say it, and your Mac types every word.</sub>
+
+</td>
+</tr>
+</table>
 
 ## Private by design
 
@@ -178,8 +228,9 @@ Read [SECURITY.md](SECURITY.md) for the full details.
 ## Requirements
 
 - A Mac with Apple silicon, running macOS 15 Sequoia or later.
-- An iPhone or iPad with iOS 17 or later, or an Android phone with Chrome, on
-  the same network as the Mac.
+- An iPhone or iPad with iOS 17 or later, or an Android phone, on the same
+  network as the Mac. CmdPalm works in Safari, Chrome, Firefox and Samsung
+  Internet.
 
 ## Install
 

@@ -2,7 +2,7 @@
   "id": "/",
   "name": "CmdPalm",
   "short_name": "CmdPalm",
-  "description": "Use your phone as a trackpad, keyboard and control deck for your Mac.",
+  "description": "Use your phone as a trackpad, keyboard and button deck for your Mac.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
