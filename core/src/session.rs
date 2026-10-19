@@ -366,8 +366,12 @@ where
                 state.approvals.insert(id, PendingApproval { request: request.clone(), reply });
             }
             shared.emit(HostEvent::ApprovalRequested { request });
+            // A request that is shown and then abandoned counts as unanswered,
+            // so connecting and leaving in a loop can't flood the Mac with prompts.
+            let declined = || shared.state().pairing.approval_declined(peer, Instant::now());
             if !send(sink, &ServerMessage::Pending).await {
                 cancel_approval(shared, id);
+                declined();
                 return Err(None);
             }
             let waited = timeout(APPROVAL_TIMEOUT, async {
@@ -386,7 +390,6 @@ where
                 }
             })
             .await;
-            let declined = || shared.state().pairing.approval_declined(peer, Instant::now());
             match waited {
                 Ok(Some(true)) => accept(shared),
                 Ok(Some(false)) => {
@@ -395,6 +398,7 @@ where
                 }
                 Ok(None) => {
                     cancel_approval(shared, id);
+                    declined();
                     Err(None)
                 }
                 Err(_) => {
@@ -579,12 +583,13 @@ impl Connection {
                 None
             }
             ClientMessage::ClipboardSet { text } => {
-                if text.len() <= MAX_TEXT {
-                    self.blocking(move |shared| {
-                        shared.delegate.set_clipboard_text(text);
-                        None
-                    });
+                if text.len() > MAX_TEXT {
+                    return Some(notice(NoticeLevel::Warning, "tooLong", "That text is too long to send at once."));
                 }
+                self.blocking(move |shared| {
+                    shared.delegate.set_clipboard_text(text);
+                    None
+                });
                 None
             }
             ClientMessage::ClipboardGet => {

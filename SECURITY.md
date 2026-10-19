@@ -35,11 +35,11 @@ Only the latest release receives fixes.
   the minute has passed. The QR code is too long to guess, so it keeps
   working during a lockout.
 - **Approval requests.** Each address (or IPv6 /64 network) can wait on one
-  request at a time. After 3 requests in a row are declined or left
-  unanswered, that address has to wait before asking again, from 30 seconds
-  up to 15 minutes. Device names and models are shown without invisible
-  formatting characters, so a request can't disguise itself, and pressing
-  Return never approves one.
+  request at a time. After 3 requests in a row are declined, left
+  unanswered or abandoned by the device, that address has to wait before
+  asking again, from 30 seconds up to 15 minutes. Device names and models
+  are shown without invisible formatting characters, so a request can't
+  disguise itself, and pressing Return never approves one.
 - **Remembered devices** receive a random token. The Mac stores only a SHA-256
   hash of it, together with the device ID, in
   `~/Library/Application Support/CmdPalm`. Removing a device in

@@ -19,7 +19,7 @@ at the first byte of each connection to tell them apart.
 | `/api/icon?id=<bundle id>&size=<px>&k=<session key>` | App icon as PNG, 64 to 512 px. Needs the `sessionKey` from `welcome`. |
 | `/cmdpalm.crt` | The Mac's certificate authority (DER), for installing on the phone. |
 
-Only `GET` and `HEAD` are accepted. The `Host` header must be present and be
+Only `GET` and `HEAD` without a body are accepted, and `/ws` needs `GET`. The `Host` header must be present and be
 an IP address, `localhost`, a single-label name, a name under `.local`,
 `.home.arpa` or `.internal`, or the host of the custom pairing address set on
 the Mac. Anything else gets `421`,
@@ -29,7 +29,7 @@ limited to 1 MiB.
 When **Accept connections through a proxy on this Mac** is on, a reverse
 proxy on the Mac itself may connect over loopback. For loopback connections
 with `X-Forwarded-For`, the server
-takes the client address from its last entry, treats `X-Forwarded-Proto:
+takes the client address from its last entry (with or without a port), treats `X-Forwarded-Proto:
 https` as encrypted, and checks `X-Forwarded-Host` (or `Host`) in place of
 `Host`, including for the WebSocket `Origin` check. The forwarded headers are
 ignored otherwise, and always on connections from other machines. The app must
@@ -101,7 +101,7 @@ Otherwise the Mac sends `denied` and closes the connection:
 | `pinClosed` | The PIN isn't shown on the Mac right now. Open the CmdPalm menu on the Mac and try again. Not counted as a wrong attempt. |
 | `expiredCode` | The QR code is wrong, expired or already used. |
 | `rejected` | The person at the Mac declined or didn't answer in time, or this pairing method is turned off. |
-| `blocked` | Too many wrong PINs, or too many declined approval requests. `retryAfter` gives seconds to wait. |
+| `blocked` | Too many wrong PINs, or too many approval requests declined, unanswered or abandoned. `retryAfter` gives seconds to wait. |
 | `busy` | Too many approval requests are already waiting. |
 | `incompatible` | Unsupported protocol version or invalid device info. |
 
@@ -177,7 +177,7 @@ deck buttons store, tagged by `kind`:
 | `appAction` | `id`, `op` | `appsChanged` once the app responds |
 | `deckSave` | `deck` | `deck` to every connected device |
 | `volume` | `value?`, `muted?` | `volume` |
-| `clipboardSet` | `text` | |
+| `clipboardSet` | `text`, up to 64 KiB | a `notice` with code `tooLong` if it is longer |
 | `clipboardGet` | | `clipboard` |
 | `voiceStart` | `locale?` | `voice` updates |
 | `voiceStop` | `cancel` | final `voice` update |
@@ -195,7 +195,7 @@ deck buttons store, tagged by `kind`:
 | `layout` | `layout` | The Mac's input source changed. |
 | `volume` | `value`, `muted` | Output volume changed. |
 | `volumeUnavailable` | | The output device has no volume control (HDMI, for example). |
-| `paused` | `paused` | Input was paused or resumed on the Mac. While paused, the Mac ignores input and refuses actions, text, clipboard and voice: `action` gets a failed `actionResult`, `voiceStart` gets `voice` with `unavailable`, and the others get a `notice` with code `paused`. |
+| `paused` | `paused` | Input was paused or resumed on the Mac. While paused, the Mac ignores input and refuses actions, text, clipboard and voice: `action` gets a failed `actionResult`, `voiceStart` gets `voice` with `unavailable`, and the others get a `notice` with code `paused`. Saving the deck and phone settings still works. |
 | `features` | `features` | Permissions or settings changed. |
 | `notice` | `level`, `code`, `message` | Something the person should know, e.g. `secureInput` when a password field blocks typing. |
 | `clipboard` | `text` | Answer to `clipboardGet`. |

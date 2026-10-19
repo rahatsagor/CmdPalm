@@ -16,8 +16,25 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - A held key, drag or modifier is no longer let go when one of the phone's
   check-ins arrives late. If the phone really drops off the network, a held
   key still stops repeating within 3 seconds.
+- After you rename the Mac, or it gets a new name when it joins a network,
+  the QR code and the encrypted connection use the new name without
+  restarting CmdPalm.
 - Momentum scrolling no longer jumps after the Mac was busy typing, and a
   scroll from a second device properly ends the first one.
+
+### Privacy and security
+
+- A device that asks for approval and leaves before you answer now has to
+  wait after a few tries, like one you decline, so it can't flood the Mac
+  with prompts.
+- The Mac refuses requests that carry a body, so a second request can't be
+  hidden inside one that passes through a proxy on the Mac.
+
+### Other ways to connect
+
+- A reverse proxy that connects to CmdPalm over IPv6 (`::1`) gets the higher
+  connection limit meant for proxies.
+- `X-Forwarded-For` entries that include a port are understood.
 
 ## [0.3.1] - 2026-10-17
 

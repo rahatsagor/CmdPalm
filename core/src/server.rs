@@ -69,6 +69,7 @@ fn bind(port: u16) -> std::io::Result<(TcpListener, Option<TcpListener>)> {
         socket.set_nonblocking(true)?;
         Ok(socket.into())
     })()
+    .inspect_err(|err| tracing::info!(%err, port, "not listening on IPv6"))
     .ok();
     Ok((TcpListener::from_std(v4)?, v6.and_then(|l| TcpListener::from_std(l).ok())))
 }
@@ -95,19 +96,25 @@ pub(crate) async fn start(shared: Arc<Shared>, shutdown: watch::Receiver<bool>) 
     let port = v4.local_addr()?.port();
     shared.port.store(port, Ordering::Relaxed);
 
-    refresh_identity(&shared).await;
+    let addresses = lan_addresses();
+    let names = identity_names(&shared, &addresses);
+    refresh_identity(&shared, names.clone()).await;
 
     for listener in std::iter::once(v4).chain(v6) {
         tokio::spawn(accept_loop(shared.clone(), listener, shutdown.clone()));
     }
-    tokio::spawn(housekeeping(shared.clone(), shutdown));
+    tokio::spawn(housekeeping(shared.clone(), addresses, names, shutdown));
     Ok((port, preferred != 0 && port != preferred))
 }
 
-/// Create or reissue the TLS certificate for the current addresses.
-async fn refresh_identity(shared: &Arc<Shared>) {
+/// Names the server certificate must cover right now.
+fn identity_names(shared: &Shared, addresses: &[IpAddr]) -> Vec<String> {
+    tls::server_names(&shared.config().host_name, addresses)
+}
+
+/// Create or reissue the TLS certificate for `names`.
+async fn refresh_identity(shared: &Arc<Shared>, names: Vec<String>) {
     let Some(dir) = shared.data_dir() else { return };
-    let names = tls::server_names(&shared.config().host_name, &lan_addresses());
     let result = tokio::task::spawn_blocking(move || tls::load_identity(&dir.join("tls"), &names)).await;
     match result {
         Ok(Ok(identity)) => *shared.tls.write().unwrap_or_else(|p| p.into_inner()) = Some(Arc::new(identity)),
@@ -116,8 +123,12 @@ async fn refresh_identity(shared: &Arc<Shared>) {
     }
 }
 
-async fn housekeeping(shared: Arc<Shared>, mut shutdown: watch::Receiver<bool>) {
-    let mut addresses = lan_addresses();
+async fn housekeeping(
+    shared: Arc<Shared>,
+    mut addresses: Vec<IpAddr>,
+    mut names: Vec<String>,
+    mut shutdown: watch::Receiver<bool>,
+) {
     let mut ticker = tokio::time::interval(Duration::from_secs(5));
     loop {
         tokio::select! {
@@ -129,7 +140,13 @@ async fn housekeeping(shared: Arc<Shared>, mut shutdown: watch::Receiver<bool>) 
         let moved = current != addresses;
         if moved {
             addresses = current;
-            refresh_identity(&shared).await;
+        }
+        // A new address, or the Mac renamed in System Settings, needs a
+        // certificate that names it.
+        let wanted = identity_names(&shared, &addresses);
+        if wanted != names {
+            names = wanted;
+            refresh_identity(&shared, names.clone()).await;
         }
         if rotated || moved {
             shared.emit(HostEvent::PairingChanged);
@@ -172,19 +189,20 @@ fn open_connections(shared: &Shared) -> usize {
 
 /// Counts an open connection until dropped. IPv6 peers are counted per /64,
 /// since one machine can use any number of addresses in its prefix.
-struct ConnectionSlot {
+pub(crate) struct ConnectionSlot {
     shared: Arc<Shared>,
     peer: IpAddr,
 }
 
 impl ConnectionSlot {
-    fn take(shared: &Arc<Shared>, peer: IpAddr) -> Option<Self> {
+    pub(crate) fn take(shared: &Arc<Shared>, peer: IpAddr) -> Option<Self> {
+        // A reverse proxy on this Mac connects from loopback on behalf of
+        // every phone that uses it. Checked before masking, which turns ::1
+        // into ::.
+        let proxy = peer.is_loopback() && shared.config().allow_local_proxy;
         let peer = auth::throttle_key(peer);
         let mut open = shared.connections.lock().unwrap_or_else(|p| p.into_inner());
         let total: usize = open.values().sum();
-        // A reverse proxy on this Mac connects from loopback on behalf of
-        // every phone that uses it.
-        let proxy = peer.is_loopback() && shared.config().allow_local_proxy;
         let limit = if proxy { MAX_CONNECTIONS / 2 } else { MAX_CONNECTIONS_PER_ADDRESS };
         let mine = open.entry(peer).or_insert(0);
         if total >= MAX_CONNECTIONS || *mine >= limit {
@@ -271,6 +289,10 @@ pub(crate) fn percent_decode(input: &str) -> Option<String> {
         match bytes[i] {
             b'%' => {
                 let hex = bytes.get(i + 1..i + 3)?;
+                // from_str_radix would also take a sign, as in `%+1`.
+                if !hex.iter().all(u8::is_ascii_hexdigit) {
+                    return None;
+                }
                 let value = u8::from_str_radix(std::str::from_utf8(hex).ok()?, 16).ok()?;
                 out.push(value);
                 i += 3;
@@ -436,6 +458,12 @@ where
             let _ = write_response(&mut stream, &Response::text(405, "Method not allowed"), false, false).await;
             return;
         }
+        // A body would be read as the next request on this connection, which
+        // could smuggle forwarded headers past a proxy.
+        if request.header("transfer-encoding").is_some() || request.header("content-length").is_some_and(|n| n != "0") {
+            let _ = write_response(&mut stream, &Response::text(400, "Bad request"), false, false).await;
+            return;
+        }
         let client = client(&request, peer, secure, shared.config().allow_local_proxy);
         let Some(host) = client.host.filter(|host| known_host(&shared, host)) else {
             let _ = write_response(&mut stream, &Response::text(421, "Unknown host name"), false, false).await;
@@ -488,7 +516,10 @@ const LOCAL_SUFFIXES: [&str; 3] = [".local", ".home.arpa", ".internal"];
 /// would make another website same-origin with the server.
 pub(crate) fn local_host(host: &str) -> bool {
     if let Some(rest) = host.strip_prefix('[') {
-        return rest.split_once(']').is_some_and(|(ip, _)| ip.parse::<Ipv6Addr>().is_ok());
+        return rest.split_once(']').is_some_and(|(ip, after)| {
+            ip.parse::<Ipv6Addr>().is_ok()
+                && (after.is_empty() || after.strip_prefix(':').is_some_and(|port| port.parse::<u16>().is_ok()))
+        });
     }
     let name = host_name(host);
     if name.parse::<IpAddr>().is_ok() || name == "localhost" {
@@ -540,7 +571,9 @@ pub(crate) fn client(request: &Request, peer: IpAddr, secure: bool, allow_proxy:
         .then(|| request.header("x-forwarded-for"))
         .flatten()
         .and_then(|list| list.rsplit(',').next())
-        .and_then(|ip| ip.trim().parse::<IpAddr>().ok());
+        .map(str::trim)
+        // Some proxies add the port: `10.0.0.9:51234` or `[fd00::9]:51234`.
+        .and_then(|ip| ip.parse::<IpAddr>().ok().or_else(|| ip.parse::<SocketAddr>().ok().map(|a| a.ip())));
     let Some(address) = forwarded else {
         return Client { address: peer, secure, host };
     };
@@ -555,6 +588,9 @@ pub(crate) fn client(request: &Request, peer: IpAddr, secure: bool, allow_proxy:
 /// Validate a WebSocket upgrade. Browsers always send `Origin`; requiring it
 /// to match the host stops other web pages from talking to the server.
 fn websocket_accept(request: &Request, host: &str) -> Result<String, Response> {
+    if request.method != "GET" {
+        return Err(Response::text(405, "Method not allowed"));
+    }
     if !request.header_has_token("upgrade", "websocket") || !request.header_has_token("connection", "upgrade") {
         return Err(Response::text(426, "WebSocket upgrade required"));
     }
@@ -699,7 +735,9 @@ async fn static_file(root: &str, request: &Request) -> Response {
     let modified =
         metadata.modified().ok().and_then(|t| t.duration_since(UNIX_EPOCH).ok()).map(|d| d.as_nanos()).unwrap_or(0);
     let etag = format!("\"{:x}-{:x}\"", metadata.len(), modified);
-    let hashed = request.path.starts_with("/assets/");
+    // The app shell can be served for a missing path under /assets/, and must
+    // never be cached as if it were a hashed file.
+    let hashed = !shell && request.path.starts_with("/assets/");
     let cache = if hashed { "public, max-age=31536000, immutable" } else { "no-cache" };
     if request.header("if-none-match") == Some(etag.as_str()) {
         return Response::new(304, content_type(&path), Vec::new()).header("ETag", etag).header("Cache-Control", cache);
@@ -731,6 +769,8 @@ mod tests {
         assert!(request.header_has_token("connection", "upgrade"));
         assert!(request.keep_alive());
         assert!(parse_head(b"GET / SPDY/3\r\n").is_none());
+        assert_eq!(percent_decode("%41%2b"), Some("A+".into()));
+        assert_eq!(percent_decode("%+1"), None, "a sign is not a hex digit");
     }
 
     #[test]
@@ -751,5 +791,7 @@ mod tests {
         assert_eq!(websocket_accept(&ok, "mac.local:8790").unwrap(), "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=");
         let evil = parse_head(format!("{base}Origin: https://evil.example\r\n").as_bytes()).unwrap();
         assert_eq!(websocket_accept(&evil, "mac.local:8790").unwrap_err().status, 403);
+        let head = parse_head(base.replacen("GET", "HEAD", 1).as_bytes()).unwrap();
+        assert_eq!(websocket_accept(&head, "mac.local:8790").unwrap_err().status, 405);
     }
 }

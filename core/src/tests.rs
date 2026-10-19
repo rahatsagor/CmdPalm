@@ -391,6 +391,8 @@ fn only_local_host_names_are_served() {
         ".local",
         "studio.local.evil.example",
         "[evil]:80",
+        "[::1]evil.example",
+        "[::1]:port",
         "localhost.evil.example",
         "studio.ts.net",
         "studio.local.evil.example:8790",
@@ -424,6 +426,9 @@ fn trusts_forwarded_headers_only_from_an_allowed_proxy_on_this_mac() {
     let direct = client(&request, lan, false, true);
     assert_eq!(direct.address, lan, "a device on the network can't claim another address");
     assert!(!direct.secure);
+
+    let ported = parse_head(b"GET / HTTP/1.1\r\nHost: mac.local\r\nX-Forwarded-For: [fd00::9]:51234\r\n").unwrap();
+    assert_eq!(client(&ported, loopback, false, true).address, "fd00::9".parse::<std::net::IpAddr>().unwrap());
 
     let plain = parse_head(b"GET / HTTP/1.1\r\nHost: 127.0.0.1:8790\r\n").unwrap();
     assert_eq!(client(&plain, "::1".parse().unwrap(), true, true).address, "::1".parse::<std::net::IpAddr>().unwrap());
@@ -481,6 +486,61 @@ fn works_behind_a_reverse_proxy_when_allowed() {
     let device = &f.host.connected_devices()[0];
     assert_eq!(device.address, "fd00:8::42");
     assert!(device.secure);
+}
+
+#[test]
+fn a_proxy_on_ipv6_loopback_gets_the_proxy_limit() {
+    use crate::server::ConnectionSlot;
+    let f = fixture();
+    let mut config = f.config.clone();
+    config.allow_local_proxy = true;
+    let engine = InputEngine::spawn(SharedRecorder::default, Box::new(|_| {}));
+    let shared = Arc::new(Shared::new(config, f.delegate.clone(), &engine, Box::new(|| true)));
+    let loopback: std::net::IpAddr = "::1".parse().unwrap();
+    let slots: Vec<_> = std::iter::from_fn(|| ConnectionSlot::take(&shared, loopback)).take(100).collect();
+    assert_eq!(slots.len(), 64, "::1 is masked to its /64 only after the loopback check");
+    drop(slots);
+    let lan: std::net::IpAddr = "fd00::5".parse().unwrap();
+    let slots: Vec<_> = std::iter::from_fn(|| ConnectionSlot::take(&shared, lan)).take(100).collect();
+    assert_eq!(slots.len(), 16);
+}
+
+#[test]
+fn requests_with_a_body_are_refused() {
+    let f = fixture();
+    f.rt.block_on(async {
+        let mut tcp = TcpStream::connect(("127.0.0.1", f.port)).await.unwrap();
+        let smuggled = "GET /api/info HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Length: 44\r\n\r\nGET /api/info HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n";
+        tcp.write_all(smuggled.as_bytes()).await.unwrap();
+        let mut out = Vec::new();
+        tcp.read_to_end(&mut out).await.unwrap();
+        let out = String::from_utf8_lossy(&out);
+        assert!(out.starts_with("HTTP/1.1 400"), "{out}");
+        assert_eq!(out.matches("HTTP/1.1").count(), 1, "the body is never read as a request: {out}");
+    });
+}
+
+#[test]
+fn abandoned_approval_requests_back_off() {
+    let f = fixture();
+    let ended =
+        || f.delegate.events.lock().unwrap().iter().filter(|e| matches!(e, HostEvent::ApprovalEnded { .. })).count();
+    f.rt.block_on(async {
+        for attempt in 1..=3 {
+            let mut ws = connect(f.port).await;
+            send(&mut ws, hello("pest", json!({"method": "approve"}))).await;
+            assert_eq!(recv(&mut ws).await["t"], "pending");
+            drop(ws);
+            while ended() < attempt {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        }
+        let mut ws = connect(f.port).await;
+        send(&mut ws, hello("pest", json!({"method": "approve"}))).await;
+        let denied = recv(&mut ws).await;
+        assert_eq!(denied["reason"], "blocked", "{denied}");
+        assert!(denied["retryAfter"].as_u64().is_some());
+    });
 }
 
 #[test]
