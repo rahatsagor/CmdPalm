@@ -13,9 +13,8 @@ if [[ "${CMDPALM_SKIP_WEB:-0}" != "1" || ! -f "$WEB/dist/index.html" ]]; then
     exit 1
   fi
   cd "$WEB"
-  if [[ ! -d node_modules ]]; then
-    bun install --frozen-lockfile
-  fi
+  # Quick when nothing changed, and picks up lockfile updates.
+  bun install --frozen-lockfile
   bun run build
 fi
 

@@ -22,7 +22,7 @@ STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
 ditto "$APP" "$STAGE/CmdPalm.app"
 ln -s /Applications "$STAGE/Applications"
-cp "$ROOT/packaging/dmg/Open Me First.txt" "$STAGE/" 2>/dev/null || true
+cp "$ROOT/packaging/dmg/Open Me First.txt" "$STAGE/"
 rm -f "$DMG"
 hdiutil create -quiet -volname "CmdPalm $VERSION" -srcfolder "$STAGE" -fs APFS -format ULFO -ov "$DMG"
 

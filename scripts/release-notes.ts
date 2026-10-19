@@ -6,7 +6,6 @@ import { basename, join, resolve } from 'node:path'
 
 export const ROOT = resolve(import.meta.dir, '..')
 const REPO = 'rahatsagor/CmdPalm'
-const MIN_MACOS = '15.0'
 
 const USAGE = `Release tooling that reads CHANGELOG.md.
 
@@ -61,7 +60,11 @@ function escapeRegExp(text: string): string {
 /** The body of the `## [version]` section of CHANGELOG.md. */
 export function section(version: string, root = ROOT): string {
   const text = readFileSync(join(root, 'CHANGELOG.md'), 'utf8')
-  const pattern = new RegExp(`^## \\[?${escapeRegExp(version)}\\]?[^\\n]*\\n([\\s\\S]*?)(?=^## |(?![\\s\\S]))`, 'm')
+  // The lookahead stops 1.2.1 from matching the heading of 1.2.10 or 1.2.1-beta.
+  const pattern = new RegExp(
+    `^## \\[?${escapeRegExp(version)}(?![\\w.-])\\]?[^\\n]*\\n([\\s\\S]*?)(?=^## |(?![\\s\\S]))`,
+    'm',
+  )
   const match = pattern.exec(text)
   if (!match) fail(`CHANGELOG.md has no section for ${version}`)
   const body = (match[1] ?? '').replace(/^\[[^\]]+\]: .*$/gm, '').trim()
@@ -113,7 +116,8 @@ export function toHtml(markdown: string): string {
         inList = true
       }
       parts.push(`<li>${inline(stripped.slice(2))}</li>`)
-    } else if (inList && line.startsWith('  ')) {
+    } else if (inList) {
+      // An indented or lazy continuation of the last item.
       const item = parts.pop() ?? ''
       parts.push(`${item.slice(0, -'</li>'.length)} ${inline(stripped)}</li>`)
     } else {
@@ -132,8 +136,18 @@ export function buildNumber(version: string): number {
   return major * 10000 + minor * 100 + patch
 }
 
+/** The deployment target in apple/project.yml, so the appcast never offers an
+ * update to a Mac that can't run it. */
+export function minimumMacOS(root = ROOT): string {
+  const project = readFileSync(join(root, 'apple/project.yml'), 'utf8')
+  const target = /^\s+deploymentTarget:\n\s+macOS: "([0-9]+(?:\.[0-9]+)*)"$/m.exec(project)?.[1]
+  if (!target) fail('apple/project.yml must define deploymentTarget.macOS')
+  return target
+}
+
 export function checkVersion(version: string, root = ROOT): void {
   buildNumber(version)
+  minimumMacOS(root)
   const cargo = Bun.TOML.parse(readFileSync(join(root, 'Cargo.toml'), 'utf8')) as {
     workspace?: { package?: { version?: unknown } }
   }
@@ -246,7 +260,7 @@ export function appcast(version: string, archive: string, out: string, root = RO
       <pubDate>${new Date().toUTCString()}</pubDate>
       <sparkle:version>${buildNumber(version)}</sparkle:version>
       <sparkle:shortVersionString>${version}</sparkle:shortVersionString>
-      <sparkle:minimumSystemVersion>${MIN_MACOS}</sparkle:minimumSystemVersion>
+      <sparkle:minimumSystemVersion>${minimumMacOS(root)}</sparkle:minimumSystemVersion>
       <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
       <sparkle:fullReleaseNotesLink>https://github.com/${REPO}/releases/tag/v${version}</sparkle:fullReleaseNotesLink>
       <description><![CDATA[

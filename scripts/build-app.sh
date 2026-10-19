@@ -19,7 +19,9 @@ VERSION=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --version) VERSION="${2#v}"; shift 2 ;;
+    --version)
+      [[ $# -ge 2 ]] || { echo "error: --version needs a value, like 1.2.3" >&2; exit 2; }
+      VERSION="${2#v}"; shift 2 ;;
     --debug) CONFIGURATION=Debug; shift ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac

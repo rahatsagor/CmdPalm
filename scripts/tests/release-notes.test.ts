@@ -6,7 +6,17 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
-import { type Run, buildNumber, checkKeys, checkVersion, sign, unwrap } from '../release-notes'
+import {
+  type Run,
+  buildNumber,
+  checkKeys,
+  checkVersion,
+  minimumMacOS,
+  section,
+  sign,
+  toHtml,
+  unwrap,
+} from '../release-notes'
 
 const SCRIPTS = resolve(import.meta.dir, '..')
 
@@ -19,7 +29,10 @@ describe('release versions', () => {
     mkdirSync(join(root, 'apple'))
     writeFileSync(join(root, 'Cargo.toml'), '[workspace.package]\nversion = "0.1.0"\n')
     writeFileSync(join(root, 'web/package.json'), JSON.stringify({ version: '0.1.0' }))
-    writeFileSync(join(root, 'apple/project.yml'), '    MARKETING_VERSION: "0.1.0"\n')
+    writeFileSync(
+      join(root, 'apple/project.yml'),
+      'options:\n  deploymentTarget:\n    macOS: "15.0"\nsettings:\n  base:\n    MARKETING_VERSION: "0.1.0"\n',
+    )
     writeFileSync(join(root, 'CHANGELOG.md'), '## [0.1.0] - 2026-10-09\n\n- First release.\n')
   })
   afterEach(() => rmSync(root, { recursive: true, force: true }))
@@ -37,6 +50,22 @@ describe('release versions', () => {
   test.each(['## [Unreleased]\n', '## [0.1.0]\n\n'])('missing or empty release notes are rejected: %j', (changelog) => {
     writeFileSync(join(root, 'CHANGELOG.md'), changelog)
     expect(() => checkVersion('0.1.0', root)).toThrow()
+  })
+
+  test('a version never matches the section of a longer one', () => {
+    writeFileSync(
+      join(root, 'CHANGELOG.md'),
+      '## [Unreleased]\n\n## [0.1.10] - 2026-10-20\n\n- Ten.\n\n## [0.1.1-beta]\n\n- Beta.\n\n## [0.1.1] - 2026-10-10\n\n- One.\n\n[0.1.1]: https://example.com\n',
+    )
+    expect(section('0.1.1', root)).toBe('- One.')
+    expect(section('0.1.10', root)).toBe('- Ten.')
+    expect(() => section('0.1.0', root)).toThrow('no section for 0.1.0')
+  })
+
+  test('the minimum macOS comes from the deployment target', () => {
+    expect(minimumMacOS(root)).toBe('15.0')
+    writeFileSync(join(root, 'apple/project.yml'), '    MARKETING_VERSION: "0.1.0"\n')
+    expect(() => checkVersion('0.1.0', root)).toThrow('deploymentTarget')
   })
 
   test('build numbers increase at version boundaries', () => {
@@ -72,6 +101,20 @@ describe('release notes', () => {
         '- Move, tap to click, and touch and hold to drag.\n' +
         '- Pinch to zoom.\n\n' +
         'A paragraph that wraps onto two lines.',
+    )
+  })
+})
+
+describe('release notes HTML', () => {
+  test('wrapped list items stay inside their item', () => {
+    expect(toHtml('### Fixes\n\n- One that\n  wraps.\n- Two that\nwraps lazily.\n\nAfter.')).toBe(
+      '<h3>Fixes</h3>\n<ul>\n<li>One that wraps.</li>\n<li>Two that wraps lazily.</li>\n</ul>\n<p>After.</p>',
+    )
+  })
+
+  test('text is escaped and inline markup is kept', () => {
+    expect(toHtml('- **Bold** `a < b` & [link](https://cmdpalm.app) <script>')).toBe(
+      '<ul>\n<li><strong>Bold</strong> <code>a &lt; b</code> &amp; <a href="https://cmdpalm.app">link</a> &lt;script&gt;</li>\n</ul>',
     )
   })
 })
