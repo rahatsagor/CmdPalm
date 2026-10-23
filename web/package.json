@@ -12,7 +12,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@lucide/vue": "^1.56.0",
+    "@lucide/vue": "^1.60.0",
     "vue": "^3.5.44"
   },
   "devDependencies": {
@@ -21,12 +21,12 @@
     "@types/node": "^26.6.5",
     "@vitejs/plugin-vue": "^6.0.10",
     "@vue/test-utils": "^2.5.1",
-    "happy-dom": "^21.0.1",
-    "oxlint": "^1.88.0",
+    "happy-dom": "^21.0.4",
+    "oxlint": "^1.89.0",
     "tailwindcss": "^4.3.3",
     "typescript": "~6.0.3",
     "vite": "^8.3.4",
-    "vitest": "^5.0.4",
+    "vitest": "^5.0.5",
     "vue-tsc": "^3.3.13"
   }
 }
