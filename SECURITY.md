@@ -73,7 +73,9 @@ port speaks both HTTP and HTTPS.
   limited by name constraints to local addresses, so even if it were stolen
   it could not be used to impersonate public websites. Install it on your
   phone from **Settings → Phone Setup → Encrypted Connection**, and compare
-  the SHA-256 fingerprint shown there if you want to be sure.
+  the SHA-256 fingerprint shown there if you want to be sure. The
+  [encrypted connection guide](https://cmdpalm.app/docs/encrypted-connection/)
+  walks through installing, checking and removing it.
 - **A reverse proxy on the Mac** is ignored unless you turn on **Accept
   connections through a proxy on this Mac** in **Settings → Advanced**. With
   it on, CmdPalm believes the `X-Forwarded-For`, `X-Forwarded-Proto` and

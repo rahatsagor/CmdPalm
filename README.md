@@ -15,6 +15,8 @@ deck for your Mac.<br />
 <a href="https://github.com/rahatsagor/CmdPalm/releases/latest/download/CmdPalm.dmg"><img src="https://img.shields.io/badge/Download_for_Mac-f9813d?style=for-the-badge&logo=apple&logoColor=white" alt="Download for Mac" height="36" /></a>
 &nbsp;
 <a href="https://cmdpalm.app"><img src="https://img.shields.io/badge/Website-1f1f1f?style=for-the-badge&logo=safari&logoColor=white" alt="Website" height="36" /></a>
+&nbsp;
+<a href="https://cmdpalm.app/docs/"><img src="https://img.shields.io/badge/Docs-1f1f1f?style=for-the-badge&logo=readthedocs&logoColor=white" alt="Docs" height="36" /></a>
 
 <br />
 
@@ -261,6 +263,11 @@ skips this step for you.
 
 ## Get started in a minute
 
+The [CmdPalm docs](https://cmdpalm.app/docs/) explain every screen, setting
+and button in detail, from [getting started](https://cmdpalm.app/docs/getting-started/)
+to the [encrypted connection](https://cmdpalm.app/docs/encrypted-connection/)
+and [troubleshooting](https://cmdpalm.app/docs/troubleshooting/).
+
 1. **Allow Accessibility.** macOS requires it for any app that moves the
    pointer or types. CmdPalm asks on first launch and opens the right page in
    System Settings.
@@ -347,7 +354,8 @@ again.
 
 CmdPalm follows the Mac's current input source. For apps that ignore typed
 text, such as games, virtual machines and remote desktops, set **Send text
-as** to **Key presses** in the phone's advanced settings.
+as** to **Key presses** in the phone's advanced settings and turn **Live**
+off in the typing panel. Live typing always sends characters.
 
 </details>
 
@@ -378,7 +386,9 @@ each address you use.
 <summary><strong>Something else</strong></summary>
 <br />
 
-Logs are in `~/Library/Logs/CmdPalm`, and they never contain what you type.
+The [troubleshooting docs](https://cmdpalm.app/docs/troubleshooting/) cover
+more problems. Logs are in `~/Library/Logs/CmdPalm`, and they never contain
+what you type.
 Please include them when you
 [open an issue](https://github.com/rahatsagor/CmdPalm/issues/new/choose).
 
