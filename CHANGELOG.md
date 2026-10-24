@@ -14,6 +14,9 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - The pointer glides on through a Wi-Fi packet that arrives a little late,
   instead of stopping and then catching up. This is most noticeable with a
   high pointer speed.
+- Pointer acceleration eases in and out instead of switching on at a fixed
+  finger speed, and fast pointer speeds smooth out uneven touch timing, so
+  the pointer no longer surges and hitches as you speed up and slow down.
 
 ## [0.3.2] - 2026-10-20
 

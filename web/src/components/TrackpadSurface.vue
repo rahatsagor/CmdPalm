@@ -6,6 +6,7 @@ import { haptic } from '@/lib/haptics'
 import { onPageHidden } from '@/lib/heldPointers'
 import { beginPointerGesture, buttonDown, buttonUp, click, tap } from '@/lib/input'
 import { Key } from '@/lib/keys'
+import { PointerGain } from '@/lib/pointerGain'
 import { Mod, ScrollPhase } from '@/lib/protocol'
 import { settings, type GestureMap } from '@/lib/settings'
 
@@ -13,21 +14,9 @@ const surface = ref<HTMLElement>()
 const touches = reactive(new Map<number, { x: number; y: number }>())
 const dragging = ref(false)
 
-/**
- * Pointer acceleration: slow movements stay precise, fast flicks cross the
- * screen. Speed is in CSS px per ms, smoothed over ~25 ms: touch samples
- * arrive with uneven timing, and raw per-sample speed makes the gain (and
- * so the cursor) jitter even when the finger moves steadily.
- */
-let smoothedSpeed = -1
-function gain(dx: number, dy: number, dt: number): number {
-  const instant = Math.hypot(dx, dy) / dt
-  smoothedSpeed = smoothedSpeed < 0 ? instant : smoothedSpeed + (instant - smoothedSpeed) * (1 - Math.exp(-dt / 25))
-  const speed = smoothedSpeed
-  const accel = settings.pointerAcceleration
-  const boost = Math.min(Math.max((speed - 0.08) / 0.9, 0), 2.2)
-  return settings.pointerSpeed * (0.8 + accel * boost * 1.4 + (1 - accel) * 0.25)
-}
+const acceleration = new PointerGain()
+const gain = (dx: number, dy: number, dt: number) =>
+  acceleration.gain(dx, dy, dt, { speed: settings.pointerSpeed, acceleration: settings.pointerAcceleration })
 
 const scrollScale = () => settings.scrollSpeed * 1.6
 // Natural scrolling: content follows the fingers.
@@ -43,7 +32,7 @@ function runGesture(map: GestureMap, slot: keyof GestureMap) {
 
 const handler: GestureHandler = {
   touch: () => {
-    smoothedSpeed = -1
+    acceleration.reset()
     pointer.touch()
   },
   begin: () => beginPointerGesture(),
