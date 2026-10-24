@@ -9,6 +9,22 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-24
+
+A smoother pointer and a keyboard that knows its left from its right. The
+pointer glides evenly at high speeds, the right ⌘, ⌥ and ⇧ keys reach the
+Mac as themselves for hyper keys and other tools that tell them apart, and
+the deck fills wide screens with a button size you choose.
+
+### Trackpad
+
+- The pointer glides on through a Wi-Fi packet that arrives a little late,
+  instead of stopping and then catching up. This is most noticeable with a
+  high pointer speed.
+- Pointer acceleration eases in and out instead of switching on at a fixed
+  finger speed, and fast pointer speeds smooth out uneven touch timing, so
+  the pointer no longer surges and hitches as you speed up and slow down.
+
 ### Keyboard
 
 - The right ⌘, ⌥ and ⇧ keys on the Mac keyboard now press the right-side
@@ -42,16 +58,6 @@ and versions follow [Semantic Versioning](https://semver.org/).
   list until you refresh it.
 - When you set up a keyboard shortcut, the key it uses, such as the C in
   ⌘C, shows as chosen in the key field instead of looking like a hint.
-
-### Trackpad
-
-- The pointer glides on through a Wi-Fi packet that arrives a little late,
-  instead of stopping and then catching up. This is most noticeable with a
-  high pointer speed.
-- Pointer acceleration eases in and out instead of switching on at a fixed
-  finger speed, and fast pointer speeds smooth out uneven touch timing, so
-  the pointer no longer surges and hitches as you speed up and slow down.
-
 ## [0.3.2] - 2026-10-20
 
 A steadier CmdPalm. Pause stops a deck button at once, a held key or drag
@@ -325,7 +331,8 @@ The first release.
   device, so they survive a cleared browser, and you can copy them from
   another device.
 
-[Unreleased]: https://github.com/rahatsagor/CmdPalm/compare/v0.3.2...HEAD
+[Unreleased]: https://github.com/rahatsagor/CmdPalm/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/rahatsagor/CmdPalm/compare/v0.3.2...v0.4.0
 [0.3.2]: https://github.com/rahatsagor/CmdPalm/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/rahatsagor/CmdPalm/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/rahatsagor/CmdPalm/compare/v0.2.0...v0.3.0
