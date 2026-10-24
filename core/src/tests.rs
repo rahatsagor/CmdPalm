@@ -13,7 +13,7 @@ use tokio_tungstenite::tungstenite::Message;
 use crate::api::{HostConfig, HostDelegate, HostEvent, LinkHost, NativeCommand};
 use crate::host::{CoreHost, Shared};
 use crate::input::{InputEngine, SharedRecorder, Synth};
-use crate::keycodes::{KEY_COMMAND, KEY_Q, flags};
+use crate::keycodes::{KEY_COMMAND, KEY_Q, KEY_RIGHT_COMMAND, flags};
 use crate::protocol::{AppEntry, AppOp};
 
 #[derive(Default)]
@@ -677,6 +677,34 @@ fn voice_stops_after_it_starts_even_when_sent_right_away() {
         f.delegate.voice.lock().unwrap().as_slice(),
         ["start", "stop", "start", "stop"],
         "a disconnect stops the voice it left running"
+    );
+}
+
+#[test]
+fn right_side_modifiers_arrive_from_the_wire_and_unknown_bits_are_refused() {
+    let f = fixture();
+    let code = f.host.pairing_info().link.split("#pair=").nth(1).unwrap().to_string();
+    f.rt.block_on(async {
+        let mut ws = connect(f.port).await;
+        send(&mut ws, hello("phone", json!({"method": "pair", "code": code}))).await;
+        assert_eq!(recv(&mut ws).await["t"], "welcome");
+        send(&mut ws, json!({"t": "tap", "code": KEY_Q, "mods": 0x100})).await;
+        send(&mut ws, json!({"t": "tap", "code": KEY_Q, "mods": 0x1000})).await;
+        send(&mut ws, json!({"t": "ping", "id": 1})).await;
+        recv_kind(&mut ws, "pong").await;
+    });
+    std::thread::sleep(Duration::from_millis(200));
+    let events = f.recorder.take();
+    let right = flags::COMMAND | flags::DEVICE_RIGHT_COMMAND;
+    assert_eq!(
+        events,
+        vec![
+            Synth::Flags { code: KEY_RIGHT_COMMAND, flags: right },
+            Synth::Key { code: KEY_Q, down: true, flags: right, repeat: false },
+            Synth::Key { code: KEY_Q, down: false, flags: right, repeat: false },
+            Synth::Flags { code: KEY_RIGHT_COMMAND, flags: 0 },
+        ],
+        "only the tap with known bits is typed"
     );
 }
 

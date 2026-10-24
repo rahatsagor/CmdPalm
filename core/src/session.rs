@@ -446,8 +446,8 @@ fn bye(reason: &str, reconnect: bool) -> ServerMessage {
     ServerMessage::Bye { reason: reason.into(), reconnect }
 }
 
-fn valid_key(code: u16, m: u8) -> bool {
-    code <= MAX_KEYCODE && m & !mods::ALL == 0
+fn valid_key(code: u16, m: u16) -> bool {
+    code <= MAX_KEYCODE && m & !mods::ALL_SIDES == 0
 }
 
 fn f32_at(data: &[u8], at: usize) -> Option<f64> {
@@ -534,7 +534,7 @@ impl Connection {
                 None
             }
             ClientMessage::Button { button, op, mods } => {
-                if mods & !mods::ALL == 0 {
+                if mods & !mods::ALL_SIDES == 0 {
                     self.input(Input::Button { button, op, mods });
                 }
                 None

@@ -52,13 +52,25 @@ pub const KEY_RIGHT_BRACKET: KeyCode = 0x1E;
 pub const MAX_KEYCODE: KeyCode = 0xFF;
 
 /// Wire modifier bits shared with the web client.
+///
+/// A plain bit asks for that modifier from either side: it is satisfied by
+/// whichever key is already held, and otherwise presses the left key, as
+/// every shortcut always has. The right-side bits ask for that exact key, for
+/// tools that tell the two apart, such as a right ⌘ used as a hyper key.
 pub mod mods {
-    pub const COMMAND: u8 = 1;
-    pub const SHIFT: u8 = 2;
-    pub const OPTION: u8 = 4;
-    pub const CONTROL: u8 = 8;
-    pub const FN: u8 = 16;
-    pub const ALL: u8 = COMMAND | SHIFT | OPTION | CONTROL | FN;
+    pub const COMMAND: u16 = 1;
+    pub const SHIFT: u16 = 2;
+    pub const OPTION: u16 = 4;
+    pub const CONTROL: u16 = 8;
+    pub const FN: u16 = 16;
+    pub const ALL: u16 = COMMAND | SHIFT | OPTION | CONTROL | FN;
+    pub const RIGHT_COMMAND: u16 = 0x100;
+    pub const RIGHT_SHIFT: u16 = 0x200;
+    pub const RIGHT_OPTION: u16 = 0x400;
+    pub const RIGHT_CONTROL: u16 = 0x800;
+    pub const RIGHT: u16 = RIGHT_COMMAND | RIGHT_SHIFT | RIGHT_OPTION | RIGHT_CONTROL;
+    /// Every bit a client may send with a key, tap or click.
+    pub const ALL_SIDES: u16 = ALL | RIGHT;
 }
 
 /// CGEventFlags bits (see `CGEventTypes.h` and IOKit `IOLLEvent.h`).
@@ -88,7 +100,8 @@ pub mod flags {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ModifierKey {
     pub code: KeyCode,
-    pub wire: u8,
+    /// The plain (either side) wire bit.
+    pub wire: u16,
     pub flags: u64,
 }
 
@@ -106,11 +119,15 @@ pub const MODIFIER_KEYS: [ModifierKey; 9] = [
 
 /// Order used when a combo has to press modifiers itself. Matches the order a
 /// person typically presses them and keeps event sequences deterministic.
-pub const COMBO_PRESS_ORDER: [(u8, KeyCode); 5] = [
+pub const COMBO_PRESS_ORDER: [(u16, KeyCode); 9] = [
     (mods::CONTROL, KEY_CONTROL),
+    (mods::RIGHT_CONTROL, KEY_RIGHT_CONTROL),
     (mods::OPTION, KEY_OPTION),
+    (mods::RIGHT_OPTION, KEY_RIGHT_OPTION),
     (mods::SHIFT, KEY_SHIFT),
+    (mods::RIGHT_SHIFT, KEY_RIGHT_SHIFT),
     (mods::COMMAND, KEY_COMMAND),
+    (mods::RIGHT_COMMAND, KEY_RIGHT_COMMAND),
     (mods::FN, KEY_FUNCTION),
 ];
 
@@ -137,7 +154,7 @@ pub fn intrinsic_flags(code: KeyCode) -> u64 {
 }
 
 /// Map a wire modifier mask to the generic CGEventFlags it implies.
-pub fn wire_to_generic_flags(mask: u8) -> u64 {
+pub fn wire_to_generic_flags(mask: u16) -> u64 {
     let mut out = 0;
     if mask & mods::COMMAND != 0 {
         out |= flags::COMMAND;

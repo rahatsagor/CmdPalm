@@ -190,7 +190,7 @@ impl Default for Tuning {
 /// Character → (key code, wire modifiers) for the active Mac input source.
 #[derive(Debug, Clone, Default)]
 pub struct LayoutMap {
-    pub chars: HashMap<char, (KeyCode, u8)>,
+    pub chars: HashMap<char, (KeyCode, u16)>,
 }
 
 impl LayoutMap {
@@ -234,29 +234,29 @@ pub enum Input {
     Key {
         code: KeyCode,
         down: bool,
-        mods: u8,
+        mods: u16,
         repeat: bool,
     },
     Tap {
         code: KeyCode,
-        mods: u8,
+        mods: u16,
     },
     /// A combo defined by character (e.g. ⌘Q). Resolved through the active
     /// layout so shortcuts follow the key labelled with that letter.
     CharTap {
         ch: char,
         fallback: KeyCode,
-        mods: u8,
+        mods: u16,
     },
     Button {
         button: MouseButton,
         op: PressOp,
-        mods: u8,
+        mods: u16,
     },
     Click {
         button: MouseButton,
         clicks: u8,
-        mods: u8,
+        mods: u16,
     },
     Move {
         dx: f64,

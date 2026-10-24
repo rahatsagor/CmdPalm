@@ -547,7 +547,7 @@ impl<S: EventSink> Engine<S> {
         self.os_keys.keys().filter_map(|code| keycodes::modifier(*code)).fold(0, |acc, m| acc | m.flags)
     }
 
-    fn held_wire_mods(&self) -> u8 {
+    fn held_wire_mods(&self) -> u16 {
         self.os_keys.keys().filter_map(|code| keycodes::modifier(*code)).fold(0, |acc, m| acc | m.wire)
     }
 
@@ -582,12 +582,18 @@ impl<S: EventSink> Engine<S> {
         self.sink.post(event);
     }
 
-    /// Press the modifiers in `mods` that are not already held.
-    fn press_temp_mods(&mut self, mods: u8) -> Vec<KeyCode> {
-        let missing = mods & keycodes::mods::ALL & !self.held_wire_mods();
+    /// Press the modifiers in `mods` that are not already held. A plain bit
+    /// is satisfied by either side's key; a right-side bit only by that key.
+    fn press_temp_mods(&mut self, mods: u16) -> Vec<KeyCode> {
+        let held = self.held_wire_mods();
         let mut pressed = Vec::new();
         for (bit, code) in COMBO_PRESS_ORDER {
-            if missing & bit != 0 {
+            if mods & bit == 0 {
+                continue;
+            }
+            let satisfied =
+                if bit & keycodes::mods::RIGHT != 0 { self.os_keys.contains_key(&code) } else { held & bit != 0 };
+            if !satisfied {
                 self.press(code);
                 pressed.push(code);
             }
@@ -608,7 +614,7 @@ impl<S: EventSink> Engine<S> {
         }
     }
 
-    fn key_down(&mut self, session: SessionId, code: KeyCode, mods: u8, repeat: bool, now: Instant) {
+    fn key_down(&mut self, session: SessionId, code: KeyCode, mods: u16, repeat: bool, now: Instant) {
         if code == KEY_CAPS_LOCK {
             self.sink.post(Synth::ToggleCapsLock);
             return;
@@ -652,7 +658,7 @@ impl<S: EventSink> Engine<S> {
         self.release_temp_mods(temp);
     }
 
-    fn tap(&mut self, code: KeyCode, mods: u8, hold: Duration) {
+    fn tap(&mut self, code: KeyCode, mods: u16, hold: Duration) {
         if code == KEY_CAPS_LOCK {
             self.sink.post(Synth::ToggleCapsLock);
             return;
@@ -669,7 +675,7 @@ impl<S: EventSink> Engine<S> {
     /// Tap a key as part of typed text or a dictation edit. Only the
     /// modifiers the character needs reach the app, not ones a device is
     /// holding, so a held ⌘ can't turn a correction's ⌫ into ⌘⌫.
-    fn type_key(&mut self, code: KeyCode, mods: u8, hold: Duration) {
+    fn type_key(&mut self, code: KeyCode, mods: u16, hold: Duration) {
         if self.os_keys.contains_key(&code) || keycodes::is_modifier(code) || code == KEY_CAPS_LOCK {
             return self.tap(code, mods, hold);
         }
@@ -781,7 +787,7 @@ impl<S: EventSink> Engine<S> {
         self.sink.post(Synth::Move { dx, dy, flags, drag });
     }
 
-    fn button_down(&mut self, session: SessionId, button: MouseButton, mods: u8, now: Instant) {
+    fn button_down(&mut self, session: SessionId, button: MouseButton, mods: u16, now: Instant) {
         let Some(state) = self.sessions.get(&session) else {
             return;
         };
@@ -826,7 +832,7 @@ impl<S: EventSink> Engine<S> {
         self.sink.post(Synth::Button { button, down: false, clicks, flags });
     }
 
-    fn click(&mut self, button: MouseButton, clicks: u8, mods: u8, now: Instant) {
+    fn click(&mut self, button: MouseButton, clicks: u8, mods: u16, now: Instant) {
         if self.os_buttons.contains_key(&button) {
             // Already held (e.g. drag lock); a click would release someone else's press.
             return;
@@ -1100,6 +1106,92 @@ mod tests {
                 Synth::Pause(MOD_SETTLE),
                 flags_ev(KEY_COMMAND, 0),
             ]
+        );
+        assert!(h.engine.os_keys_held().is_empty());
+    }
+
+    #[test]
+    fn right_side_modifiers_press_the_right_key() {
+        const RCMD: u64 = f::COMMAND | f::DEVICE_RIGHT_COMMAND;
+        let mut h = Harness::new();
+        h.input(A, Input::Tap { code: KEY_C, mods: mods::RIGHT_COMMAND });
+        assert_eq!(
+            h.take(),
+            vec![
+                flags_ev(KEY_RIGHT_COMMAND, RCMD),
+                key_ev(KEY_C, true, RCMD),
+                key_ev(KEY_C, false, RCMD),
+                flags_ev(KEY_RIGHT_COMMAND, 0),
+            ]
+        );
+        assert!(h.engine.os_keys_held().is_empty());
+
+        // Held for a key, released with it, as hyper key tools expect.
+        h.input(A, Input::Key { code: KEY_A, down: true, mods: mods::RIGHT_OPTION | mods::SHIFT, repeat: false });
+        h.key(A, KEY_A, false);
+        let ropt = f::ALTERNATE | f::DEVICE_RIGHT_OPTION;
+        assert_eq!(
+            h.take(),
+            vec![
+                flags_ev(KEY_RIGHT_OPTION, ropt),
+                flags_ev(KEY_SHIFT, ropt | SHIFT),
+                key_ev(KEY_A, true, ropt | SHIFT),
+                key_ev(KEY_A, false, ropt | SHIFT),
+                flags_ev(KEY_SHIFT, ropt),
+                flags_ev(KEY_RIGHT_OPTION, 0),
+            ]
+        );
+        assert!(h.engine.os_keys_held().is_empty());
+    }
+
+    #[test]
+    fn a_right_side_request_is_not_satisfied_by_the_left_key() {
+        const RCMD: u64 = f::COMMAND | f::DEVICE_RIGHT_COMMAND;
+        let mut h = Harness::new();
+        h.key(A, KEY_COMMAND, true);
+        h.take();
+        // A plain ⌘ is already there; a right ⌘ is pressed as well.
+        h.input(A, Input::Tap { code: KEY_C, mods: mods::COMMAND });
+        h.input(A, Input::Tap { code: KEY_V, mods: mods::RIGHT_COMMAND });
+        assert_eq!(
+            h.take(),
+            vec![
+                key_ev(KEY_C, true, CMD),
+                key_ev(KEY_C, false, CMD),
+                flags_ev(KEY_RIGHT_COMMAND, CMD | RCMD),
+                key_ev(KEY_V, true, CMD | RCMD),
+                key_ev(KEY_V, false, CMD | RCMD),
+                flags_ev(KEY_RIGHT_COMMAND, CMD),
+            ]
+        );
+        h.key(A, KEY_COMMAND, false);
+        assert_eq!(h.take(), vec![flags_ev(KEY_COMMAND, 0)]);
+
+        // A held right ⌘ satisfies a plain ⌘ without pressing the left key.
+        h.key(A, KEY_RIGHT_COMMAND, true);
+        h.input(A, Input::Tap { code: KEY_C, mods: mods::COMMAND | mods::RIGHT_COMMAND });
+        h.key(A, KEY_RIGHT_COMMAND, false);
+        assert_eq!(
+            h.take(),
+            vec![
+                flags_ev(KEY_RIGHT_COMMAND, RCMD),
+                key_ev(KEY_C, true, RCMD),
+                key_ev(KEY_C, false, RCMD),
+                flags_ev(KEY_RIGHT_COMMAND, 0),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_disconnect_releases_right_side_modifiers_held_for_a_key() {
+        let mut h = Harness::new();
+        h.input(A, Input::Key { code: KEY_A, down: true, mods: mods::RIGHT_COMMAND, repeat: false });
+        h.take();
+        h.cmd(Command::EndSession(A));
+        let events = h.take();
+        assert_eq!(
+            events,
+            vec![key_ev(KEY_A, false, f::COMMAND | f::DEVICE_RIGHT_COMMAND), flags_ev(KEY_RIGHT_COMMAND, 0)]
         );
         assert!(h.engine.os_keys_held().is_empty());
     }

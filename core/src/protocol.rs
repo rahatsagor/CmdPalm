@@ -146,7 +146,7 @@ pub enum Action {
     Keys {
         code: u16,
         #[serde(default)]
-        mods: u8,
+        mods: u16,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         char: Option<String>,
     },
@@ -253,7 +253,7 @@ pub enum ClientMessage {
         code: u16,
         down: bool,
         #[serde(default)]
-        mods: u8,
+        mods: u16,
         #[serde(default = "yes")]
         repeat: bool,
     },
@@ -261,13 +261,13 @@ pub enum ClientMessage {
     Tap {
         code: u16,
         #[serde(default)]
-        mods: u8,
+        mods: u16,
     },
     Button {
         button: MouseButton,
         op: PressOp,
         #[serde(default)]
-        mods: u8,
+        mods: u16,
     },
     Media {
         key: MediaKey,

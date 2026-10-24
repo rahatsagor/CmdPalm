@@ -48,15 +48,15 @@ fn input(shared: &Shared, session: SessionId, input: Input) {
 }
 
 enum Plan {
-    Code(KeyCode, u8),
-    Letter(char, KeyCode, u8),
+    Code(KeyCode, u16),
+    Letter(char, KeyCode, u16),
     Native(NativeCommand),
 }
 
 fn system_plan(name: SystemAction) -> Plan {
     use SystemAction as S;
     use mods::{COMMAND as CMD, CONTROL as CTRL, OPTION as OPT, SHIFT};
-    let letter = |ch: char, mods: u8| {
+    let letter = |ch: char, mods: u16| {
         let code = kc::named_key(&ch.to_string()).unwrap_or(kc::KEY_A);
         Plan::Letter(ch, code, mods)
     };

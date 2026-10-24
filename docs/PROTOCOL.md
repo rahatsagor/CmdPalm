@@ -125,6 +125,15 @@ a bitmask:
 | 4 | Option |
 | 8 | Control |
 | 16 | Fn |
+| 256 | Right Command |
+| 512 | Right Shift |
+| 1024 | Right Option |
+| 2048 | Right Control |
+
+A plain modifier bit is satisfied by either side's key when one is already
+held, and otherwise presses the left key. A right-side bit presses that exact
+key, for apps that tell the two apart, such as a hyper key on right ⌘. Deck
+actions use the plain bits only. The Mac ignores a message with any other bit.
 
 | Message | Fields | Meaning |
 | --- | --- | --- |
