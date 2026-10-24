@@ -150,8 +150,8 @@ function onCancel(event: PointerEvent) {
       <span
         v-for="[id, t] in touches"
         :key="id"
-        class="touch-dot pointer-events-none absolute size-14 -translate-x-1/2 -translate-y-1/2 rounded-full"
-        :style="{ left: `${t.x}px`, top: `${t.y}px` }"
+        class="touch-dot pointer-events-none absolute top-0 left-0 size-14 -translate-x-1/2 -translate-y-1/2 rounded-full"
+        :style="{ transform: `translate3d(${t.x}px, ${t.y}px, 0)` }"
       />
     </template>
     <slot />
@@ -173,6 +173,8 @@ function onCancel(event: PointerEvent) {
   background-image: radial-gradient(rgb(0 0 0 / 0.05) 1px, transparent 1px);
 }
 .touch-dot {
+  /* Moved on every finger movement: a transform skips layout and repaint. */
+  will-change: transform;
   background: radial-gradient(circle, rgb(255 255 255 / 0.18), rgb(255 255 255 / 0.04) 60%, transparent 70%);
 }
 :root[data-theme='light'] .touch-dot {
