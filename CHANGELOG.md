@@ -40,6 +40,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 - An app you quit from the **Apps** tab no longer stays in the **Open**
   list until you refresh it.
+- When you set up a keyboard shortcut, the key it uses, such as the C in
+  ⌘C, shows as chosen in the key field instead of looking like a hint.
 
 ### Trackpad
 

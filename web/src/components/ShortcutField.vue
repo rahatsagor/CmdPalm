@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { labels } from '@/lib/connection'
-import { MOD_ORDER, SPECIAL_KEYS, comboLabel, fromDomCode } from '@/lib/keys'
+import { MOD_ORDER, SPECIAL_KEYS, comboLabel, fromDomCode, keyName } from '@/lib/keys'
 import { Mod } from '@/lib/protocol'
 
 const model = defineModel<{ code: number; mods: number; char?: string }>({ required: true })
@@ -9,6 +9,12 @@ const model = defineModel<{ code: number; mods: number; char?: string }>({ requi
 const input = ref<HTMLInputElement>()
 const listening = ref(false)
 const preview = computed(() => comboLabel(model.value.code, model.value.mods, labels.value))
+/** A typed key (a letter, digit or symbol) has no button below, so the field shows it as chosen. */
+const typedKey = computed(() => (SPECIAL_KEYS.some((k) => k.code === model.value.code) ? '' : keyName(model.value.code, labels.value)))
+const prompt = computed(() => {
+  if (listening.value) return 'Press a key…'
+  return typedKey.value ? `${typedKey.value} · tap to change` : 'Tap, then type a key'
+})
 
 function toggleMod(mod: number) {
   model.value = { ...model.value, mods: model.value.mods ^ mod }
@@ -65,11 +71,16 @@ function onInput(event: Event) {
     </div>
 
     <label class="mt-3 block">
-      <span class="sr-only">Key</span>
       <input
         ref="input"
-        class="h-11 w-full rounded-xl border border-dashed border-line-strong bg-transparent px-3 text-center text-[15px] outline-none placeholder:text-muted focus:border-accent"
-        :placeholder="listening ? 'Press a key…' : 'Tap, then type a key'"
+        class="h-11 w-full rounded-xl border px-3 text-center text-[15px] outline-none focus:border-accent"
+        :class="
+          typedKey && !listening
+            ? 'border-accent/60 bg-accent-soft font-medium placeholder:text-accent'
+            : 'border-dashed border-line-strong bg-transparent placeholder:text-muted'
+        "
+        :placeholder="prompt"
+        :aria-label="typedKey ? `Key: ${typedKey}. Tap, then type a different key` : 'Tap, then type a key'"
         autocapitalize="off"
         autocomplete="off"
         autocorrect="off"
