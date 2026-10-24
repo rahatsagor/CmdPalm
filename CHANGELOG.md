@@ -9,6 +9,14 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Keyboard
+
+- The right ⌘, ⌥ and ⇧ keys on the Mac keyboard now press the right-side
+  keys on the Mac when you tap, double-tap or hold them, so apps that tell
+  the sides apart work from the phone. For example, a Raycast hyper key set
+  to right ⌘. Each side lights up on its own.
+- Custom keyboards can have right-side ⌃, ⌥, ⇧ and ⌘ keys.
+
 ### Fixes
 
 - An app you quit from the **Apps** tab no longer stays in the **Open**

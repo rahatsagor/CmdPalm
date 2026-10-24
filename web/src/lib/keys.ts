@@ -22,14 +22,28 @@ export const Key = {
 
 export const MODIFIER_CODES: Record<number, number> = {
   [Key.Command]: Mod.Command,
-  [Key.RightCommand]: Mod.Command,
+  [Key.RightCommand]: Mod.RightCommand,
   [Key.Shift]: Mod.Shift,
-  [Key.RightShift]: Mod.Shift,
+  [Key.RightShift]: Mod.RightShift,
   [Key.Option]: Mod.Option,
-  [Key.RightOption]: Mod.Option,
+  [Key.RightOption]: Mod.RightOption,
   [Key.Control]: Mod.Control,
-  [Key.RightControl]: Mod.Control,
+  [Key.RightControl]: Mod.RightControl,
   [Key.Fn]: Mod.Fn,
+}
+
+const SIDES: [right: number, plain: number][] = [
+  [Mod.RightCommand, Mod.Command],
+  [Mod.RightShift, Mod.Shift],
+  [Mod.RightOption, Mod.Option],
+  [Mod.RightControl, Mod.Control],
+]
+
+/** The plain modifiers in `mods`, whichever side they are on: for labels. */
+export function plainMods(mods: number): number {
+  let plain = mods & 0x1f
+  for (const [right, generic] of SIDES) if (mods & right) plain |= generic
+  return plain
 }
 
 export const MOD_ORDER: { mod: number; code: number; symbol: string; name: string }[] = [
@@ -39,6 +53,16 @@ export const MOD_ORDER: { mod: number; code: number; symbol: string; name: strin
   { mod: Mod.Command, code: Key.Command, symbol: '⌘', name: 'Command' },
   { mod: Mod.Fn, code: Key.Fn, symbol: 'fn', name: 'Function' },
 ]
+
+/** The keys on the right of a Mac keyboard, which some apps treat differently. */
+export const RIGHT_MODS: typeof MOD_ORDER = [
+  { mod: Mod.RightControl, code: Key.RightControl, symbol: '⌃', name: 'Right Control' },
+  { mod: Mod.RightOption, code: Key.RightOption, symbol: '⌥', name: 'Right Option' },
+  { mod: Mod.RightShift, code: Key.RightShift, symbol: '⇧', name: 'Right Shift' },
+  { mod: Mod.RightCommand, code: Key.RightCommand, symbol: '⌘', name: 'Right Command' },
+]
+
+export const ALL_MODS = [...MOD_ORDER, ...RIGHT_MODS]
 
 /** US ANSI labels, used until the Mac reports its layout. */
 const US: Record<number, [string, string]> = {
@@ -106,6 +130,7 @@ export class LabelMap {
   label(code: number, mods: number): string {
     const caps = this.caps.get(code)
     if (!caps) return ''
+    mods = plainMods(mods)
     const shift = (mods & Mod.Shift) !== 0
     const option = (mods & Mod.Option) !== 0
     let text = caps.base
@@ -182,7 +207,7 @@ export function keyboardRows(iso: boolean): KeySpec[][] {
       ...(iso ? [char(Key.Grave)] : []),
       char(Key.Z), char(Key.X), char(Key.C), char(Key.V), char(Key.B), char(Key.N), char(Key.M),
       char(Key.Comma), char(Key.Period), char(Key.Slash),
-      { kind: 'mod', code: Key.RightShift, mod: Mod.Shift, label: 'shift', symbol: '⇧', width: 2.2, align: 'right' },
+      { kind: 'mod', code: Key.RightShift, mod: Mod.RightShift, label: 'shift', symbol: '⇧', width: 2.2, align: 'right' },
     ],
     [
       { kind: 'mod', code: Key.Fn, mod: Mod.Fn, label: 'fn', symbol: 'fn', width: 1, align: 'left' },
@@ -190,8 +215,8 @@ export function keyboardRows(iso: boolean): KeySpec[][] {
       { kind: 'mod', code: Key.Option, mod: Mod.Option, label: 'option', symbol: '⌥', width: 1, align: 'right' },
       { kind: 'mod', code: Key.Command, mod: Mod.Command, label: 'command', symbol: '⌘', width: 1.25, align: 'right' },
       { kind: 'special', code: Key.Space, label: '', width: 5.0 },
-      { kind: 'mod', code: Key.RightCommand, mod: Mod.Command, label: 'command', symbol: '⌘', width: 1.25, align: 'left' },
-      { kind: 'mod', code: Key.RightOption, mod: Mod.Option, label: 'option', symbol: '⌥', width: 1, align: 'left' },
+      { kind: 'mod', code: Key.RightCommand, mod: Mod.RightCommand, label: 'command', symbol: '⌘', width: 1.25, align: 'left' },
+      { kind: 'mod', code: Key.RightOption, mod: Mod.RightOption, label: 'option', symbol: '⌥', width: 1, align: 'left' },
       { kind: 'arrows' },
     ],
   ]
@@ -241,7 +266,8 @@ export const SPECIAL_KEYS: { code: number; label: string }[] = [
 ]
 
 export function modsLabel(mods: number): string {
-  return MOD_ORDER.filter((m) => (mods & m.mod) !== 0)
+  const plain = plainMods(mods)
+  return MOD_ORDER.filter((m) => (plain & m.mod) !== 0)
     .map((m) => m.symbol)
     .join('')
 }

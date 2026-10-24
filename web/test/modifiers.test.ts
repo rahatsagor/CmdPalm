@@ -130,4 +130,35 @@ describe('modifier keys', () => {
     mods.release(1)
     expect(events).toEqual([`down:${Key.Command}`, `down:${Key.Command}`, `up:${Key.Command}`])
   })
-})
+  it('tells the left and right keys apart', () => {
+    const { mods, events, advance } = setup()
+    mods.press(1, Mod.RightCommand, Key.RightCommand)
+    advance(80)
+    mods.release(1)
+    expect(mods.status(Mod.RightCommand)).toBe('latched')
+    expect(mods.status(Mod.Command)).toBe('off')
+    // Labels treat both sides alike.
+    expect(mods.active).toBe(Mod.Command)
+    expect(mods.use()).toBe(Mod.RightCommand)
+    expect(events).toEqual([])
+  })
+
+  it('holds and locks the right-side key itself', () => {
+    const { mods, events, advance } = setup()
+    mods.press(1, Mod.RightShift, Key.RightShift)
+    mods.use()
+    mods.release(1)
+    expect(events).toEqual([`down:${Key.RightShift}`, `up:${Key.RightShift}`])
+    events.length = 0
+    for (let i = 0; i < 2; i++) {
+      mods.press(1, Mod.RightOption, Key.RightOption)
+      advance(60)
+      mods.release(1)
+      advance(100)
+    }
+    expect(mods.status(Mod.RightOption)).toBe('locked')
+    expect(mods.status(Mod.Option)).toBe('off')
+    expect(events).toEqual([`down:${Key.RightOption}`])
+    mods.reset(true)
+    expect(events).toEqual([`down:${Key.RightOption}`, `up:${Key.RightOption}`])
+  })})

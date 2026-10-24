@@ -7,7 +7,7 @@
 
 import { reactive, watch } from 'vue'
 import { MEDIA } from './actions'
-import { comboLabel, Key, MOD_ORDER, MODIFIER_CODES, type LabelMap } from './keys'
+import { ALL_MODS, comboLabel, Key, MODIFIER_CODES, type LabelMap } from './keys'
 import { Mod, type MediaKey, type MouseButton } from './protocol'
 
 export type CustomAction =
@@ -152,7 +152,7 @@ export function actionLabel(action: CustomAction, labels: LabelMap): string {
     case 'key':
       return comboLabel(action.code, action.mods, labels)
     case 'mod':
-      return MOD_ORDER.find((m) => m.mod === action.mod)?.symbol ?? '?'
+      return ALL_MODS.find((m) => m.mod === action.mod)?.symbol ?? '?'
     case 'media':
       return MEDIA[action.key]?.label ?? action.key
     case 'mouse':
@@ -161,7 +161,7 @@ export function actionLabel(action: CustomAction, labels: LabelMap): string {
 }
 
 export function actionName(action: CustomAction): string {
-  if (action.kind === 'mod') return MOD_ORDER.find((m) => m.mod === action.mod)?.name ?? 'Modifier'
+  if (action.kind === 'mod') return ALL_MODS.find((m) => m.mod === action.mod)?.name ?? 'Modifier'
   return ''
 }
 
@@ -181,7 +181,7 @@ function sanitizeAction(raw: unknown): CustomAction | null {
       return { kind: 'key', code, mods }
     }
     case 'mod':
-      return MOD_ORDER.some((m) => m.mod === a.mod) ? { kind: 'mod', mod: a.mod as number } : null
+      return ALL_MODS.some((m) => m.mod === a.mod) ? { kind: 'mod', mod: a.mod as number } : null
     case 'media':
       return typeof a.key === 'string' && a.key in MEDIA ? { kind: 'media', key: a.key as MediaKey } : null
     case 'mouse':

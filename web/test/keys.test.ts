@@ -1,9 +1,18 @@
 import { describe, expect, it } from 'vitest'
-import { Key, LabelMap, SPECIAL_KEYS, comboLabel, keyName, keyboardRows } from '../src/lib/keys'
+import { Key, LabelMap, SPECIAL_KEYS, comboLabel, keyName, keyboardRows, modsLabel, plainMods } from '../src/lib/keys'
 import { Mod } from '../src/lib/protocol'
 import { migrate } from '../src/lib/settings'
 
 describe('layout labels', () => {
+  it('labels right-side modifiers like the left ones', () => {
+    expect(plainMods(Mod.RightShift | Mod.Command)).toBe(Mod.Shift | Mod.Command)
+    expect(new LabelMap().label(Key.Two, Mod.RightShift)).toBe('@')
+    expect(modsLabel(Mod.RightCommand | Mod.Shift)).toBe('⇧⌘')
+    const bottom = keyboardRows(false).at(-1)!
+    const rightCommand = bottom.find((k) => k.kind === 'mod' && k.code === Key.RightCommand)
+    expect(rightCommand?.kind === 'mod' && rightCommand.mod).toBe(Mod.RightCommand)
+  })
+
   it('defaults to US and follows the Mac layout when known', () => {
     const us = new LabelMap()
     expect(us.label(Key.Q, 0)).toBe('Q')

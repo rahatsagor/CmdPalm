@@ -6,7 +6,7 @@ import { labels } from '@/lib/connection'
 import { actionLabel, actionName, emptyCells, fits, newId, type CustomKey, type CustomKeyboard } from '@/lib/customKeyboards'
 import { haptic } from '@/lib/haptics'
 import { buttonDown, buttonUp, keyDown, keyUp, modifiers, pressMedia } from '@/lib/input'
-import { Key, MOD_ORDER } from '@/lib/keys'
+import { ALL_MODS, Key } from '@/lib/keys'
 import { symbol } from '@/lib/symbols'
 import { useTouchKeys } from '@/lib/touchKeys'
 import CustomKeyEditor from './CustomKeyEditor.vue'
@@ -51,7 +51,7 @@ function face(key: CustomKey): { text: string; icon?: unknown; caption?: string 
   }
   if (action.kind === 'mouse') return { text: custom || actionLabel(action, labels.value), icon: Mouse }
   if (action.kind === 'mod') {
-    const mod = MOD_ORDER.find((m) => m.mod === action.mod)
+    const mod = ALL_MODS.find((m) => m.mod === action.mod)
     return { text: custom || (mod?.symbol ?? '?'), caption: custom ? undefined : mod?.name.toLowerCase() }
   }
   if (custom) return { text: custom, caption: actionLabel(action, labels.value) }

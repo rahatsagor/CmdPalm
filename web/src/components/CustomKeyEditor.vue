@@ -4,7 +4,7 @@ import { computed, ref } from 'vue'
 import { MEDIA } from '@/lib/actions'
 import { labels } from '@/lib/connection'
 import { actionLabel, fits, LIMITS, type CustomAction, type CustomKey, type CustomKeyboard } from '@/lib/customKeyboards'
-import { Key, MOD_ORDER } from '@/lib/keys'
+import { Key, MOD_ORDER, RIGHT_MODS } from '@/lib/keys'
 import type { MediaKey, MouseButton } from '@/lib/protocol'
 import { symbol } from '@/lib/symbols'
 import Segmented from './Segmented.vue'
@@ -112,18 +112,22 @@ function save() {
         <template v-else-if="draft.action.kind === 'mod'">
           <div class="grid grid-cols-5 gap-1.5">
             <button
-              v-for="m in MOD_ORDER"
+              v-for="m in [...MOD_ORDER, ...RIGHT_MODS]"
               :key="m.mod"
               type="button"
-              class="h-12 rounded-xl text-[18px] transition-colors"
+              class="flex h-12 flex-col items-center justify-center rounded-xl text-[18px] leading-none transition-colors"
               :class="draft.action.mod === m.mod ? 'bg-accent text-accent-text' : 'bg-surface-3 text-muted'"
               :aria-label="m.name"
               @click="draft.action = { kind: 'mod', mod: m.mod }"
             >
               {{ m.symbol }}
+              <span v-if="RIGHT_MODS.includes(m)" class="mt-0.5 text-[10px]">right</span>
             </button>
           </div>
-          <p class="mt-2 text-[13px] text-faint">Pressed on the Mac while you hold it, so it combines with other keys on this keyboard.</p>
+          <p class="mt-2 text-[13px] text-faint">
+            Pressed on the Mac while you hold it, so it combines with other keys on this keyboard. The bottom row uses the keys on the right side,
+            which some apps treat differently, such as a hyper key set to right ⌘.
+          </p>
         </template>
 
         <div v-else-if="draft.action.kind === 'media'" class="grid grid-cols-2 gap-1.5">

@@ -10,7 +10,7 @@
 // opens the emoji picker, for example).
 
 import { reactive } from 'vue'
-import { Key } from './keys'
+import { Key, plainMods } from './keys'
 import { Mod } from './protocol'
 
 export type ModState = 'off' | 'latched' | 'locked'
@@ -29,6 +29,10 @@ const CODE_FOR: Record<number, number> = {
   [Mod.Option]: Key.Option,
   [Mod.Control]: Key.Control,
   [Mod.Fn]: Key.Fn,
+  [Mod.RightCommand]: Key.RightCommand,
+  [Mod.RightShift]: Key.RightShift,
+  [Mod.RightOption]: Key.RightOption,
+  [Mod.RightControl]: Key.RightControl,
 }
 
 interface Touch {
@@ -53,9 +57,12 @@ export class Modifiers {
 
   constructor(private io: ModifierIO, private now: () => number = () => performance.now()) {}
 
-  /** Everything currently in effect, for key labels and highlighting. */
+  /**
+   * Everything currently in effect, for key labels, as plain modifiers: a
+   * right ⇧ capitalizes like the left one. `status` tells the sides apart.
+   */
   get active(): number {
-    return this.state.latched | this.state.locked | this.state.touching
+    return plainMods(this.state.latched | this.state.locked | this.state.touching)
   }
 
   status(mod: number): ModState | 'held' {

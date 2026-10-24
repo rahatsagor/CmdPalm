@@ -58,6 +58,19 @@ describe('sanitizing stored keyboards', () => {
     expect(b?.keys[0]?.action).toEqual({ kind: 'mod', mod: Mod.Command })
   })
 
+  it('keeps right-side modifiers and drops unknown ones', () => {
+    const key = (action: unknown) => ({ id: 'm', x: 0, y: 0, w: 1, h: 1, action })
+    expect(sanitizeBoard({ cols: 2, rows: 1, keys: [key({ kind: 'mod', mod: Mod.RightCommand })] })?.keys[0]?.action).toEqual({
+      kind: 'mod',
+      mod: Mod.RightCommand,
+    })
+    expect(sanitizeBoard({ cols: 2, rows: 1, keys: [key({ kind: 'key', code: Key.RightOption, mods: 0 })] })?.keys[0]?.action).toEqual({
+      kind: 'mod',
+      mod: Mod.RightOption,
+    })
+    expect(sanitizeBoard({ cols: 2, rows: 1, keys: [key({ kind: 'mod', mod: 0x1000 })] })?.keys).toEqual([])
+  })
+
   it('rejects grids outside the limits', () => {
     expect(sanitizeBoard({ cols: LIMITS.maxCols + 1, rows: 2, keys: [] })).toBeNull()
     expect(sanitizeBoard({ cols: 2, rows: 0, keys: [] })).toBeNull()

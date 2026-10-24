@@ -18,13 +18,20 @@ export const ScrollPhase = {
   Cancelled: 8,
 } as const
 
-/** Wire modifier bits. */
+/**
+ * Wire modifier bits. A plain bit means either side (the left key unless the
+ * right one is already held); a right-side bit means that exact key.
+ */
 export const Mod = {
   Command: 1,
   Shift: 2,
   Option: 4,
   Control: 8,
   Fn: 16,
+  RightCommand: 0x100,
+  RightShift: 0x200,
+  RightOption: 0x400,
+  RightControl: 0x800,
 } as const
 
 export type MouseButton = 'left' | 'right' | 'middle' | 'back' | 'forward'
