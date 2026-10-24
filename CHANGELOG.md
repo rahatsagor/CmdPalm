@@ -17,6 +17,14 @@ and versions follow [Semantic Versioning](https://semver.org/).
   to right ⌘. Each side lights up on its own.
 - Custom keyboards can have right-side ⌃, ⌥, ⇧ and ⌘ keys.
 
+### Deck, apps and media
+
+- The deck uses the space on wide screens. A page's columns are what a phone
+  held upright shows; a phone turned sideways or a tablet fits more buttons
+  of the same size instead of a few huge ones.
+- **Settings → Deck → Button size** makes deck buttons smaller, to fit more
+  on a page, or larger, on this device only.
+
 ### Fixes
 
 - An app you quit from the **Apps** tab no longer stays in the **Open**

@@ -10,7 +10,7 @@ import { canFullscreen, display, install, installHint, toggleFullscreen } from '
 import { hapticsSupported } from '@/lib/haptics'
 import type { Action } from '@/lib/protocol'
 import { lazy } from '@/lib/reload'
-import { resetSettings, settings, type GestureMap, type GestureSlot } from '@/lib/settings'
+import { DECK_SIZE, resetSettings, settings, type GestureMap, type GestureSlot } from '@/lib/settings'
 import { wakeLockSupported } from '@/lib/wakeLock'
 import ActionEditor from './ActionEditor.vue'
 import RangeRow from './RangeRow.vue'
@@ -199,6 +199,14 @@ const times = (v: number) => `${v.toFixed(1)}×`
       />
       <p v-if="settings.showAdvanced" class="pb-2 text-[13px] leading-snug text-muted">
         Characters works almost everywhere. Use Key presses for games and remote desktops, or Paste for very long text.
+      </p>
+    </section>
+
+    <h3 class="section">Deck</h3>
+    <section class="card">
+      <RangeRow v-model="settings.deckButtonSize" label="Button size" :min="DECK_SIZE.min" :max="DECK_SIZE.max" :step="0.1" :format="pct" />
+      <p class="pb-2 text-[13px] leading-snug text-muted">
+        Smaller buttons fit more on a page. Wider screens, like a phone turned sideways, show more columns.
       </p>
     </section>
 

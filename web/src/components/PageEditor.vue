@@ -34,7 +34,7 @@ function save() {
       />
     </label>
 
-    <div class="flex items-center justify-between py-3">
+    <div class="flex items-center justify-between pt-3">
       <span class="text-[15px]">Columns</span>
       <div class="flex items-center gap-3">
         <button type="button" class="grid size-9 place-items-center rounded-full bg-surface-3 disabled:opacity-40" :disabled="columns <= 1" aria-label="Fewer columns" @click="columns--">
@@ -46,6 +46,9 @@ function save() {
         </button>
       </div>
     </div>
+    <p class="pt-1 pb-3 text-[13px] leading-snug text-muted">
+      On a phone held upright. Wider screens fit more, and Settings → Deck changes the button size on this device.
+    </p>
 
     <div class="flex gap-2 py-3">
       <button type="button" class="flex h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-surface-2 text-[14px] disabled:opacity-40" :disabled="index === 0" @click="emit('move', -1)">

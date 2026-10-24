@@ -28,6 +28,8 @@ export interface Settings {
   keyRepeat: boolean
   textMode: TextMode
   liveTyping: boolean
+  /** Deck button size on this device, relative to a phone held upright. */
+  deckButtonSize: number
   haptics: boolean
   theme: 'system' | 'dark' | 'light'
   keepAwake: boolean
@@ -81,6 +83,7 @@ export function defaultSettings(): Settings {
     keyRepeat: true,
     textMode: 'unicode',
     liveTyping: true,
+    deckButtonSize: 1,
     haptics: true,
     theme: 'system',
     keepAwake: true,
@@ -94,6 +97,8 @@ export function defaultSettings(): Settings {
 }
 
 const KEY = 'cmdpalm.settings'
+
+export const DECK_SIZE = { min: 0.5, max: 1.6 } as const
 
 const clamp = (value: unknown, lo: number, hi: number, fallback: number) =>
   typeof value === 'number' && Number.isFinite(value) ? Math.min(hi, Math.max(lo, value)) : fallback
@@ -137,6 +142,7 @@ export function migrate(raw: unknown): Settings {
   out.pointerSpeed = clamp(out.pointerSpeed, 0.2, 4, defaults.pointerSpeed)
   out.pointerAcceleration = clamp(out.pointerAcceleration, 0, 1, defaults.pointerAcceleration)
   out.scrollSpeed = clamp(out.scrollSpeed, 0.2, 4, defaults.scrollSpeed)
+  out.deckButtonSize = clamp(out.deckButtonSize, DECK_SIZE.min, DECK_SIZE.max, defaults.deckButtonSize)
   // Up to 0.3.0, one setting held both the side and whether the strip showed.
   const legacy = (raw as { scrollRail?: unknown }).scrollRail
   if (stored.scrollStrip === undefined && legacy === 'off') out.scrollStrip = 'off'
