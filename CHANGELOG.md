@@ -9,6 +9,12 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Trackpad
+
+- The pointer glides on through a Wi-Fi packet that arrives a little late,
+  instead of stopping and then catching up. This is most noticeable with a
+  high pointer speed.
+
 ## [0.3.2] - 2026-10-20
 
 A steadier CmdPalm. Pause stops a deck button at once, a held key or drag

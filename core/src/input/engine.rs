@@ -56,6 +56,11 @@ const PACE_MIN: f64 = 0.004;
 const PACE_MAX: f64 = 0.034;
 /// A gap this long means the finger paused; it says nothing about the rate.
 const PACE_IDLE: f64 = 0.1;
+/// Extra time each packet is spread over, beyond the packet interval, so a
+/// packet that arrives a little late finds the pointer still gliding.
+const PACE_SLACK_MIN: f64 = 0.002;
+const PACE_SLACK_MAX: f64 = 0.010;
+const PACE_JITTER_DEFAULT: f64 = 0.002;
 const CLICK_SLOP: f64 = 5.0;
 const MAX_MOTION: f64 = 4_000.0;
 const MAX_EDIT_DELETES: u32 = 4_096;
@@ -211,6 +216,12 @@ struct Momentum {
 /// a frame. Posting each one as a single jump makes the cursor stutter even
 /// when the finger moves steadily. Pacing adds roughly one packet interval
 /// of delay (8–16 ms) and gives an even glide.
+///
+/// Spreading over exactly the average interval stalls the pointer whenever a
+/// packet is later than average, then makes it catch up: at high pointer
+/// speeds each packet carries a long distance, so those stalls read as
+/// judder. A little slack, sized by how much the arrival times vary, keeps
+/// motion going through a late packet. The steady speed is unchanged.
 struct MotionPacer {
     remaining: (f64, f64),
     last_emit: Instant,
@@ -218,11 +229,20 @@ struct MotionPacer {
     last_input: Option<Instant>,
     /// Estimated seconds between packets.
     interval: f64,
+    /// Average deviation of the packet gaps from `interval`, in seconds.
+    jitter: f64,
 }
 
 impl MotionPacer {
     fn new(now: Instant) -> Self {
-        Self { remaining: (0.0, 0.0), last_emit: now, deadline: now, last_input: None, interval: PACE_DEFAULT }
+        Self {
+            remaining: (0.0, 0.0),
+            last_emit: now,
+            deadline: now,
+            last_input: None,
+            interval: PACE_DEFAULT,
+            jitter: PACE_JITTER_DEFAULT,
+        }
     }
 
     fn idle(&self) -> bool {
@@ -234,6 +254,8 @@ impl MotionPacer {
         if let Some(last) = self.last_input {
             let gap = now.duration_since(last).as_secs_f64();
             if gap < PACE_IDLE {
+                let deviation = (gap - self.interval).abs().min(PACE_MAX);
+                self.jitter = self.jitter * 0.85 + deviation * 0.15;
                 self.interval = (self.interval * 0.8 + gap * 0.2).clamp(PACE_MIN, PACE_MAX);
             }
         }
@@ -241,7 +263,8 @@ impl MotionPacer {
         self.remaining.0 += dx;
         self.remaining.1 += dy;
         self.last_emit = now;
-        self.deadline = now + Duration::from_secs_f64(self.interval);
+        let slack = (self.jitter * 2.0).clamp(PACE_SLACK_MIN, PACE_SLACK_MAX);
+        self.deadline = now + Duration::from_secs_f64((self.interval + slack).min(PACE_MAX));
     }
 
     /// Motion due by `now`.
@@ -1378,6 +1401,8 @@ mod tests {
             }
         }
         h.take();
+        // The last packet of the stream is still gliding.
+        let carried = h.engine.motion.remaining;
         // Two packets arrive together, as happens on Wi-Fi.
         h.input(A, Input::Move { dx: 6.0, dy: 0.0 });
         h.input(A, Input::Move { dx: 6.0, dy: 0.0 });
@@ -1392,7 +1417,65 @@ mod tests {
         }
         let (x, y, _) = moved(&h.take());
         assert!(steps >= 3, "motion is posted over several frames: {steps}");
-        assert!((x - 12.0).abs() < 1e-9 && y.abs() < 1e-9, "all motion arrives: {x},{y}");
+        assert!(
+            (x - 12.0 - carried.0).abs() < 1e-9 && (y - carried.1).abs() < 1e-9,
+            "all motion arrives: {x},{y} (carried {carried:?})"
+        );
+    }
+
+    #[test]
+    fn a_late_packet_does_not_stall_the_pointer() {
+        let mut h = Harness::new();
+        // A steady 60 Hz stream: 16 ms between packets, posted in 4 ms frames.
+        for _ in 0..20 {
+            h.input(A, Input::Move { dx: 40.0, dy: 0.0 });
+            for _ in 0..4 {
+                h.advance(4);
+            }
+        }
+        h.take();
+        // The next packet is 4 ms late. Every frame until it lands still moves.
+        h.input(A, Input::Move { dx: 40.0, dy: 0.0 });
+        let mut stalled = 0;
+        for _ in 0..5 {
+            h.advance(4);
+            if moved(&h.take()).2 == 0 {
+                stalled += 1;
+            }
+        }
+        h.input(A, Input::Move { dx: 40.0, dy: 0.0 });
+        assert_eq!(stalled, 0, "the pointer stalled for {stalled} frames waiting for a late packet");
+        for _ in 0..20 {
+            h.advance(4);
+        }
+        let (x, _, _) = moved(&h.take());
+        assert!(x > 0.0);
+    }
+
+    #[test]
+    fn steady_motion_keeps_its_speed_and_nothing_is_lost() {
+        let mut h = Harness::new();
+        for _ in 0..30 {
+            h.input(A, Input::Move { dx: 30.0, dy: 0.0 });
+            for _ in 0..4 {
+                h.advance(4);
+            }
+        }
+        // Once settled, each 16 ms carries one packet's worth of motion.
+        h.take();
+        let mut per_packet = Vec::new();
+        for _ in 0..10 {
+            h.input(A, Input::Move { dx: 30.0, dy: 0.0 });
+            for _ in 0..4 {
+                h.advance(4);
+            }
+            per_packet.push(moved(&h.take()).0);
+        }
+        for step in &per_packet {
+            assert!((step - 30.0).abs() < 3.0, "uneven motion: {per_packet:?}");
+        }
+        h.advance(100);
+        assert!(h.engine.motion.idle(), "all motion is posted once the finger stops");
     }
 
     #[test]
