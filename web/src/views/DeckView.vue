@@ -88,7 +88,7 @@ async function run(tile: Tile) {
     return
   }
   status.set(tile.id, 'failed')
-  haptic('heavy')
+  haptic('error')
   if (result.message) notify(result.message, 'error')
   setTimeout(() => status.delete(tile.id), 600)
 }

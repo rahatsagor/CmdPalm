@@ -26,7 +26,7 @@ function runGesture(map: GestureMap, slot: keyof GestureMap) {
   const action = map[slot]
   if (!action) return
   void runAction(action).then((result) => {
-    if (!result.ok && result.message) haptic('heavy')
+    if (!result.ok && result.message) haptic('error')
   })
 }
 

@@ -25,6 +25,14 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - **Settings → Deck → Button size** makes deck buttons smaller, to fit more
   on a page, or larger, on this device only.
 
+### Phone and tablet
+
+- Vibration on Android phones is strong enough to feel: the shortest taps
+  were too brief for many phone motors. A deck button or gesture that fails
+  now buzzes twice.
+- Haptics on iPhone and iPad (iOS 18 and later) are set up the way the
+  earlier WebPad's were.
+
 ### Fixes
 
 - An app you quit from the **Apps** tab no longer stays in the **Open**
