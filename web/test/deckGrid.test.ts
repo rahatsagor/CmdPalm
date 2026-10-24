@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { compactTiles, deckColumns, MAX_COLUMNS, REFERENCE_WIDTH } from '@/lib/deckGrid'
+import { deckColumns, MAX_COLUMNS, REFERENCE_WIDTH, tileWidth } from '@/lib/deckGrid'
+import { DECK_SIZE } from '@/lib/settings'
 
 describe('deck columns', () => {
   it('uses the page’s columns on a phone held upright', () => {
@@ -25,8 +26,10 @@ describe('deck columns', () => {
     expect(deckColumns(1, 200, 1.6)).toBe(1)
   })
 
-  it('uses compact faces for narrow buttons', () => {
-    expect(compactTiles(4, REFERENCE_WIDTH)).toBe(false)
-    expect(compactTiles(5, REFERENCE_WIDTH)).toBe(true)
+  it('keeps buttons big enough to tap at the smallest size', () => {
+    expect(tileWidth(4, REFERENCE_WIDTH)).toBe(84)
+    for (const width of [320, REFERENCE_WIDTH, 406, 820, 1024]) {
+      expect(tileWidth(deckColumns(4, width, DECK_SIZE.min), width)).toBeGreaterThanOrEqual(44)
+    }
   })
 })

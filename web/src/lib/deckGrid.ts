@@ -9,8 +9,6 @@
 export const REFERENCE_WIDTH = 366
 export const MAX_COLUMNS = 12
 export const TILE_GAP = 10
-/** Buttons narrower than this use the compact face. */
-const COMPACT_TILE = 78
 
 export function deckColumns(pageColumns: number, width: number, buttonSize: number): number {
   const scale = width > REFERENCE_WIDTH ? width / REFERENCE_WIDTH : 1
@@ -20,8 +18,4 @@ export function deckColumns(pageColumns: number, width: number, buttonSize: numb
 
 export function tileWidth(columns: number, width: number): number {
   return (width - TILE_GAP * (columns - 1)) / columns
-}
-
-export function compactTiles(columns: number, width: number): boolean {
-  return tileWidth(columns, width) < COMPACT_TILE
 }

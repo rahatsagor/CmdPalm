@@ -24,6 +24,9 @@ and versions follow [Semantic Versioning](https://semver.org/).
   of the same size instead of a few huge ones.
 - **Settings → Deck → Button size** makes deck buttons smaller, to fit more
   on a page, or larger, on this device only.
+- Deck button labels and icons scale with the button. Labels on narrow
+  buttons no longer break in the middle of a word, and the smallest buttons
+  show just their icon.
 
 ### Phone and tablet
 

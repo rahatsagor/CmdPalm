@@ -98,7 +98,8 @@ export function defaultSettings(): Settings {
 
 const KEY = 'cmdpalm.settings'
 
-export const DECK_SIZE = { min: 0.5, max: 1.6 } as const
+/** Smaller would make buttons on a phone narrower than a comfortable tap. */
+export const DECK_SIZE = { min: 0.7, max: 1.6 } as const
 
 const clamp = (value: unknown, lo: number, hi: number, fallback: number) =>
   typeof value === 'number' && Number.isFinite(value) ? Math.min(hi, Math.max(lo, value)) : fallback

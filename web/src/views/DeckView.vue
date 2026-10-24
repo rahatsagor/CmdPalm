@@ -6,7 +6,7 @@ import TileEditor from '@/components/TileEditor.vue'
 import TileFace from '@/components/TileFace.vue'
 import { notify, runAction, state } from '@/lib/connection'
 import { LIMITS, clone, newId, newPage, newTile, saveDeck } from '@/lib/deck'
-import { REFERENCE_WIDTH, compactTiles, deckColumns } from '@/lib/deckGrid'
+import { REFERENCE_WIDTH, deckColumns, tileWidth } from '@/lib/deckGrid'
 import { haptic } from '@/lib/haptics'
 import type { Deck, DeckPage, Tile } from '@/lib/protocol'
 import { settings } from '@/lib/settings'
@@ -35,7 +35,7 @@ watch(scroller, (el, old) => {
 onBeforeUnmount(() => resizer?.disconnect())
 
 const columns = (p: DeckPage) => deckColumns(p.columns, gridWidth.value, settings.deckButtonSize)
-const compact = (p: DeckPage) => compactTiles(columns(p), gridWidth.value || REFERENCE_WIDTH)
+const tileSize = (p: DeckPage) => tileWidth(columns(p), gridWidth.value || REFERENCE_WIDTH)
 
 function mutate(change: (deck: Deck) => void) {
   if (!deck.value) return
@@ -368,7 +368,7 @@ const dragged = computed(() => (press.value?.moved && editing.value ? page.value
             @lostpointercapture="onLostCapture"
             @contextmenu.prevent
           >
-            <TileFace :tile="tile" :compact="compact(p)" />
+            <TileFace :tile="tile" :size="tileSize(p)" />
             <span v-if="status.get(tile.id) === 'running'" class="absolute inset-0 grid place-items-center rounded-[22px] bg-bg/50">
               <LoaderCircle class="animate-spin" :size="20" />
             </span>
@@ -399,7 +399,7 @@ const dragged = computed(() => (press.value?.moved && editing.value ? page.value
       :class="!dragged.color && 'bg-surface-2'"
       :style="{ left: `${ghost.x}px`, top: `${ghost.y}px`, width: `${press.width}px`, height: `${press.height}px`, transform: 'scale(1.06)', ...tileStyle(dragged) }"
     >
-      <TileFace :tile="dragged" :compact="page ? compact(page) : false" />
+      <TileFace :tile="dragged" :size="page ? tileSize(page) : 0" />
     </div>
 
     <TileEditor
