@@ -21,6 +21,8 @@ struct MockDelegate {
     events: Mutex<Vec<HostEvent>>,
     opened: Mutex<Vec<String>>,
     voice: Mutex<Vec<&'static str>>,
+    /// The next app list is slow and lists an app that has since quit.
+    slow_stale_apps: std::sync::atomic::AtomicBool,
 }
 
 impl HostDelegate for MockDelegate {
@@ -28,6 +30,16 @@ impl HostDelegate for MockDelegate {
         self.events.lock().unwrap().push(event);
     }
     fn list_apps(&self) -> Vec<AppEntry> {
+        if self.slow_stale_apps.swap(false, std::sync::atomic::Ordering::SeqCst) {
+            std::thread::sleep(Duration::from_millis(300));
+            return vec![AppEntry {
+                id: "com.quit".into(),
+                name: "Quit".into(),
+                running: true,
+                active: false,
+                hidden: false,
+            }];
+        }
         vec![AppEntry {
             id: "com.apple.Safari".into(),
             name: "Safari".into(),
@@ -666,4 +678,30 @@ fn voice_stops_after_it_starts_even_when_sent_right_away() {
         ["start", "stop", "start", "stop"],
         "a disconnect stops the voice it left running"
     );
+}
+
+#[test]
+fn a_slow_app_list_never_replaces_a_newer_one() {
+    let f = fixture();
+    let code = f.host.pairing_info().link.split("#pair=").nth(1).unwrap().to_string();
+    f.delegate.slow_stale_apps.store(true, std::sync::atomic::Ordering::SeqCst);
+    f.rt.block_on(async {
+        let mut ws = connect(f.port).await;
+        send(&mut ws, hello("phone", json!({"method": "pair", "code": code}))).await;
+        assert_eq!(recv(&mut ws).await["t"], "welcome");
+        send(&mut ws, json!({"t": "apps"})).await;
+        // Let the first list start before the app quits and the phone asks again.
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        send(&mut ws, json!({"t": "apps"})).await;
+        assert_eq!(recv_kind(&mut ws, "apps").await["apps"][0]["name"], "Safari");
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        send(&mut ws, json!({"t": "ping", "id": 1})).await;
+        loop {
+            let message = recv(&mut ws).await;
+            assert_ne!(message["t"], "apps", "the older list arrived after the newer one: {message}");
+            if message["t"] == "pong" {
+                break;
+            }
+        }
+    });
 }

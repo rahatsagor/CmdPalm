@@ -65,7 +65,8 @@ final class AppCatalog: Sendable {
         }
         let workspace = NSWorkspace.shared
         let front = workspace.frontmostApplication?.bundleIdentifier
-        for app in workspace.runningApplications where app.activationPolicy == .regular {
+        // An app that is quitting can still be listed for a moment.
+        for app in workspace.runningApplications where app.activationPolicy == .regular && !app.isTerminated {
             guard let id = app.bundleIdentifier, id != ownID else { continue }
             let name = entries[id]?.name ?? app.localizedName ?? id
             entries[id] = AppEntry(id: id, name: name, running: true, active: id == front, hidden: app.isHidden)

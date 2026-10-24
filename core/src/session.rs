@@ -2,8 +2,8 @@
 //! loop that turns messages into input, actions and replies.
 
 use std::net::IpAddr;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use futures_util::stream::{SplitSink, SplitStream};
@@ -216,6 +216,8 @@ pub(crate) async fn run<S>(
         voice: false,
         last_heard: Instant::now(),
         in_flight: Arc::new(AtomicUsize::new(0)),
+        apps_requested: 0,
+        apps_sent: Arc::new(Mutex::new(0)),
     };
 
     if send(&mut sink, &welcome).await {
@@ -428,6 +430,10 @@ struct Connection {
     voice: bool,
     last_heard: Instant,
     in_flight: Arc<AtomicUsize>,
+    /// App lists asked for, and the newest one sent. Lists are made on
+    /// separate threads and can finish out of order.
+    apps_requested: u64,
+    apps_sent: Arc<Mutex<u64>>,
 }
 
 /// Device IDs are compared byte for byte when a remembered device returns,
@@ -567,7 +573,22 @@ impl Connection {
                 None
             }
             ClientMessage::Apps => {
-                self.blocking(|shared| Some(ServerMessage::Apps { apps: shared.delegate.list_apps() }));
+                // Quitting an app announces two changes (another app comes to
+                // the front, then the app quits). If the first, slower list
+                // were sent last, the app that quit would come back.
+                self.apps_requested += 1;
+                let request = self.apps_requested;
+                let sent = self.apps_sent.clone();
+                let id = self.id;
+                self.blocking(move |shared| {
+                    let apps = shared.delegate.list_apps();
+                    let mut newest = sent.lock().unwrap_or_else(|p| p.into_inner());
+                    if *newest < request {
+                        *newest = request;
+                        shared.send_to(id, ServerMessage::Apps { apps });
+                    }
+                    None
+                });
                 None
             }
             ClientMessage::DeckSave { deck } => match save_deck(&self.shared, deck) {

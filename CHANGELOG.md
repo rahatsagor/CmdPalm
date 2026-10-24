@@ -9,6 +9,11 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixes
+
+- An app you quit from the **Apps** tab no longer stays in the **Open**
+  list until you refresh it.
+
 ### Trackpad
 
 - The pointer glides on through a Wi-Fi packet that arrives a little late,
