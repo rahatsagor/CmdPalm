@@ -9,32 +9,40 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-28
+
+The trackpad feels more like a Mac's. Pinch to zoom smoothly and turn two
+fingers to rotate, with smart zoom and three-finger drag if you want them.
+Haptics work on iPhone again, the full Mac keyboard can fill a phone held
+upright, and CmdPalm tells you plainly when it can't reach your Mac. Thank
+you to everyone who tried CmdPalm and shared ideas; several of them are in
+this release.
+
 ### Trackpad
 
-- Pinching zooms smoothly, the way a Mac trackpad does, in apps that
+- **Smooth zoom.** Pinching zooms the way a Mac trackpad does, in apps that
   support it, such as Safari, Photos, Preview and Maps. To keep pressing
   ⌘+ and ⌘− instead, choose it under **Pinching** in the advanced settings.
-- Turn two fingers to rotate photos, maps and PDFs.
+- **Rotate.** Turn two fingers to rotate photos, maps and PDFs.
 - Zooming and rotating start as soon as your fingers move, even when you
-  pinch or turn around one finger that stays still, instead of starting a
-  scroll. Two fingers only scroll when both move the same way.
-- **Smart zoom**: double-tap with two fingers to zoom in on a web page or
-  PDF, and again to zoom back out. It's off at first, because right-clicks
-  then wait a moment to see whether a second tap follows.
-- **Three-finger drag**, in the advanced settings, drags with three
-  fingers like the Mac's accessibility option. Three-finger swipes turn
-  off while it's on.
-- Pinch with your thumb and three fingers to show your apps, or spread them
-  to show the desktop. Pinching and spreading with three or four fingers
-  can do any action under **Gestures**.
-- A new **Look Up** Mac action looks up the word under the pointer, for a
-  gesture or a deck button.
-- **Scroll strip at the screen edge** moves the scroll strip right up to the
-  edge of the screen. Slide a finger along the side of the phone, or the
-  edge of its case, to scroll without looking.
+  pinch or turn around one finger that stays still, while two-finger
+  scrolling stays a scroll.
+- **Smart zoom**, if you turn it on: double-tap with two fingers to zoom in
+  on a web page or PDF, and again to zoom back out. It's off at first,
+  because right-clicks then wait a moment to see whether a second tap
+  follows.
+- **Three-finger drag**, in the advanced settings, drags windows and
+  selects text with three fingers, like the Mac's accessibility option.
+  Three-finger swipes turn off while it's on.
+- Pinch your thumb and three fingers together to show your apps, or spread
+  them to show the desktop. Pinching and spreading with three or four
+  fingers can do any action under **Gestures**.
+- **Scroll strip at the screen edge** puts the scroll strip right against
+  the edge of the screen. Slide a finger along the side of the phone, or
+  the edge of its case, to scroll without looking.
 - **Scroll strip width** makes the strip wider and easier to hit.
 - The setting that hides the Click and Right-click buttons is now called
-  **Show click buttons**.
+  **Show click buttons**, so it's easier to find.
 
 ### Keyboard
 
@@ -46,29 +54,33 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ### Deck, apps and media
 
-- A deck button whose shell command fails says why, such as "command not
-  found", instead of seeming to do nothing. Buttons wait up to a moment and
-  a half for their command, so the steps after it run once it's done.
-- Shell commands typed on an iPhone keep plain quotes and dashes. iOS turned
-  `"` into `“` and `--` into `—` as you typed, which broke longer
+- A deck button whose shell command fails now says why, such as "command
+  not found", instead of seeming to do nothing. A button waits up to a
+  second and a half for its command, so the steps after it run once it's
+  done.
+- Shell commands typed on an iPhone keep plain quotes and dashes. iOS
+  turned `"` into `“` and `--` into `—` as you typed, which broke longer
   commands while short ones like `say test` still worked.
+- A new **Look Up** Mac action looks up the word under the pointer, for a
+  gesture or a deck button.
 
 ### Phone and tablet
 
-- When the Mac is asleep, off or on another network, CmdPalm shows a clear
-  screen that says it can't reach the Mac, what to check and a **Try
-  again** button, instead of a spinner or a blank page. It reconnects by
-  itself as soon as the Mac is back, and the same screen covers the app if
-  the connection is gone for a while. With the encrypted connection, the
-  home screen app keeps a copy of itself and a small offline page, so it
-  opens even the first time the Mac can't be reached.
-- Haptics work on iPhone again. iOS 26.5 stopped playing the haptics CmdPalm
-  asked for, and now plays one only when you tap something that is made to
-  give one. CmdPalm's trackpad, keys, click buttons and deck buttons are now
+- **Haptics work on iPhone again.** iOS 26.5 stopped playing the haptics
+  CmdPalm asked for and now plays one only when you tap something made to
+  give one. The trackpad, keys, click buttons and deck buttons are now
   built that way, so you feel taps, clicks and key presses. Swipes and long
   presses still can't be felt on iPhone.
 - **Key press haptics**, in the phone's settings, turns the tap you feel on
   each key press on or off without turning off other haptics.
+- **A clear screen when the Mac is away.** When the Mac is asleep, off or on
+  another network, CmdPalm says it can't reach it, lists what to check and
+  offers **Try again**, instead of a spinner or a blank page. It reconnects
+  by itself as soon as the Mac is back, and the same screen covers the app
+  if the connection is gone for a while.
+- With the encrypted connection, the home screen app keeps a copy of itself
+  and a small offline page, so it opens even the first time the Mac can't
+  be reached.
 
 ### Fixes
 
@@ -78,7 +90,6 @@ and versions follow [Semantic Versioning](https://semver.org/).
   page or a button, stay above the phone's keyboard, so you can see what
   you type. The field you're typing in scrolls into view, and the phone no
   longer offers to fill in a contact while you name things.
-
 ## [0.4.0] - 2026-10-24
 
 A smoother pointer and a keyboard that knows its left from its right. The
@@ -401,7 +412,8 @@ The first release.
   device, so they survive a cleared browser, and you can copy them from
   another device.
 
-[Unreleased]: https://github.com/rahatsagor/CmdPalm/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/rahatsagor/CmdPalm/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/rahatsagor/CmdPalm/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/rahatsagor/CmdPalm/compare/v0.3.2...v0.4.0
 [0.3.2]: https://github.com/rahatsagor/CmdPalm/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/rahatsagor/CmdPalm/compare/v0.3.0...v0.3.1
