@@ -9,6 +9,20 @@ export function graphemes(text: string): string[] {
   return Array.from(text)
 }
 
+/**
+ * Undo the typographic quotes, dashes and ellipses that phone keyboards put
+ * in as you type (Smart Punctuation on iPhone). A shell reads them as other
+ * characters, so a quoted argument or an option like --help stops working.
+ */
+export function plainPunctuation(text: string): string {
+  return text
+    .replace(/[“”„‟″]/g, '"')
+    .replace(/[‘’‚‛′]/g, "'")
+    .replace(/—/g, '--')
+    .replace(/–/g, '-')
+    .replace(/…/g, '...')
+}
+
 /** A field the on-screen keyboard types into. */
 export function isTextField(el: Element | null): boolean {
   if (el instanceof HTMLTextAreaElement) return true

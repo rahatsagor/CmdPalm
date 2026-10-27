@@ -36,6 +36,15 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - **Key press haptics**, in the phone's settings, turns the tap you feel on
   each key press on or off without turning off other haptics.
 
+### Deck, apps and media
+
+- A deck button whose shell command fails says why, such as "command not
+  found", instead of seeming to do nothing. Buttons wait up to a moment and
+  a half for their command, so the steps after it run once it's done.
+- Shell commands typed on an iPhone keep plain quotes and dashes. iOS turned
+  `"` into `“` and `--` into `—` as you typed, which broke longer
+  commands while short ones like `say test` still worked.
+
 ### Fixes
 
 - An app you quit from the **Apps** tab leaves the **Open** list right

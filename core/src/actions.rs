@@ -23,8 +23,14 @@ pub(crate) struct Job {
 const PASTE_RESTORE_DELAY: Duration = Duration::from_millis(450);
 const DELAY_SLICE: Duration = Duration::from_millis(50);
 const STOPPED: &str = "Stopped because control was paused or the device disconnected.";
-const SHELL_POLL: Duration = Duration::from_millis(100);
+const SHELL_POLL: Duration = Duration::from_millis(50);
 const SHELL_KILL_GRACE: Duration = Duration::from_secs(1);
+/// How long a button waits for its shell command before carrying on, so a
+/// command that fails right away can say why on the phone.
+const SHELL_REPORT_WINDOW: Duration = Duration::from_millis(1500);
+/// How much of a failed command's error output the phone is shown.
+const SHELL_ERROR_CHARS: usize = 240;
+const SHELL_ERROR_READ: u64 = 16 * 1024;
 
 pub(crate) async fn worker(shared: Arc<Shared>, session: SessionId, mut jobs: mpsc::Receiver<Job>) {
     while let Some(job) = jobs.recv().await {
@@ -226,23 +232,32 @@ pub(crate) fn execute(shared: &Shared, session: SessionId, action: &Action, dept
 
 fn run_shell(command: &str, interrupts: Arc<Interrupts>) -> Result<(), String> {
     use std::os::unix::process::CommandExt as _;
+    use std::process::Stdio;
+    let errors = error_file();
+    let stderr = errors.as_ref().and_then(|f| f.try_clone().ok()).map_or_else(Stdio::null, Stdio::from);
     let mut child = std::process::Command::new("/bin/zsh")
         .arg("-lc")
         .arg(command)
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(stderr)
         // Its own process group, so Pause can stop everything it started.
         .process_group(0)
         .spawn()
         .map_err(|e| format!("Couldn't run the command: {e}"))?;
     let group = child.id() as libc::pid_t;
+    let (done, finished) = std::sync::mpsc::channel();
     // Reap the process when it finishes so it never lingers as a zombie, and
     // stop it if input is paused while it runs: the command inherits CmdPalm's
     // Accessibility permission, so it must not outlive Pause.
     std::thread::spawn(move || {
         let mut signalled: Option<Instant> = None;
-        while let Ok(None) = child.try_wait() {
+        let status = loop {
+            match child.try_wait() {
+                Ok(None) => {}
+                Ok(Some(status)) => break Some(status),
+                Err(_) => break None,
+            }
             if interrupts.paused() {
                 match signalled {
                     None => {
@@ -258,9 +273,58 @@ fn run_shell(command: &str, interrupts: Arc<Interrupts>) -> Result<(), String> {
                 }
             }
             std::thread::sleep(SHELL_POLL);
-        }
+        };
+        let _ = done.send((status, interrupts.paused()));
     });
-    Ok(())
+    match finished.recv_timeout(SHELL_REPORT_WINDOW) {
+        Ok((_, true)) => Err(STOPPED.into()),
+        Ok((Some(status), false)) if !status.success() => Err(shell_failure(status, errors)),
+        // Still running, or finished fine: the command carries on by itself.
+        _ => Ok(()),
+    }
+}
+
+/// An unlinked temporary file for a command's error output. Unlike a pipe,
+/// it never fills up, so a long-running command can't block on it or be
+/// killed writing to it after CmdPalm stopped reading.
+fn error_file() -> Option<std::fs::File> {
+    use std::os::unix::fs::OpenOptionsExt as _;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    let path = std::env::temp_dir().join(format!(
+        "cmdpalm-shell-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    let file = std::fs::OpenOptions::new().read(true).write(true).create_new(true).mode(0o600).open(&path).ok()?;
+    let _ = std::fs::remove_file(&path);
+    Some(file)
+}
+
+/// Explains a failed command with the last line it wrote to standard error,
+/// which is usually the reason, such as "command not found".
+fn shell_failure(status: std::process::ExitStatus, errors: Option<std::fs::File>) -> String {
+    use std::io::{Read as _, Seek as _};
+    let detail = errors.and_then(|mut file| {
+        file.seek(std::io::SeekFrom::Start(0)).ok()?;
+        let mut bytes = Vec::new();
+        file.take(SHELL_ERROR_READ).read_to_end(&mut bytes).ok()?;
+        let text = String::from_utf8_lossy(&bytes);
+        let line = text.lines().map(str::trim).rfind(|line| !line.is_empty())?;
+        let mut line: String = line.chars().take(SHELL_ERROR_CHARS).collect();
+        if line.chars().count() == SHELL_ERROR_CHARS {
+            line.push('…');
+        }
+        Some(line)
+    });
+    let how = match status.code() {
+        Some(code) => format!("exit code {code}"),
+        None => "stopped by a signal".into(),
+    };
+    match detail {
+        Some(detail) => format!("The command failed ({how}): {detail}"),
+        None => format!("The command failed ({how})."),
+    }
 }
 
 #[cfg(test)]
@@ -294,10 +358,31 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let marker = dir.path().join("done");
         let interrupts = Arc::new(Interrupts::default());
-        run_shell(&format!("sleep 2; touch '{}'", marker.display()), interrupts.clone()).unwrap();
+        // Still running when the button stops waiting for it.
+        run_shell(&format!("sleep 3; touch '{}'", marker.display()), interrupts.clone()).unwrap();
         std::thread::sleep(Duration::from_millis(300));
         interrupts.set_paused(true);
         std::thread::sleep(Duration::from_millis(2600));
         assert!(!marker.exists(), "the paused command never finished");
+    }
+
+    #[test]
+    fn shell_commands_can_chain_and_redirect() {
+        let dir = tempfile::tempdir().unwrap();
+        let log = dir.path().join("log");
+        let path = log.display();
+        let command = format!("echo one >> '{path}'; echo two >> '{path}' && cat '{path}' | wc -l >> '{path}'");
+        run_shell(&command, Arc::new(Interrupts::default())).unwrap();
+        let written = std::fs::read_to_string(&log).unwrap();
+        assert_eq!(written.lines().map(str::trim).collect::<Vec<_>>(), ["one", "two", "2"]);
+    }
+
+    #[test]
+    fn a_failing_shell_command_says_why() {
+        let interrupts = Arc::new(Interrupts::default());
+        let error = run_shell("echo first >&2; echo 'no such thing' >&2; exit 3", interrupts.clone()).unwrap_err();
+        assert_eq!(error, "The command failed (exit code 3): no such thing");
+        let error = run_shell("exit 1", interrupts).unwrap_err();
+        assert_eq!(error, "The command failed (exit code 1).");
     }
 }

@@ -8,6 +8,7 @@ import { LIMITS } from '@/lib/deck'
 import type { Action, AppOp, MediaKey, MouseButton, SystemAction } from '@/lib/protocol'
 import { settings } from '@/lib/settings'
 import { symbol } from '@/lib/symbols'
+import { plainPunctuation } from '@/lib/text'
 import AppIcon from './AppIcon.vue'
 import AppPicker from './AppPicker.vue'
 import Segmented from './Segmented.vue'
@@ -78,6 +79,17 @@ function moveStep(index: number, by: number) {
   ;[next[index], next[target]] = [next[target]!, next[index]!]
   setSteps(next)
   openStep.value = target
+}
+
+function onCommand(event: Event) {
+  const field = event.target as HTMLTextAreaElement
+  const plain = plainPunctuation(field.value)
+  if (plain !== field.value) {
+    const caret = plainPunctuation(field.value.slice(0, field.selectionStart)).length
+    field.value = plain
+    field.setSelectionRange(caret, caret)
+  }
+  patch({ command: plain })
 }
 
 const kindOf = (step: Action) => ACTION_KINDS.find((k) => k.kind === step.kind)
@@ -224,11 +236,14 @@ const kindOf = (step: Action) => ACTION_KINDS.find((k) => k.kind === step.kind)
           spellcheck="false"
           placeholder="open -a Terminal ~/Projects"
           class="w-full resize-none rounded-xl border border-line bg-surface-2 p-3 font-mono text-[14px] outline-none focus:border-accent"
-          @input="patch({ command: ($event.target as HTMLTextAreaElement).value })"
+          @input="onCommand"
         />
         <p class="mt-1.5 flex gap-2 text-[13px] leading-snug text-warn">
           <TriangleAlert :size="15" class="mt-px shrink-0" />
           Runs with your user’s permissions through zsh. Only add commands you understand.
+        </p>
+        <p class="mt-1.5 text-[13px] leading-snug text-muted">
+          Quotes and dashes stay plain, as the shell needs them. If the command fails, the button shows why.
         </p>
       </div>
 
