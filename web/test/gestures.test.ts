@@ -47,6 +47,17 @@ function setup(overrides: Partial<GestureOptions> = {}) {
   return { g, calls, names }
 }
 
+type Recognizer = ReturnType<typeof setup>['g']
+
+/**
+ * One touch frame at 60 Hz: each finger reports its own move, in order, as
+ * browsers do. A finger left out of a frame didn't move in it.
+ */
+function frame(g: Recognizer, n: number, ...fingers: [id: number, x: number, y: number][]) {
+  for (const [id, x, y] of fingers) g.move(id, x, y, 5 + n * 16)
+}
+
+const twoFingerEvents = (calls: Call[]) => calls.filter((c) => ['scroll', 'zoom', 'rotate'].includes(c[0])).map((c) => c[0])
 beforeEach(() => vi.useFakeTimers())
 afterEach(() => vi.useRealTimers())
 
@@ -201,16 +212,18 @@ describe('two fingers', () => {
     const { g, calls } = setup()
     g.down(1, 150, 300, 0)
     g.down(2, 250, 300, 5)
-    g.move(1, 145, 300, 10)
+    frame(g, 1, [1, 145, 300], [2, 255, 300])
     expect(calls.some((c) => c[0] === 'zoom')).toBe(false)
-    g.move(1, 120, 300, 20)
-    g.move(2, 280, 300, 30)
-    g.up(1, 40)
-    g.up(2, 50)
+    frame(g, 2, [1, 135, 300], [2, 265, 300])
+    frame(g, 3, [1, 120, 300], [2, 280, 300])
+    g.up(1, 70)
+    g.up(2, 71)
     const zooms = calls.filter((c) => c[0] === 'zoom')
-    expect(zooms.map((c) => c[1])).toEqual([ScrollPhase.Began, ScrollPhase.Changed, ScrollPhase.Ended])
-    expect(zooms[0]![2]).toBeCloseTo(0.3)
-    expect(zooms[1]![2]).toBeCloseTo(160 / 130 - 1)
+    expect(zooms[0]).toEqual(['zoom', ScrollPhase.Began, expect.closeTo(0.3)])
+    expect(zooms.slice(1, -1).every((c) => c[1] === ScrollPhase.Changed)).toBe(true)
+    expect(zooms.at(-1)![1]).toBe(ScrollPhase.Ended)
+    // The steps multiply to the whole pinch, from 100 px apart to 160.
+    expect(zooms.slice(0, -1).reduce((scale, c) => scale * (1 + (c[2] as number)), 1)).toBeCloseTo(1.6)
     expect(calls.some((c) => c[0] === 'scroll' || c[0] === 'rotate')).toBe(false)
   })
 
@@ -218,16 +231,15 @@ describe('two fingers', () => {
     const { g, calls } = setup()
     g.down(1, 200, 300, 0)
     g.down(2, 300, 300, 5)
-    // A clockwise turn about the middle, in two steps of 15°.
-    const at = (deg: number, r: number) => [250 + r * Math.cos((deg * Math.PI) / 180), 300 + r * Math.sin((deg * Math.PI) / 180)] as const
-    g.move(2, ...at(30, 50), 20)
-    g.move(1, ...at(210, 50), 30)
+    // A clockwise turn about the middle, 5° a frame.
+    const at = (deg: number) => [250 + 50 * Math.cos((deg * Math.PI) / 180), 300 + 50 * Math.sin((deg * Math.PI) / 180)] as const
+    for (let n = 1; n <= 6; n++) frame(g, n, [2, ...at(n * 5)], [1, ...at(180 + n * 5)])
     g.cancel(1)
     g.cancel(2)
     const turns = calls.filter((c) => c[0] === 'rotate')
-    expect(turns.map((c) => c[1])).toEqual([ScrollPhase.Began, ScrollPhase.Changed, ScrollPhase.Cancelled])
-    expect(turns[0]![2] as number).toBeLessThan(-14)
-    expect((turns[0]![2] as number) + (turns[1]![2] as number)).toBeCloseTo(-30)
+    expect(turns[0]![1]).toBe(ScrollPhase.Began)
+    expect(turns.at(-1)![1]).toBe(ScrollPhase.Cancelled)
+    expect(turns.reduce((sum, c) => sum + (c[2] as number), 0)).toBeCloseTo(-30)
     expect(calls.some((c) => c[0] === 'zoom' || c[0] === 'scroll')).toBe(false)
   })
 
@@ -237,54 +249,51 @@ describe('two fingers', () => {
     const { g, calls } = setup()
     g.down(1, 200, 400, 0)
     g.down(2, 200, 300, 5)
-    // Finger 2 swings 20° clockwise around finger 1, in small steps.
-    for (let deg = 2; deg <= 20; deg += 2) {
-      const r = (deg * Math.PI) / 180
-      g.move(2, 200 + 100 * Math.sin(r), 400 - 100 * Math.cos(r), 10 + deg)
+    // Finger 2 swings 24° clockwise around finger 1, 2° a frame.
+    for (let n = 1; n <= 12; n++) {
+      const r = (n * 2 * Math.PI) / 180
+      frame(g, n, [2, 200 + 100 * Math.sin(r), 400 - 100 * Math.cos(r)])
     }
-    g.up(2, 60)
-    g.up(1, 61)
+    g.up(2, 300)
+    g.up(1, 301)
     expect(calls.some((c) => c[0] === 'scroll' || c[0] === 'zoom')).toBe(false)
-    const turned = calls.filter((c) => c[0] === 'rotate' && c[1] !== ScrollPhase.Ended).reduce((sum, c) => sum + (c[2] as number), 0)
-    expect(turned).toBeLessThan(-14)
+    const turned = calls.filter((c) => c[0] === 'rotate').reduce((sum, c) => sum + (c[2] as number), 0)
+    expect(turned).toBeCloseTo(-24)
   })
 
-  it('pinching with one finger still zooms right away instead of scrolling', () => {
+  it('pinching with one finger zooms instead of scrolling', () => {
     const { g, calls } = setup()
     g.down(1, 200, 400, 0)
     g.down(2, 200, 300, 5)
-    for (const y of [295, 290, 285, 280]) g.move(2, 201, y, 300 - y)
+    for (let n = 1; n <= 8; n++) frame(g, n, [2, 201, 300 + n * 5])
     expect(calls.some((c) => c[0] === 'scroll' || c[0] === 'rotate')).toBe(false)
     expect(calls.filter((c) => c[0] === 'zoom')[0]?.[1]).toBe(ScrollPhase.Began)
   })
 
-  it('a scroll with a slow second finger still scrolls', () => {
-    const { g, calls } = setup()
-    g.down(1, 100, 300, 0)
-    g.down(2, 160, 300, 5)
-    // Finger 1 leads; finger 2 starts slower and trails behind.
-    g.move(1, 100, 290, 10)
-    g.move(2, 161, 295, 10)
-    for (let y = 280; y >= 220; y -= 10) {
-      g.move(1, 100, y, 300 - y)
-      g.move(2, 161, y + 4, 300 - y)
+  it('scrolls when the fingers move at different speeds', () => {
+    // Side by side scrolling down the page, and one above the other
+    // scrolling sideways; one finger moves faster, which turns the line
+    // between them as a twist would.
+    for (const [a, b, step] of [
+      [[100, 300], [160, 300], [0, -12, 0, -7]],
+      [[200, 250], [200, 350], [-12, 0, -7, 0]],
+    ] as const) {
+      const { g, calls } = setup()
+      g.down(1, a[0], a[1], 0)
+      g.down(2, b[0], b[1], 5)
+      for (let n = 1; n <= 8; n++) frame(g, n, [1, a[0] + n * step[0], a[1] + n * step[1]], [2, b[0] + n * step[2], b[1] + n * step[3]])
+      expect(new Set(twoFingerEvents(calls))).toEqual(new Set(['scroll']))
     }
-    expect(calls.some((c) => c[0] === 'zoom' || c[0] === 'rotate')).toBe(false)
-    expect(calls.filter((c) => c[0] === 'scroll')[0]?.[1]).toBe(ScrollPhase.Began)
   })
 
-  it('a twist that turns out to be a scroll still scrolls', () => {
+  it('scrolls when the second finger starts a frame late', () => {
     const { g, calls } = setup()
     g.down(1, 100, 300, 0)
     g.down(2, 160, 300, 5)
-    // Finger 2 hasn't moved yet when finger 1 has gone far enough to decide.
-    g.move(1, 100, 290, 10)
-    g.move(2, 160, 294, 20)
-    g.move(1, 100, 284, 20)
-    expect(calls.some((c) => c[0] === 'zoom' || c[0] === 'rotate')).toBe(false)
-    expect(calls.filter((c) => c[0] === 'scroll')[0]?.[1]).toBe(ScrollPhase.Began)
+    frame(g, 1, [1, 100, 290])
+    for (let n = 2; n <= 6; n++) frame(g, n, [1, 100, 300 - n * 10], [2, 160, 310 - n * 10])
+    expect(new Set(twoFingerEvents(calls))).toEqual(new Set(['scroll']))
   })
-
   it('a two-finger double-tap smart zooms instead of right-clicking', () => {
     const { g, names } = setup({ smartZoom: true })
     const twoTap = (t: number) => {

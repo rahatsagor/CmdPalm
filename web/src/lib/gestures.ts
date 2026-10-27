@@ -72,7 +72,7 @@ const TWO_FINGER_DECIDE = 9
  * relative to each other is this much larger than their shared motion. A
  * pinch or twist around one still finger has a ratio of 2, a scroll about 0.
  */
-const TRANSFORM_RATIO = 1.1
+const TRANSFORM_RATIO = 1.5
 /** Once transforming, the travel in px, along or across the line between
  * the fingers, that starts a zoom or a rotation. */
 const ZOOM_START_PX = 8
@@ -80,10 +80,23 @@ const TURN_START_PX = 10
 /** A zoom or rotation only starts while it is at least this share of the
  * other motion, so a pinch doesn't turn a photo and a twist doesn't zoom. */
 const DOMINANCE = 0.6
+/** Fingers moving at different speeds while scrolling also pinch and turn a
+ * little. A zoom or rotation needs this much more of its own motion than
+ * motion the fingers share, which a pinch or twist around a still finger
+ * has twice over. */
+const OVER_SHARED = 1.2
 /** Both fingers moving at least this far, the same way, is a scroll. A
  * pinch or twist moves them apart, together or around, or keeps one still. */
-const TOGETHER_MIN = 4
-const TOGETHER_COS = 0.7
+const TOGETHER_MIN = 3
+const TOGETHER_COS = 0.5
+/**
+ * Each finger reports its own movement, one after the other. Deciding on the
+ * first report of a frame would compare it with where the other finger was
+ * a frame ago, which makes a scroll look like a twist. So wait for the other
+ * finger's report, up to two frames, after which it is staying still.
+ */
+const SAME_FRAME_MS = 8
+const STILL_AFTER_MS = 34
 /** Three or more fingers: how far their spread changes to count as a pinch. */
 const MULTI_PINCH_IN = 0.68
 const MULTI_PINCH_OUT = 1.45
@@ -118,6 +131,8 @@ export class GestureRecognizer {
   private samples: { t: number; dx: number; dy: number }[] = []
   private pinchBase = 0
   /** Smooth zoom and rotation: spread and angle last reported, once begun. */
+  /** When the two-finger decision first waited for the other finger. */
+  private decideAt = 0
   private zoomFrom = 0
   private turnFrom = 0
   private zooming = false
@@ -147,6 +162,7 @@ export class GestureRecognizer {
       this.cancelLongPress()
       this.releaseHeldTap()
       this.mode = 'pending'
+      this.decideAt = 0
       for (const p of this.points.values()) {
         p.startX = p.x
         p.startY = p.y
@@ -160,6 +176,7 @@ export class GestureRecognizer {
     this.primary = id
     this.maxFingers = 1
     this.start = t
+    this.decideAt = 0
     this.mode = 'pending'
     this.secondTap = false
     this.samples = []
@@ -249,6 +266,11 @@ export class GestureRecognizer {
     if (fingers === 2) {
       const { furthest, shared, relative, together } = this.pairMotion()
       if (furthest <= TWO_FINGER_DECIDE) return
+      const other = [...this.points.entries()].find(([key]) => key !== id)?.[1]
+      if (other && other.t < t - SAME_FRAME_MS && !together) {
+        this.decideAt ||= t
+        if (t - this.decideAt < STILL_AFTER_MS) return
+      }
       this.releaseTwoTap()
       const { radial, twist } = this.transformTravel()
       const enabled = radial >= twist ? this.options.pinch : this.options.rotate
@@ -395,7 +417,7 @@ export class GestureRecognizer {
     if (!this.zoomFrom || !spread) return
     if (!this.zooming) {
       const { radial, twist } = this.transformTravel()
-      if (radial < ZOOM_START_PX || radial < twist * DOMINANCE) return
+      if (radial < ZOOM_START_PX || radial < twist * DOMINANCE || radial < this.pairMotion().shared * OVER_SHARED) return
     }
     const delta = spread / this.zoomFrom - 1
     if (Math.abs(delta) < 0.001) return
@@ -409,7 +431,7 @@ export class GestureRecognizer {
     const degrees = turn(this.turnFrom, angle)
     if (!this.turning) {
       const { radial, twist } = this.transformTravel()
-      if (twist < TURN_START_PX || twist < radial * DOMINANCE) return
+      if (twist < TURN_START_PX || twist < radial * DOMINANCE || twist < this.pairMotion().shared * OVER_SHARED) return
     }
     if (Math.abs(degrees) < 0.1) return
     // Screen y points down, so a clockwise turn has a growing angle; macOS
@@ -428,16 +450,19 @@ export class GestureRecognizer {
   private stepZoom() {
     const spread = this.spread()
     if (!this.pinchBase || !spread) return
-    const ratio = spread / this.pinchBase
-    if (ratio >= PINCH_STEP) {
+    // A fast pinch can cover several steps between two touch reports.
+    let steps = 0
+    while (spread / this.pinchBase >= PINCH_STEP) {
       this.handler.pinch(1)
-      this.handler.feedback('select')
-      this.pinchBase = spread
-    } else if (ratio <= 1 / PINCH_STEP) {
-      this.handler.pinch(-1)
-      this.handler.feedback('select')
-      this.pinchBase = spread
+      this.pinchBase *= PINCH_STEP
+      steps++
     }
+    while (spread / this.pinchBase <= 1 / PINCH_STEP) {
+      this.handler.pinch(-1)
+      this.pinchBase /= PINCH_STEP
+      steps++
+    }
+    if (steps) this.handler.feedback('select')
   }
 
   private sample(t: number, dx: number, dy: number) {
