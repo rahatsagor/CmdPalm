@@ -33,6 +33,8 @@ const SLOTS: { slot: GestureSlot; label: string }[] = [
   { slot: 'left', label: 'Swipe left' },
   { slot: 'right', label: 'Swipe right' },
   { slot: 'tap', label: 'Tap' },
+  { slot: 'pinchIn', label: 'Pinch together' },
+  { slot: 'pinchOut', label: 'Spread apart' },
 ]
 
 const gesture = ref<{ fingers: 3 | 4; slot: GestureSlot; label: string; draft: Action | null } | null>(null)
@@ -114,6 +116,11 @@ const times = (v: number) => `${v.toFixed(1)}×`
         />
         <Toggle v-model="settings.tapAndDrag" label="Tap, then drag" hint="Tap and quickly touch again to start a drag." />
         <Toggle v-model="settings.dragLock" label="Drag lock" hint="Drags continue after lifting your finger until you tap." />
+        <Toggle
+          v-model="settings.threeFingerDrag"
+          label="Three-finger drag"
+          hint="Move three fingers to drag windows and select text. Three-finger swipes turn off; four-finger gestures still work."
+        />
         <Toggle v-model="settings.showTouches" label="Show touches" />
       </template>
     </section>
@@ -123,7 +130,26 @@ const times = (v: number) => `${v.toFixed(1)}×`
       <RangeRow v-model="settings.scrollSpeed" label="Scroll speed" :min="0.2" :max="4" :step="0.05" :format="times" />
       <Toggle v-model="settings.naturalScroll" label="Natural scrolling" hint="Content moves with your fingers." />
       <Toggle v-model="settings.momentum" label="Momentum" hint="Keep scrolling after a flick." />
-      <Toggle v-model="settings.pinchToZoom" label="Pinch to zoom" hint="Sends ⌘+ and ⌘−." />
+      <Toggle
+        v-model="settings.pinchToZoom"
+        label="Pinch to zoom"
+        :hint="settings.pinchStyle === 'keys' ? 'Sends ⌘+ and ⌘−.' : 'Zooms photos, maps, PDFs and web pages smoothly, as on a Mac trackpad.'"
+      />
+      <Segmented
+        v-if="settings.showAdvanced && settings.pinchToZoom"
+        v-model="settings.pinchStyle"
+        label="Pinching"
+        :options="[
+          { value: 'smooth', label: 'Zooms smoothly' },
+          { value: 'keys', label: 'Presses ⌘+ and ⌘−' },
+        ]"
+      />
+      <Toggle v-model="settings.rotateGesture" label="Rotate" hint="Turn two fingers to rotate photos, maps and PDFs." />
+      <Toggle
+        v-model="settings.smartZoom"
+        label="Smart zoom"
+        hint="Double-tap with two fingers to zoom in on a web page or PDF, and again to zoom back out. Right-clicks wait a moment longer."
+      />
       <Segmented
         v-model="settings.scrollStrip"
         label="Scroll strip"

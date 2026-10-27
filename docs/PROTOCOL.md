@@ -155,6 +155,7 @@ Little-endian. The first byte is the type.
 | `0x02` | `phase: u8, dx: f32, dy: f32` | Scroll by pixels. Phases: 0 none (a plain wheel step), 1 began, 2 changed, 4 ended, 8 cancelled. A new `began` ends a gesture still in progress. |
 | `0x03` | `vx: f32, vy: f32` | Fingers lifted while scrolling at this velocity (px/s). The Mac continues with momentum. |
 | `0x04` | | A finger touched the surface; stops momentum. |
+| `0x05` | `kind: u8, phase: u8, value: f32` | A trackpad gesture for apps to handle. Kinds: 1 zoom (`value` is the change in magnification, as a fraction), 2 rotate (degrees, counterclockwise), 3 smart zoom (phase and value unused). Phases as for scrolling; zoom and rotation can run at once, and the Mac ends one that stops getting updates for a second. |
 | `0x10` | `pcm: i16…` | Microphone audio for voice typing: 16 kHz, mono. |
 
 ### Actions

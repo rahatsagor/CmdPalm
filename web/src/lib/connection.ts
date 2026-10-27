@@ -8,7 +8,9 @@ import {
   PROTOCOL_VERSION,
   ScrollPhase,
   encodeFling,
+  encodeGesture,
   encodeMove,
+  GestureKind,
   encodeScroll,
   encodeTouch,
   type Action,
@@ -425,6 +427,8 @@ export const pointer = (() => {
   let sx = 0
   let sy = 0
   let scrollPhase: number = ScrollPhase.None
+  /** Zoom and rotation summed since the last frame, by gesture kind. */
+  const gestures = new Map<GestureKind, { phase: number; value: number }>()
   let timer: ReturnType<typeof setTimeout> | undefined
   let queued = false
   let lastSent = 0
@@ -451,6 +455,8 @@ export const pointer = (() => {
       sx = sy = 0
       scrollPhase = ScrollPhase.None
     }
+    for (const [kind, g] of gestures) sendBinary(encodeGesture(kind, g.phase, g.value))
+    gestures.clear()
     lastSent = performance.now()
   }
   const schedule = () => {
@@ -490,6 +496,19 @@ export const pointer = (() => {
       flush(true)
       sendBinary(encodeFling(vx, vy))
     },
+    /** A zoom or rotation step, or a smart zoom. Steps between frames add up. */
+    gesture(kind: GestureKind, phase: number, value: number) {
+      if (kind === GestureKind.SmartZoom || phase === ScrollPhase.Ended || phase === ScrollPhase.Cancelled) {
+        flush(true)
+        sendBinary(encodeGesture(kind, phase, 0))
+        return
+      }
+      if (phase === ScrollPhase.Began) flush(true)
+      const pending = gestures.get(kind)
+      if (pending) pending.value += value
+      else gestures.set(kind, { phase, value })
+      schedule()
+    },
     touch() {
       sendBinary(encodeTouch())
     },
@@ -501,6 +520,7 @@ export const pointer = (() => {
       cancel()
       mx = my = sx = sy = 0
       scrollPhase = ScrollPhase.None
+      gestures.clear()
     },
   }
 })()

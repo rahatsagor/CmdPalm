@@ -1,7 +1,7 @@
 import { reactive, watch } from 'vue'
 import type { Action, TextMode } from './protocol'
 
-export type GestureSlot = 'left' | 'right' | 'up' | 'down' | 'tap'
+export type GestureSlot = 'left' | 'right' | 'up' | 'down' | 'tap' | 'pinchIn' | 'pinchOut'
 export type GestureMap = Record<GestureSlot, Action | null>
 
 export interface Settings {
@@ -24,6 +24,11 @@ export interface Settings {
   scrollStripEdge: boolean
   scrollHold: boolean
   pinchToZoom: boolean
+  /** Pinching zooms smoothly like a Mac trackpad, or presses ⌘+ and ⌘−. */
+  pinchStyle: 'smooth' | 'keys'
+  rotateGesture: boolean
+  smartZoom: boolean
+  threeFingerDrag: boolean
   threeFinger: GestureMap
   fourFinger: GestureMap
   keyboard: 'auto' | 'mac' | 'custom' | 'phone'
@@ -74,6 +79,10 @@ export function defaultSettings(): Settings {
     scrollStripEdge: false,
     scrollHold: true,
     pinchToZoom: true,
+    pinchStyle: 'smooth',
+    rotateGesture: true,
+    smartZoom: false,
+    threeFingerDrag: false,
     threeFinger: {
       up: sys('missionControl'),
       down: sys('appExpose'),
@@ -81,6 +90,8 @@ export function defaultSettings(): Settings {
       left: sys('spaceRight'),
       right: sys('spaceLeft'),
       tap: { kind: 'mouse', button: 'middle' },
+      pinchIn: null,
+      pinchOut: null,
     },
     fourFinger: {
       up: sys('launchpad'),
@@ -88,6 +99,9 @@ export function defaultSettings(): Settings {
       left: sys('nextTab'),
       right: sys('previousTab'),
       tap: null,
+      // As on a Mac trackpad: thumb and three fingers.
+      pinchIn: sys('launchpad'),
+      pinchOut: sys('showDesktop'),
     },
     keyboard: 'auto',
     functionRow: 'media',
@@ -124,6 +138,7 @@ const CHOICES: Partial<Record<keyof Settings, readonly string[]>> = {
   scrollStrip: ['short', 'long', 'off'],
   scrollStripSide: ['right', 'left'],
   scrollStripWidth: ['normal', 'wide', 'wider'],
+  pinchStyle: ['smooth', 'keys'],
   keyboard: ['auto', 'mac', 'custom', 'phone'],
   functionRow: ['media', 'function'],
   sidewaysTurn: ['left', 'right'],

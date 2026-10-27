@@ -1,7 +1,7 @@
 import type { Component } from 'vue'
 import {
   Aperture, AppWindow, ArrowLeft, ArrowLeftToLine, ArrowRight, ArrowRightToLine, AtSign, Battery,
-  Bell, Bluetooth, Bookmark, Bot, Calendar, Camera, ChevronLeft, ChevronRight, CirclePlay, Clipboard,
+  Bell, Bluetooth, BookOpen, Bookmark, Bot, Calendar, Camera, ChevronLeft, ChevronRight, CirclePlay, Clipboard,
   Cloud, Code, Coffee, Command, Copy, Download, EyeOff, FastForward, File, Film, Flame, Folder,
   Gamepad2, Globe, Grid2x2, Hash, Headphones, Heart, House, Image, Keyboard, Laptop, LayoutGrid,
   Lightbulb, LightbulbOff, Link, ListOrdered, Lock, Mail, Maximize, MessageCircle, Mic, Minimize,
@@ -30,7 +30,7 @@ export const SYMBOLS: Record<string, Component> = {
   'list-ordered': ListOrdered, timer: Timer, 'square-terminal': SquareTerminal, zap: Zap,
   star: Star, heart: Heart, house: House, mail: Mail, 'message-circle': MessageCircle,
   calendar: Calendar, folder: Folder, file: File, terminal: Terminal, code: Code, globe: Globe,
-  bookmark: Bookmark, bell: Bell, mic: Mic, video: Video, phone: Phone, coffee: Coffee,
+  bookmark: Bookmark, 'book-open': BookOpen, bell: Bell, mic: Mic, video: Video, phone: Phone, coffee: Coffee,
   'gamepad-2': Gamepad2, headphones: Headphones, image: Image, film: Film, cloud: Cloud,
   download: Download, upload: Upload, 'refresh-cw': RefreshCw, settings: Settings,
   'sliders-horizontal': SlidersHorizontal, 'trash-2': Trash2, wifi: Wifi, bluetooth: Bluetooth,

@@ -21,6 +21,7 @@ export const SYSTEM: Record<SystemAction, Meta> = {
   hideApp: { label: 'Hide App', symbol: 'eye-off', group: 'Windows & Spaces' },
   quitApp: { label: 'Quit App', symbol: 'power', group: 'Windows & Spaces' },
   spotlight: { label: 'Spotlight', symbol: 'search', group: 'System' },
+  lookUp: { label: 'Look Up', symbol: 'book-open', group: 'System' },
   emojiPicker: { label: 'Emoji & Symbols', symbol: 'smile', group: 'System' },
   screenshot: { label: 'Screenshot', symbol: 'camera', group: 'System' },
   screenshotArea: { label: 'Screenshot Area', symbol: 'scan', group: 'System' },

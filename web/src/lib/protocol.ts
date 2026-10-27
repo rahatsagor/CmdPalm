@@ -7,8 +7,17 @@ export const Op = {
   Scroll: 0x02,
   Fling: 0x03,
   Touch: 0x04,
+  Gesture: 0x05,
   Audio: 0x10,
 } as const
+
+/** Trackpad gestures apps handle themselves, sent with `Op.Gesture`. */
+export const GestureKind = {
+  Zoom: 1,
+  Rotate: 2,
+  SmartZoom: 3,
+} as const
+export type GestureKind = (typeof GestureKind)[keyof typeof GestureKind]
 
 export const ScrollPhase = {
   None: 0,
@@ -58,6 +67,7 @@ export const SYSTEM_ACTIONS = [
   'showDesktop',
   'launchpad',
   'spotlight',
+  'lookUp',
   'spaceLeft',
   'spaceRight',
   'appSwitcher',
@@ -280,6 +290,16 @@ export function encodeFling(vx: number, vy: number): ArrayBuffer {
   view.setUint8(0, Op.Fling)
   view.setFloat32(1, vx, true)
   view.setFloat32(5, vy, true)
+  return buf
+}
+
+export function encodeGesture(kind: GestureKind, phase: number, value: number): ArrayBuffer {
+  const buf = new ArrayBuffer(7)
+  const view = new DataView(buf)
+  view.setUint8(0, Op.Gesture)
+  view.setUint8(1, kind)
+  view.setUint8(2, phase)
+  view.setFloat32(3, value, true)
   return buf
 }
 

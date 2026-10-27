@@ -8,7 +8,7 @@ import { beginPointerGesture, buttonDown, buttonUp, click, tap } from '@/lib/inp
 import { Key } from '@/lib/keys'
 import { layout } from '@/lib/layout'
 import { PointerGain } from '@/lib/pointerGain'
-import { Mod, ScrollPhase } from '@/lib/protocol'
+import { GestureKind, Mod, ScrollPhase } from '@/lib/protocol'
 import { settings, type GestureMap } from '@/lib/settings'
 import HapticSwitch from './HapticSwitch.vue'
 
@@ -73,7 +73,11 @@ const handler: GestureHandler = {
   },
   swipe: (fingers: number, direction: Direction) => runGesture(fingers >= 4 ? settings.fourFinger : settings.threeFinger, direction),
   multiTap: (fingers) => runGesture(fingers >= 4 ? settings.fourFinger : settings.threeFinger, 'tap'),
+  multiPinch: (fingers, inward) => runGesture(fingers >= 4 ? settings.fourFinger : settings.threeFinger, inward ? 'pinchIn' : 'pinchOut'),
   pinch: (direction) => tap(direction > 0 ? Key.Equal : Key.Minus, Mod.Command),
+  zoom: (phase, delta) => pointer.gesture(GestureKind.Zoom, phase, delta),
+  rotate: (phase, degrees) => pointer.gesture(GestureKind.Rotate, phase, degrees),
+  smartZoom: () => pointer.gesture(GestureKind.SmartZoom, ScrollPhase.None, 0),
   feedback: (kind) => haptic(kind),
 }
 
@@ -84,6 +88,10 @@ const options = computed(() => ({
   tapAndDrag: settings.tapAndDrag,
   dragLock: settings.dragLock,
   pinch: settings.pinchToZoom,
+  zoomKeys: settings.pinchStyle === 'keys',
+  rotate: settings.rotateGesture,
+  smartZoom: settings.smartZoom,
+  threeFingerDrag: settings.threeFingerDrag,
   momentum: settings.momentum,
 }))
 

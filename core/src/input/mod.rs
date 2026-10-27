@@ -42,6 +42,29 @@ pub mod momentum_phase {
     pub const END: u8 = 3;
 }
 
+/// Trackpad gestures that apps handle themselves, such as zooming a map or
+/// turning a photo.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum GestureKind {
+    /// Pinch to zoom in or out.
+    Zoom,
+    /// Turn two fingers to rotate.
+    Rotate,
+    /// Double-tap with two fingers to zoom in on what's under the pointer.
+    SmartZoom,
+}
+
+impl GestureKind {
+    pub fn from_wire(kind: u8) -> Option<Self> {
+        match kind {
+            1 => Some(Self::Zoom),
+            2 => Some(Self::Rotate),
+            3 => Some(Self::SmartZoom),
+            _ => None,
+        }
+    }
+}
+
 /// A platform-neutral synthetic event. `flags` never includes Caps Lock or
 /// the non-coalesced bit; the sink adds those from live system state.
 #[derive(Debug, Clone, PartialEq)]
@@ -86,6 +109,13 @@ pub enum Synth {
     Media {
         key: MediaKey,
         down: bool,
+    },
+    /// A trackpad gesture event. `phase` uses the `scroll_phase` values;
+    /// `value` is the change in magnification or the rotation in degrees.
+    Gesture {
+        kind: GestureKind,
+        phase: u8,
+        value: f64,
     },
     ToggleCapsLock,
     Pause(Duration),
@@ -272,6 +302,11 @@ pub enum Input {
         vy: f64,
     },
     Touch,
+    Gesture {
+        kind: GestureKind,
+        phase: u8,
+        value: f64,
+    },
     Media {
         key: MediaKey,
         op: PressOp,

@@ -90,6 +90,7 @@ fn system_plan(name: SystemAction) -> Plan {
         S::Minimize => letter('m', CMD),
         S::HideApp => letter('h', CMD),
         S::Fullscreen => letter('f', CTRL | CMD),
+        S::LookUp => letter('d', CTRL | CMD),
         S::Undo => letter('z', CMD),
         S::Redo => letter('z', CMD | SHIFT),
         S::Copy => letter('c', CMD),

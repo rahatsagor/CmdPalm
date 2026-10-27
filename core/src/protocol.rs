@@ -22,6 +22,11 @@ pub mod binary {
     pub const FLING: u8 = 0x03;
     /// `[op]` a finger touched the surface; stops momentum like a real trackpad.
     pub const TOUCH: u8 = 0x04;
+    /// `[op, kind: u8, phase: u8, value: f32]` a trackpad gesture. Kinds:
+    /// 1 zoom (`value` is the change in magnification, as a fraction), 2
+    /// rotate (degrees, counterclockwise), 3 smart zoom (phase and value
+    /// unused). Phases as for [`SCROLL`].
+    pub const GESTURE: u8 = 0x05;
     /// `[op, pcm: i16le...]` 16 kHz mono microphone audio for voice typing.
     pub const AUDIO: u8 = 0x10;
 }
@@ -103,6 +108,8 @@ pub enum SystemAction {
     ShowDesktop,
     Launchpad,
     Spotlight,
+    /// Look up the word under the pointer, like a force click.
+    LookUp,
     SpaceLeft,
     SpaceRight,
     AppSwitcher,

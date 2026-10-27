@@ -9,7 +9,7 @@ use objc2_core_graphics::{
     CGEventTapLocation, CGEventType, CGGetActiveDisplayList, CGMouseButton, CGScrollEventUnit,
 };
 
-use super::{EventSink, Synth};
+use super::{EventSink, GestureKind, Synth};
 use crate::keycodes::{self, flags};
 use crate::protocol::{MediaKey, MouseButton};
 
@@ -35,6 +35,19 @@ const NX_EVENT_DATA_VERSION: u32 = 2;
 const NX_KEYSTATE_DOWN: i32 = 0x0A;
 const NX_KEYSTATE_UP: i32 = 0x0B;
 const QOS_CLASS_USER_INTERACTIVE: u32 = 0x21;
+
+// Trackpad gesture events (`NSEventTypeGesture`) use undocumented CGEvent
+// fields. These are the ones a real trackpad's zoom and rotate events carry,
+// as found by the Calftrail touch work and used by Mac Mouse Fix.
+const GESTURE_EVENT: u32 = 29;
+const FIELD_GESTURE_SUBTYPE: u32 = 110;
+const FIELD_GESTURE_ZOOM: u32 = 113;
+const FIELD_GESTURE_ROTATION: u32 = 114;
+const FIELD_GESTURE_PHASE: u32 = 132;
+/// `kIOHIDEventType*` values for the subtype field.
+const HID_ROTATION: i64 = 5;
+const HID_ZOOM: i64 = 8;
+const HID_ZOOM_TOGGLE: i64 = 22;
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -434,6 +447,34 @@ impl MacSink {
         }
     }
 
+    fn gesture(&mut self, kind: GestureKind, phase: u8, value: f64) {
+        // Without a source, like the window server's own gesture events.
+        let Some(event) = CGEvent::new(None) else {
+            return;
+        };
+        let e = Some(&*event);
+        CGEvent::set_type(e, CGEventType(GESTURE_EVENT));
+        let field = |field: u32| CGEventField(field);
+        match kind {
+            GestureKind::Zoom => {
+                CGEvent::set_integer_value_field(e, field(FIELD_GESTURE_SUBTYPE), HID_ZOOM);
+                CGEvent::set_double_value_field(e, field(FIELD_GESTURE_ZOOM), value);
+                CGEvent::set_integer_value_field(e, field(FIELD_GESTURE_PHASE), i64::from(phase));
+            }
+            GestureKind::Rotate => {
+                CGEvent::set_integer_value_field(e, field(FIELD_GESTURE_SUBTYPE), HID_ROTATION);
+                CGEvent::set_double_value_field(e, field(FIELD_GESTURE_ROTATION), value);
+                CGEvent::set_integer_value_field(e, field(FIELD_GESTURE_PHASE), i64::from(phase));
+            }
+            GestureKind::SmartZoom => {
+                CGEvent::set_integer_value_field(e, field(FIELD_GESTURE_SUBTYPE), HID_ZOOM_TOGGLE);
+            }
+        }
+        CGEvent::set_integer_value_field(e, CGEventField::EventSourceUserData, EVENT_MARKER);
+        CGEvent::set_location(e, self.current_position());
+        Self::post(&event);
+    }
+
     fn toggle_caps_lock(&mut self) {
         let Some(hid) = self.hid() else {
             return;
@@ -469,6 +510,7 @@ impl EventSink for MacSink {
             Synth::Button { button, down, clicks, flags } => self.mouse_button(button, down, clicks, flags),
             Synth::Scroll { dx, dy, phase, momentum, flags } => self.scroll(dx, dy, phase, momentum, flags),
             Synth::Media { key, down } => self.media(key, down),
+            Synth::Gesture { kind, phase, value } => self.gesture(kind, phase, value),
             Synth::ToggleCapsLock => self.toggle_caps_lock(),
             Synth::Pause(duration) => std::thread::sleep(duration),
         }

@@ -14,6 +14,13 @@ export interface GestureOptions {
   tapAndDrag: boolean
   dragLock: boolean
   pinch: boolean
+  /** Pinching sends zoom key steps instead of a smooth zoom gesture. */
+  zoomKeys: boolean
+  rotate: boolean
+  /** Two-finger double-tap; right-clicks wait to see if a second tap follows. */
+  smartZoom: boolean
+  /** Three fingers drag, as with the Mac's accessibility option. */
+  threeFingerDrag: boolean
   momentum: boolean
 }
 
@@ -32,7 +39,15 @@ export interface GestureHandler {
   buttonUp(button: MouseButton): void
   swipe(fingers: number, direction: Direction): void
   multiTap(fingers: number): void
+  /** Three or more fingers pinched together (`inward`) or spread apart. */
+  multiPinch(fingers: number, inward: boolean): void
+  /** One zoom key step, with `zoomKeys`. */
   pinch(direction: 1 | -1): void
+  /** Change in magnification since the last call, as a fraction. */
+  zoom(phase: number, delta: number): void
+  /** Rotation since the last call, in degrees, counterclockwise. */
+  rotate(phase: number, degrees: number): void
+  smartZoom(): void
   feedback(kind: Haptic): void
 }
 
@@ -47,12 +62,21 @@ const DOUBLE_TAP_DISTANCE = 40
 const SWIPE_DISTANCE = 38
 const PINCH_START = 0.14
 const PINCH_STEP = 1.22
+/** From one two-finger tap's lift to the next's, for a smart zoom. */
+const SMART_ZOOM_MS = 400
+/** Degrees two fingers turn before it counts as rotating. */
+const ROTATE_START = 14
+/** Three or more fingers: how far their spread changes to count as a pinch. */
+const MULTI_PINCH_IN = 0.68
+const MULTI_PINCH_OUT = 1.45
+/** A swipe keeps the fingers' spread within these. */
+const SWIPE_SPREAD = [0.8, 1.25] as const
 const FLING_MIN = 140
 const VELOCITY_WINDOW = 90
 /** Lifting after the fingers came to rest should not fling. */
 const FLING_STALE = 55
 
-type Mode = 'idle' | 'pending' | 'pointing' | 'dragging' | 'scrolling' | 'pinching' | 'done'
+type Mode = 'idle' | 'pending' | 'pointing' | 'dragging' | 'scrolling' | 'transforming' | 'dragging3' | 'done'
 
 interface Point {
   x: number
@@ -75,6 +99,13 @@ export class GestureRecognizer {
   private lastTap: { t: number; x: number; y: number } | null = null
   private samples: { t: number; dx: number; dy: number }[] = []
   private pinchBase = 0
+  /** Smooth zoom and rotation: spread and angle last reported, once begun. */
+  private zoomFrom = 0
+  private turnFrom = 0
+  private zooming = false
+  private turning = false
+  /** A two-finger tap waiting to see whether it is a smart zoom. */
+  private twoTap: { t: number; timer: ReturnType<typeof setTimeout> } | null = null
   private lastPosition = { x: 0, y: 0 }
 
   constructor(
@@ -158,9 +189,14 @@ export class GestureRecognizer {
         this.sample(t, dx / n, dy / n)
         break
       }
-      case 'pinching':
-        this.updatePinch()
+      case 'transforming':
+        this.updateTransform()
         break
+      case 'dragging3': {
+        const n = this.points.size
+        this.handler.move(dx / n, dy / n, dt)
+        break
+      }
       default:
         break
     }
@@ -173,6 +209,7 @@ export class GestureRecognizer {
       const sy = p.y - p.startY
       if (Math.hypot(sx, sy) <= SLOP) return
       this.cancelLongPress()
+      this.releaseTwoTap()
       if (this.secondTap) {
         this.secondTap = false
         this.handler.begin()
@@ -192,16 +229,20 @@ export class GestureRecognizer {
     }
     const { cx, cy } = this.centroidShift()
     if (fingers === 2) {
-      const spread = this.spread()
-      const startSpread = this.spread(true)
-      const ratio = startSpread > 0 ? spread / startSpread : 1
-      if (this.options.pinch && Math.abs(ratio - 1) > PINCH_START && Math.hypot(cx, cy) < MULTI_SLOP * 3) {
-        this.mode = 'pinching'
-        this.pinchBase = startSpread
-        this.updatePinch()
+      const steady = Math.hypot(cx, cy) < MULTI_SLOP * 3
+      if (steady && (this.zoomStarted() || this.turnStarted())) {
+        this.releaseTwoTap()
+        this.mode = 'transforming'
+        this.pinchBase = this.spread(true)
+        this.zoomFrom = this.pinchBase
+        this.turnFrom = this.angle(true)
+        this.zooming = this.turning = false
+        this.handler.begin()
+        this.updateTransform()
         return
       }
       if (Math.hypot(cx, cy) > MULTI_SLOP) {
+        this.releaseTwoTap()
         this.mode = 'scrolling'
         this.handler.begin()
         this.handler.scroll(ScrollPhase.Began, cx, cy)
@@ -209,12 +250,60 @@ export class GestureRecognizer {
       }
       return
     }
-    if (fingers >= 3 && Math.hypot(cx, cy) > SWIPE_DISTANCE) {
+    if (fingers === 3 && this.options.threeFingerDrag) {
+      if (Math.hypot(cx, cy) <= MULTI_SLOP) return
+      this.releaseTwoTap()
+      this.mode = 'dragging3'
+      this.handler.begin()
+      this.handler.buttonDown('left')
+      this.handler.move(cx, cy, Math.max(dt, t - this.start, 1))
+      return
+    }
+    const ratio = this.reach(true) > 0 ? this.reach() / this.reach(true) : 1
+    if (fingers >= 3 && (ratio < MULTI_PINCH_IN || ratio > MULTI_PINCH_OUT)) {
+      this.releaseTwoTap()
+      this.handler.multiPinch(Math.min(fingers, 4), ratio < 1)
+      this.handler.feedback('light')
+      this.mode = 'done'
+      return
+    }
+    const swiping = ratio >= SWIPE_SPREAD[0] && ratio <= SWIPE_SPREAD[1]
+    if (fingers >= 3 && swiping && Math.hypot(cx, cy) > SWIPE_DISTANCE) {
+      this.releaseTwoTap()
       const direction: Direction = Math.abs(cx) > Math.abs(cy) ? (cx > 0 ? 'right' : 'left') : cy > 0 ? 'down' : 'up'
       this.handler.swipe(Math.min(fingers, 4), direction)
       this.handler.feedback('light')
       this.mode = 'done'
     }
+  }
+
+  private zoomStarted(): boolean {
+    const start = this.spread(true)
+    return this.options.pinch && start > 0 && Math.abs(this.spread() / start - 1) > PINCH_START
+  }
+
+  private turnStarted(): boolean {
+    return this.options.rotate && Math.abs(turn(this.angle(true), this.angle())) > ROTATE_START
+  }
+
+  /** Average distance of the fingers from their center. */
+  private reach(atStart = false): number {
+    const points = [...this.points.values()]
+    if (points.length === 0) return 0
+    const x = (p: Point) => (atStart ? p.startX : p.x)
+    const y = (p: Point) => (atStart ? p.startY : p.y)
+    const mx = points.reduce((a, p) => a + x(p), 0) / points.length
+    const my = points.reduce((a, p) => a + y(p), 0) / points.length
+    return points.reduce((a, p) => a + Math.hypot(x(p) - mx, y(p) - my), 0) / points.length
+  }
+
+  /** Direction from the first finger to the second, in degrees. */
+  private angle(atStart = false): number {
+    const [a, b] = [...this.points.values()]
+    if (!a || !b) return 0
+    return atStart
+      ? (Math.atan2(b.startY - a.startY, b.startX - a.startX) * 180) / Math.PI
+      : (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI
   }
 
   private centroidShift(): { cx: number; cy: number } {
@@ -234,7 +323,47 @@ export class GestureRecognizer {
     return atStart ? Math.hypot(a.startX - b.startX, a.startY - b.startY) : Math.hypot(a.x - b.x, a.y - b.y)
   }
 
-  private updatePinch() {
+  private updateTransform() {
+    if (this.options.pinch) {
+      if (this.options.zoomKeys) this.stepZoom()
+      else this.smoothZoom()
+    }
+    if (this.options.rotate) this.smoothTurn()
+  }
+
+  // Zoom and rotation each start once they pass their threshold, so a pinch
+  // doesn't also turn a photo a little, and the other way round. Both can
+  // then run together, as on a Mac trackpad.
+  private smoothZoom() {
+    const spread = this.spread()
+    if (!this.zoomFrom || !spread) return
+    if (!this.zooming && Math.abs(spread / this.pinchBase - 1) <= PINCH_START) return
+    const delta = spread / this.zoomFrom - 1
+    if (Math.abs(delta) < 0.001) return
+    this.handler.zoom(this.zooming ? ScrollPhase.Changed : ScrollPhase.Began, delta)
+    this.zooming = true
+    this.zoomFrom = spread
+  }
+
+  private smoothTurn() {
+    const angle = this.angle()
+    const degrees = turn(this.turnFrom, angle)
+    if (!this.turning && Math.abs(degrees) <= ROTATE_START) return
+    if (Math.abs(degrees) < 0.1) return
+    // Screen y points down, so a clockwise turn has a growing angle; macOS
+    // counts counterclockwise as positive.
+    this.handler.rotate(this.turning ? ScrollPhase.Changed : ScrollPhase.Began, -degrees)
+    this.turning = true
+    this.turnFrom = angle
+  }
+
+  private endTransform(phase: number) {
+    if (this.zooming) this.handler.zoom(phase, 0)
+    if (this.turning) this.handler.rotate(phase, 0)
+    this.zooming = this.turning = false
+  }
+
+  private stepZoom() {
     const spread = this.spread()
     if (!this.pinchBase || !spread) return
     const ratio = spread / this.pinchBase
@@ -272,6 +401,10 @@ export class GestureRecognizer {
     this.lastPosition = { x: lifted.x, y: lifted.y }
     if (this.points.size > 0) {
       if (this.mode === 'scrolling') this.endScroll(t, true)
+      if (this.mode === 'transforming') {
+        this.endTransform(ScrollPhase.Ended)
+        this.mode = 'done'
+      }
       if (this.mode === 'dragging' && id === this.primary) this.primary = this.points.keys().next().value!
       return
     }
@@ -294,6 +427,12 @@ export class GestureRecognizer {
       case 'scrolling':
         this.endScroll(t, true)
         break
+      case 'transforming':
+        this.endTransform(ScrollPhase.Ended)
+        break
+      case 'dragging3':
+        this.handler.buttonUp('left')
+        break
       default:
         break
     }
@@ -302,6 +441,7 @@ export class GestureRecognizer {
   }
 
   private tapped(duration: number, t: number) {
+    if (this.maxFingers !== 2) this.releaseTwoTap()
     if (this.maxFingers === 1) {
       if (this.dragLocked) {
         this.dragLocked = false
@@ -330,16 +470,38 @@ export class GestureRecognizer {
       return
     }
     if (this.maxFingers === 2) {
-      if (this.options.twoFingerTap && duration <= TAP_MS * 1.4) {
-        this.handler.feedback('light')
-        this.handler.click('right')
+      if (duration > TAP_MS * 1.4) return
+      if (!this.options.smartZoom) {
+        if (this.options.twoFingerTap) {
+          this.handler.feedback('light')
+          this.handler.click('right')
+        }
+        return
       }
+      if (this.twoTap && t - this.twoTap.t <= SMART_ZOOM_MS) {
+        clearTimeout(this.twoTap.timer)
+        this.twoTap = null
+        this.handler.feedback('light')
+        this.handler.smartZoom()
+        return
+      }
+      this.releaseTwoTap()
+      if (this.options.twoFingerTap) this.handler.feedback('light')
+      this.twoTap = { t, timer: setTimeout(() => this.releaseTwoTap(), SMART_ZOOM_MS) }
       return
     }
     if (duration <= TAP_MS * 1.5) {
       this.handler.feedback('light')
       this.handler.multiTap(Math.min(this.maxFingers, 4))
     }
+  }
+
+  /** A two-finger tap held back for a possible smart zoom was a right-click. */
+  private releaseTwoTap() {
+    if (!this.twoTap) return
+    clearTimeout(this.twoTap.timer)
+    this.twoTap = null
+    if (this.options.twoFingerTap) this.handler.click('right')
   }
 
   /** The tap held back for a possible double tap was a plain click after all. */
@@ -368,8 +530,9 @@ export class GestureRecognizer {
     if (this.points.size > 0) return
     this.cancelLongPress()
     this.releaseHeldTap()
-    if (this.mode === 'dragging' && !this.dragLocked) this.handler.buttonUp('left')
+    if ((this.mode === 'dragging' && !this.dragLocked) || this.mode === 'dragging3') this.handler.buttonUp('left')
     if (this.mode === 'scrolling') this.handler.scroll(ScrollPhase.Cancelled, 0, 0)
+    if (this.mode === 'transforming') this.endTransform(ScrollPhase.Cancelled)
     this.mode = 'idle'
     this.secondTap = false
   }
@@ -377,6 +540,7 @@ export class GestureRecognizer {
   private onLongPress() {
     this.longPressTimer = undefined
     if (this.mode !== 'pending' || this.points.size !== 1 || this.maxFingers !== 1) return
+    this.releaseTwoTap()
     if (this.options.longPress === 'drag') {
       this.handler.begin()
       this.handler.buttonDown('left')
@@ -399,10 +563,18 @@ export class GestureRecognizer {
     this.cancelLongPress()
     clearTimeout(this.deferredClick)
     this.deferredClick = undefined
-    if (this.mode === 'dragging' || this.dragLocked) this.handler.buttonUp('left')
+    clearTimeout(this.twoTap?.timer)
+    this.twoTap = null
+    if (this.mode === 'dragging' || this.mode === 'dragging3' || this.dragLocked) this.handler.buttonUp('left')
     if (this.mode === 'scrolling') this.handler.scroll(ScrollPhase.Cancelled, 0, 0)
+    if (this.mode === 'transforming') this.endTransform(ScrollPhase.Cancelled)
     this.points.clear()
     this.dragLocked = false
     this.mode = 'idle'
   }
+}
+
+/** Signed difference between two angles in degrees, in [-180, 180). */
+function turn(from: number, to: number): number {
+  return ((((to - from + 180) % 360) + 360) % 360) - 180
 }

@@ -19,7 +19,8 @@ use std::time::{Duration, Instant};
 
 use super::text::{Segment, segments};
 use super::{
-    Command, EventSink, Input, Interrupts, LayoutMap, SessionId, Synth, Tuning, TypeMode, momentum_phase, scroll_phase,
+    Command, EventSink, GestureKind, Input, Interrupts, LayoutMap, SessionId, Synth, Tuning, TypeMode, momentum_phase,
+    scroll_phase,
 };
 use crate::keycodes::{self, COMBO_PRESS_ORDER, KEY_CAPS_LOCK, KEY_DELETE, KEY_RETURN, KEY_TAB, KeyCode};
 use crate::protocol::{MediaKey, MouseButton, PressOp};
@@ -44,6 +45,12 @@ const MAX_REPEAT: Duration = Duration::from_secs(60);
 const ENDED_MEMORY: usize = 256;
 /// End a scroll gesture whose client stopped sending updates.
 pub const SCROLL_STALE: Duration = Duration::from_millis(300);
+/// End a zoom or rotation whose client stopped sending updates. Longer than
+/// for scrolling: fingers often rest partway through a pinch.
+pub const GESTURE_STALE: Duration = Duration::from_millis(1000);
+/// Largest single zoom step (a doubling) and rotation step, in degrees.
+const MAX_ZOOM_STEP: f64 = 1.0;
+const MAX_ROTATE_STEP: f64 = 90.0;
 const MOMENTUM_FRAME: Duration = Duration::from_micros(8333);
 const MOMENTUM_START_SPEED: f64 = 80.0;
 const MOMENTUM_STOP_SPEED: f64 = 12.0;
@@ -202,6 +209,13 @@ struct ScrollGesture {
     last: Instant,
 }
 
+/// A zoom or rotation in progress. Both can run at once, as on a trackpad.
+struct TouchGesture {
+    session: SessionId,
+    kind: GestureKind,
+    last: Instant,
+}
+
 struct Momentum {
     vx: f64,
     vy: f64,
@@ -312,6 +326,7 @@ pub(crate) struct Engine<S: EventSink> {
     repeat: Option<Repeat>,
     clicks: ClickTracker,
     scroll: Option<ScrollGesture>,
+    gestures: Vec<TouchGesture>,
     momentum: Option<Momentum>,
     motion: MotionPacer,
     last_watchdog: Instant,
@@ -335,6 +350,7 @@ impl<S: EventSink> Engine<S> {
             repeat: None,
             clicks: ClickTracker::default(),
             scroll: None,
+            gestures: Vec::new(),
             momentum: None,
             motion: MotionPacer::new(Instant::now()),
             last_watchdog: Instant::now(),
@@ -387,6 +403,9 @@ impl<S: EventSink> Engine<S> {
         }
         if let Some(scroll) = &self.scroll {
             consider(scroll.last + SCROLL_STALE);
+        }
+        for gesture in &self.gestures {
+            consider(gesture.last + GESTURE_STALE);
         }
         if self.sessions.values().any(Session::holds_anything) {
             consider((self.last_watchdog + WATCHDOG_PERIOD).max(now));
@@ -455,6 +474,12 @@ impl<S: EventSink> Engine<S> {
             self.scroll = None;
             self.post_scroll(0.0, 0.0, scroll_phase::ENDED, momentum_phase::NONE);
         }
+        let (stale, live): (Vec<_>, Vec<_>) =
+            std::mem::take(&mut self.gestures).into_iter().partition(|g| now.duration_since(g.last) >= GESTURE_STALE);
+        self.gestures = live;
+        for gesture in stale {
+            self.sink.post(Synth::Gesture { kind: gesture.kind, phase: scroll_phase::ENDED, value: 0.0 });
+        }
         if now.duration_since(self.last_watchdog) >= WATCHDOG_PERIOD {
             self.last_watchdog = now;
             let silent = |id: &SessionId, after: Duration| {
@@ -519,6 +544,7 @@ impl<S: EventSink> Engine<S> {
             Input::Scroll { phase, dx, dy } => self.scroll(session, phase, dx, dy, now),
             Input::Fling { vx, vy } => self.fling(vx, vy, now),
             Input::Touch => self.stop_momentum(),
+            Input::Gesture { kind, phase, value } => self.gesture(session, kind, phase, value, now),
             Input::Media { key, op } => self.media(session, key, op),
             Input::Text { text, mode } => self.type_text(session, &text, mode),
             Input::Edit { delete, insert } => {
@@ -892,6 +918,49 @@ impl<S: EventSink> Engine<S> {
         }
     }
 
+    fn gesture(&mut self, session: SessionId, kind: GestureKind, phase: u8, value: f64, now: Instant) {
+        if !value.is_finite() {
+            return;
+        }
+        if kind == GestureKind::SmartZoom {
+            self.sink.post(Synth::Gesture { kind, phase: scroll_phase::NONE, value: 0.0 });
+            return;
+        }
+        let limit = if kind == GestureKind::Zoom { MAX_ZOOM_STEP } else { MAX_ROTATE_STEP };
+        let value = value.clamp(-limit, limit);
+        let active = self.gestures.iter().position(|g| g.kind == kind);
+        match phase {
+            scroll_phase::BEGAN | scroll_phase::CHANGED => {
+                // As with scrolling, a gesture that never ended (another
+                // device's, say) is closed before a new one begins.
+                let continues = match active {
+                    Some(i) if phase == scroll_phase::BEGAN => {
+                        self.gestures.remove(i);
+                        self.sink.post(Synth::Gesture { kind, phase: scroll_phase::ENDED, value: 0.0 });
+                        false
+                    }
+                    Some(i) => {
+                        self.gestures[i] = TouchGesture { session, kind, last: now };
+                        true
+                    }
+                    None => false,
+                };
+                if !continues {
+                    self.gestures.push(TouchGesture { session, kind, last: now });
+                }
+                let phase = if continues { scroll_phase::CHANGED } else { scroll_phase::BEGAN };
+                self.sink.post(Synth::Gesture { kind, phase, value });
+            }
+            scroll_phase::ENDED | scroll_phase::CANCELLED => {
+                if let Some(i) = active {
+                    self.gestures.remove(i);
+                    self.sink.post(Synth::Gesture { kind, phase, value: 0.0 });
+                }
+            }
+            _ => {}
+        }
+    }
+
     fn fling(&mut self, vx: f64, vy: f64, now: Instant) {
         if !vx.is_finite() || !vy.is_finite() {
             return;
@@ -976,6 +1045,12 @@ impl<S: EventSink> Engine<S> {
         if self.scroll.as_ref().is_some_and(|s| s.session == id) {
             self.scroll = None;
             self.post_scroll(0.0, 0.0, scroll_phase::CANCELLED, momentum_phase::NONE);
+        }
+        let (ended, others): (Vec<_>, Vec<_>) =
+            std::mem::take(&mut self.gestures).into_iter().partition(|g| g.session == id);
+        self.gestures = others;
+        for gesture in ended {
+            self.sink.post(Synth::Gesture { kind: gesture.kind, phase: scroll_phase::CANCELLED, value: 0.0 });
         }
         let Some(state) = self.sessions.get_mut(&id) else {
             return;
@@ -1676,6 +1751,71 @@ mod tests {
             })
             .collect();
         assert_eq!(phases, [scroll_phase::BEGAN, scroll_phase::ENDED, scroll_phase::BEGAN, scroll_phase::ENDED]);
+    }
+
+    fn gestures(events: Vec<Synth>) -> Vec<(GestureKind, u8, f64)> {
+        events
+            .into_iter()
+            .filter_map(|e| match e {
+                Synth::Gesture { kind, phase, value } => Some((kind, phase, value)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn zoom_and_rotation_run_side_by_side() {
+        use GestureKind::{Rotate, Zoom};
+        use scroll_phase::{BEGAN, CHANGED, ENDED};
+        let mut h = Harness::new();
+        h.input(A, Input::Gesture { kind: Zoom, phase: BEGAN, value: 0.1 });
+        h.input(A, Input::Gesture { kind: Rotate, phase: BEGAN, value: 5.0 });
+        h.input(A, Input::Gesture { kind: Zoom, phase: CHANGED, value: 9.0 });
+        h.input(A, Input::Gesture { kind: Rotate, phase: ENDED, value: 0.0 });
+        h.input(A, Input::Gesture { kind: Zoom, phase: ENDED, value: 0.0 });
+        assert_eq!(
+            gestures(h.take()),
+            [
+                (Zoom, BEGAN, 0.1),
+                (Rotate, BEGAN, 5.0),
+                (Zoom, CHANGED, MAX_ZOOM_STEP),
+                (Rotate, ENDED, 0.0),
+                (Zoom, ENDED, 0.0)
+            ]
+        );
+        // An end with nothing in progress posts nothing.
+        h.input(A, Input::Gesture { kind: Zoom, phase: ENDED, value: 0.0 });
+        assert!(h.take().is_empty());
+    }
+
+    #[test]
+    fn a_change_without_a_start_begins_the_gesture() {
+        let mut h = Harness::new();
+        h.input(A, Input::Gesture { kind: GestureKind::Zoom, phase: scroll_phase::CHANGED, value: 0.2 });
+        assert_eq!(gestures(h.take()), [(GestureKind::Zoom, scroll_phase::BEGAN, 0.2)]);
+    }
+
+    #[test]
+    fn gestures_end_when_abandoned_or_released() {
+        let mut h = Harness::new();
+        h.input(A, Input::Gesture { kind: GestureKind::Rotate, phase: scroll_phase::BEGAN, value: 3.0 });
+        h.take();
+        h.advance(GESTURE_STALE.as_millis() as u64 + 50);
+        assert_eq!(gestures(h.take()), [(GestureKind::Rotate, scroll_phase::ENDED, 0.0)]);
+
+        h.input(A, Input::Gesture { kind: GestureKind::Zoom, phase: scroll_phase::BEGAN, value: 0.1 });
+        h.input(B, Input::Gesture { kind: GestureKind::Rotate, phase: scroll_phase::BEGAN, value: 1.0 });
+        h.take();
+        h.input(A, Input::ReleaseAll);
+        assert_eq!(gestures(h.take()), [(GestureKind::Zoom, scroll_phase::CANCELLED, 0.0)]);
+    }
+
+    #[test]
+    fn smart_zoom_is_a_single_event() {
+        let mut h = Harness::new();
+        h.input(A, Input::Gesture { kind: GestureKind::SmartZoom, phase: scroll_phase::ENDED, value: f64::NAN });
+        h.input(A, Input::Gesture { kind: GestureKind::SmartZoom, phase: scroll_phase::NONE, value: 0.0 });
+        assert_eq!(gestures(h.take()), [(GestureKind::SmartZoom, scroll_phase::NONE, 0.0)]);
     }
 
     #[test]

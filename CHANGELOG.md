@@ -19,6 +19,21 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ### Trackpad
 
+- Pinching zooms smoothly, the way a Mac trackpad does, in apps that
+  support it, such as Safari, Photos, Preview and Maps. To keep pressing
+  ⌘+ and ⌘− instead, choose it under **Pinching** in the advanced settings.
+- Turn two fingers to rotate photos, maps and PDFs.
+- **Smart zoom**: double-tap with two fingers to zoom in on a web page or
+  PDF, and again to zoom back out. It's off at first, because right-clicks
+  then wait a moment to see whether a second tap follows.
+- **Three-finger drag**, in the advanced settings, drags with three
+  fingers like the Mac's accessibility option. Three-finger swipes turn
+  off while it's on.
+- Pinch with your thumb and three fingers to show your apps, or spread them
+  to show the desktop. Pinching and spreading with three or four fingers
+  can do any action under **Gestures**.
+- A new **Look Up** Mac action looks up the word under the pointer, for a
+  gesture or a deck button.
 - **Scroll strip at the screen edge** moves the scroll strip right up to the
   edge of the screen. Slide a finger along the side of the phone, or the
   edge of its case, to scroll without looking.

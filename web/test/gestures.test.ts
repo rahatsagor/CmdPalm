@@ -21,7 +21,11 @@ function setup(overrides: Partial<GestureOptions> = {}) {
     buttonUp: record('buttonUp'),
     swipe: record('swipe'),
     multiTap: record('multiTap'),
+    multiPinch: record('multiPinch'),
     pinch: record('pinch'),
+    zoom: record('zoom'),
+    rotate: record('rotate'),
+    smartZoom: record('smartZoom'),
     feedback: () => {},
   }
   const options: GestureOptions = {
@@ -31,6 +35,10 @@ function setup(overrides: Partial<GestureOptions> = {}) {
     tapAndDrag: false,
     dragLock: false,
     pinch: true,
+    zoomKeys: false,
+    rotate: true,
+    smartZoom: false,
+    threeFingerDrag: false,
     momentum: true,
     ...overrides,
   }
@@ -178,8 +186,8 @@ describe('two fingers', () => {
     expect(calls.some((c) => c[0] === 'fling')).toBe(false)
   })
 
-  it('pinch zooms in steps', () => {
-    const { g, calls } = setup()
+  it('pinch zooms in steps with zoom keys', () => {
+    const { g, calls } = setup({ zoomKeys: true })
     g.down(1, 150, 300, 0)
     g.down(2, 250, 300, 5)
     g.move(1, 120, 300, 20)
@@ -187,6 +195,57 @@ describe('two fingers', () => {
     g.move(1, 100, 300, 40)
     g.move(2, 300, 300, 40)
     expect(calls.filter((c) => c[0] === 'pinch').map((c) => c[1])).toEqual([1, 1, 1])
+  })
+
+  it('pinch zooms smoothly, and lifting ends the zoom', () => {
+    const { g, calls } = setup()
+    g.down(1, 150, 300, 0)
+    g.down(2, 250, 300, 5)
+    g.move(1, 145, 300, 10)
+    expect(calls.some((c) => c[0] === 'zoom')).toBe(false)
+    g.move(1, 120, 300, 20)
+    g.move(2, 280, 300, 30)
+    g.up(1, 40)
+    g.up(2, 50)
+    const zooms = calls.filter((c) => c[0] === 'zoom')
+    expect(zooms.map((c) => c[1])).toEqual([ScrollPhase.Began, ScrollPhase.Changed, ScrollPhase.Ended])
+    expect(zooms[0]![2]).toBeCloseTo(0.3)
+    expect(zooms[1]![2]).toBeCloseTo(160 / 130 - 1)
+    expect(calls.some((c) => c[0] === 'scroll' || c[0] === 'rotate')).toBe(false)
+  })
+
+  it('turning two fingers rotates counterclockwise-positive, without zooming', () => {
+    const { g, calls } = setup()
+    g.down(1, 200, 300, 0)
+    g.down(2, 300, 300, 5)
+    // A clockwise turn about the middle, in two steps of 15°.
+    const at = (deg: number, r: number) => [250 + r * Math.cos((deg * Math.PI) / 180), 300 + r * Math.sin((deg * Math.PI) / 180)] as const
+    g.move(2, ...at(30, 50), 20)
+    g.move(1, ...at(210, 50), 30)
+    g.cancel(1)
+    g.cancel(2)
+    const turns = calls.filter((c) => c[0] === 'rotate')
+    expect(turns.map((c) => c[1])).toEqual([ScrollPhase.Began, ScrollPhase.Changed, ScrollPhase.Cancelled])
+    expect(turns[0]![2] as number).toBeLessThan(-14)
+    expect((turns[0]![2] as number) + (turns[1]![2] as number)).toBeCloseTo(-30)
+    expect(calls.some((c) => c[0] === 'zoom' || c[0] === 'scroll')).toBe(false)
+  })
+
+  it('a two-finger double-tap smart zooms instead of right-clicking', () => {
+    const { g, names } = setup({ smartZoom: true })
+    const twoTap = (t: number) => {
+      g.down(1, 100, 100, t)
+      g.down(2, 160, 100, t + 10)
+      g.up(1, t + 80)
+      g.up(2, t + 90)
+    }
+    twoTap(0)
+    expect(names()).toEqual([])
+    twoTap(200)
+    expect(names()).toEqual(['smartZoom'])
+    twoTap(2000)
+    vi.advanceTimersByTime(500)
+    expect(names()).toEqual(['smartZoom', 'click'])
   })
 })
 
@@ -212,6 +271,36 @@ describe('three and four fingers', () => {
     for (const id of [1, 2, 3, 4]) g.down(id, id * 40, 300, id)
     for (const id of [1, 2, 3, 4]) g.up(id, 100 + id)
     expect(calls.filter((c) => c[0] === 'multiTap')).toEqual([['multiTap', 4]])
+  })
+
+  it('pinches four fingers together, even when the thumb moves the middle', () => {
+    const { g, calls } = setup()
+    const start = [
+      [100, 400],
+      [140, 300],
+      [190, 290],
+      [240, 300],
+    ]
+    start.forEach(([x, y], i) => g.down(i + 1, x!, y!, i))
+    // The thumb sweeps up to the fingers, which close in a little.
+    g.move(1, 150, 340, 30)
+    g.move(2, 150, 305, 30)
+    g.move(3, 185, 300, 30)
+    g.move(4, 215, 305, 30)
+    for (const id of [1, 2, 3, 4]) g.up(id, 60)
+    expect(calls.filter((c) => c[0] === 'multiPinch' || c[0] === 'swipe')).toEqual([['multiPinch', 4, true]])
+  })
+
+  it('three-finger drag holds the button and follows the fingers', () => {
+    const { g, calls, names } = setup({ threeFingerDrag: true })
+    for (const id of [1, 2, 3]) g.down(id, 100 + id * 40, 300, id)
+    for (const x of [10, 30]) for (const id of [1, 2, 3]) g.move(id, 100 + id * 40 + x, 300, 10 + x)
+    for (const id of [1, 2, 3]) g.up(id, 80)
+    expect(names()[0]).toBe('buttonDown')
+    expect(names().at(-1)).toBe('buttonUp')
+    expect(names()).not.toContain('swipe')
+    const moved = calls.filter((c) => c[0] === 'move').reduce((sum, c) => sum + (c[1] as number), 0)
+    expect(moved).toBeCloseTo(30)
   })
 })
 

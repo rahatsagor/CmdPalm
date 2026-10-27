@@ -19,7 +19,7 @@ use crate::api::{ApprovalRequest, ConnectedDevice, HostEvent};
 use crate::auth::{self, Verdict};
 use crate::deck::validate_action;
 use crate::host::{LiveSession, Outgoing, PendingApproval, STOPPED_SHARING, Shared};
-use crate::input::{Command, Input, SessionId, TypeMode};
+use crate::input::{Command, GestureKind, Input, SessionId, TypeMode};
 use crate::keycodes::{MAX_KEYCODE, mods};
 use crate::prefs::SavedSettings;
 use crate::protocol::{
@@ -709,6 +709,9 @@ impl Connection {
             }
             (binary::FLING, 9) => f32_at(data, 1).zip(f32_at(data, 5)).map(|(vx, vy)| Input::Fling { vx, vy }),
             (binary::TOUCH, 1) => Some(Input::Touch),
+            (binary::GESTURE, 7) => GestureKind::from_wire(data[1])
+                .zip(f32_at(data, 3))
+                .map(|(kind, value)| Input::Gesture { kind, phase: data[2], value }),
             (binary::AUDIO, len) if len > 1 && len % 2 == 1 => {
                 self.shared.engine(Command::Alive(self.id));
                 if self.voice && !self.shared.interrupts.paused() {

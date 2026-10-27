@@ -310,14 +310,19 @@ another language.
 | Tap, then touch again and move | Drag |
 | Two-finger move | Scroll |
 | Drag the scroll strip on the edge | Scroll; hold the short strip at the top or bottom to keep going |
-| Pinch | Zoom (⌘+ and ⌘−) |
+| Pinch | Zoom smoothly, as on a Mac trackpad (or ⌘+ and ⌘−) |
+| Turn two fingers | Rotate photos, maps and PDFs |
+| Two-finger double-tap | Smart zoom (turn it on in settings) |
 | Three-finger swipe up / down | Mission Control / App Exposé |
 | Three-finger swipe left / right | Switch spaces |
 | Three-finger tap | Middle click |
+| Three-finger move | Drag (turn it on in settings; three-finger swipes then turn off) |
 | Four-finger swipe up / down | Apps (Launchpad on macOS 15) / Show Desktop |
+| Thumb and three fingers pinch / spread | Apps / Show Desktop |
 
 The scroll strip can be short, long or hidden under **Scrolling & zoom** in
-the phone's settings. Every gesture can be changed in the phone's settings. Turn on **Show advanced
+the phone's settings. It can also be wider, and sit right at the screen
+edge so a finger sliding along the side of the phone scrolls. Every gesture can be changed in the phone's settings. Turn on **Show advanced
 settings** for pointer acceleration, gesture mapping and text options.
 
 **Modifiers** work three ways: tap for the next key only, double-tap to lock,
