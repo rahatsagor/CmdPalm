@@ -257,8 +257,9 @@ describe('two fingers', () => {
     g.up(2, 300)
     g.up(1, 301)
     expect(calls.some((c) => c[0] === 'scroll' || c[0] === 'zoom')).toBe(false)
-    const turned = calls.filter((c) => c[0] === 'rotate').reduce((sum, c) => sum + (c[2] as number), 0)
-    expect(turned).toBeCloseTo(-24)
+    const turns = calls.filter((c) => c[0] === 'rotate')
+    expect(turns.at(-1)![1]).toBe(ScrollPhase.Ended)
+    expect(turns.reduce((sum, c) => sum + (c[2] as number), 0)).toBeCloseTo(-24)
   })
 
   it('pinching with one finger zooms instead of scrolling', () => {
@@ -286,13 +287,37 @@ describe('two fingers', () => {
     }
   })
 
-  it('scrolls when the second finger starts a frame late', () => {
+  it('scrolls either way when the second finger starts a few frames late', () => {
+    for (const dir of [1, -1]) {
+      const { g, calls } = setup()
+      g.down(1, 100, 300, 0)
+      g.down(2, 160, 300, 5)
+      for (let n = 1; n <= 8; n++) {
+        const lead: [number, number, number] = [1, 100, 300 + dir * n * 10]
+        if (n <= 2) frame(g, n, lead)
+        else frame(g, n, lead, [2, 160, 300 + dir * (n - 2) * 10])
+      }
+      expect(new Set(twoFingerEvents(calls))).toEqual(new Set(['scroll']))
+    }
+  })
+
+  it('cancels a rotation that turns out to be a late-starting scroll', () => {
     const { g, calls } = setup()
     g.down(1, 100, 300, 0)
     g.down(2, 160, 300, 5)
-    frame(g, 1, [1, 100, 290])
-    for (let n = 2; n <= 6; n++) frame(g, n, [1, 100, 300 - n * 10], [2, 160, 310 - n * 10])
-    expect(new Set(twoFingerEvents(calls))).toEqual(new Set(['scroll']))
+    // Finger 2 waits long enough to look like the still finger of a twist.
+    for (let n = 1; n <= 12; n++) {
+      const lead: [number, number, number] = [1, 100, 300 - n * 6]
+      if (n <= 5) frame(g, n, lead)
+      else frame(g, n, lead, [2, 160, 300 - (n - 5) * 6])
+    }
+    const events = calls.filter((c) => c[0] === 'rotate' || c[0] === 'scroll').map((c) => `${c[0]}:${c[1]}`)
+    // With this long a lead it does start rotating, then gives the scroll back.
+    expect(events[0]).toBe(`rotate:${ScrollPhase.Began}`)
+    const cancelled = events.indexOf(`rotate:${ScrollPhase.Cancelled}`)
+    expect(cancelled).toBeGreaterThan(0)
+    expect(events[cancelled + 1]).toBe(`scroll:${ScrollPhase.Began}`)
+    expect(events.at(-1)).toBe(`scroll:${ScrollPhase.Changed}`)
   })
   it('a two-finger double-tap smart zooms instead of right-clicking', () => {
     const { g, names } = setup({ smartZoom: true })
