@@ -21,6 +21,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ### Fixes
 
+- An app you quit from the **Apps** tab leaves the **Open** list right
+  away, even when the Mac takes a moment to finish quitting it.
 - Editors that slide up from the bottom, such as the ones for naming a deck
   page or a button, stay above the phone's keyboard, so you can see what
   you type. The field you're typing in scrolls into view, and the phone no

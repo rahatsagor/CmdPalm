@@ -4,7 +4,7 @@ import { computed, onActivated, onMounted, ref } from 'vue'
 import AppIcon from '@/components/AppIcon.vue'
 import Segmented from '@/components/Segmented.vue'
 import Sheet from '@/components/Sheet.vue'
-import { loadApps } from '@/lib/apps'
+import { isOpen, loadApps, markQuitting } from '@/lib/apps'
 import { notify, send, state } from '@/lib/connection'
 import { addTileToCurrentPage, newTile } from '@/lib/deck'
 import { haptic } from '@/lib/haptics'
@@ -23,7 +23,7 @@ const apps = computed(() => {
   const q = query.value.trim().toLowerCase()
   let list = state.apps
   if (q) list = list.filter((a) => a.name.toLowerCase().includes(q))
-  else if (filter.value === 'running') list = list.filter((a) => a.running)
+  else if (filter.value === 'running') list = list.filter(isOpen)
   return [...list].sort((a, b) => a.name.localeCompare(b.name))
 })
 
@@ -33,6 +33,7 @@ function act(app: AppEntry, op: AppOp) {
     notify('Not connected to the Mac.', 'warning')
     return
   }
+  if (op === 'quit') markQuitting(app.id)
   haptic('light')
 }
 
@@ -90,7 +91,7 @@ function onClick(app: AppEntry) {
           :key="app.id"
           type="button"
           class="flex flex-col items-center gap-1.5 rounded-2xl p-1.5 transition-transform active:scale-95"
-          :aria-label="`${app.name}${app.running ? ', open' : ''}${app.active ? ', in front' : ''}`"
+          :aria-label="`${app.name}${isOpen(app) ? ', open' : ''}${app.active ? ', in front' : ''}`"
           @pointerdown="onDown(app)"
           @pointerup="onUp"
           @pointercancel="onUp"
@@ -101,7 +102,7 @@ function onClick(app: AppEntry) {
           <span class="relative">
             <AppIcon :id="app.id" :size="56" :class="app.hidden && 'opacity-50'" />
             <span v-if="app.active" class="absolute -bottom-1 left-1/2 h-1 w-4 -translate-x-1/2 rounded-full bg-accent" />
-            <span v-else-if="app.running" class="absolute -bottom-1 left-1/2 size-1 -translate-x-1/2 rounded-full bg-muted" />
+            <span v-else-if="isOpen(app)" class="absolute -bottom-1 left-1/2 size-1 -translate-x-1/2 rounded-full bg-muted" />
           </span>
           <span class="line-clamp-2 w-full text-center text-[12px] leading-tight">{{ app.name }}</span>
         </button>
