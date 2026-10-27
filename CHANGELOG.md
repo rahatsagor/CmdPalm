@@ -9,6 +9,13 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixes
+
+- Editors that slide up from the bottom, such as the ones for naming a deck
+  page or a button, stay above the phone's keyboard, so you can see what
+  you type. The field you're typing in scrolls into view, and the phone no
+  longer offers to fill in a contact while you name things.
+
 ## [0.4.0] - 2026-10-24
 
 A smoother pointer and a keyboard that knows its left from its right. The

@@ -1,4 +1,5 @@
 import { settings } from './settings'
+import { isTextField } from './text'
 
 export type Haptic = 'select' | 'light' | 'medium' | 'heavy' | 'error'
 
@@ -39,12 +40,7 @@ const canVibrate = () => typeof navigator !== 'undefined' && typeof navigator.vi
 
 export const hapticsSupported = typeof navigator !== 'undefined' && (canVibrate() || switchHaptics())
 
-function editing(): boolean {
-  const el = document.activeElement
-  if (el instanceof HTMLTextAreaElement) return true
-  if (el instanceof HTMLInputElement) return !['checkbox', 'radio', 'button', 'range'].includes(el.type)
-  return el instanceof HTMLElement && el.isContentEditable
-}
+const editing = () => isTextField(document.activeElement)
 
 /**
  * Android vibration patterns in milliseconds (on, off, on…). Many phone

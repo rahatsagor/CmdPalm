@@ -185,6 +185,7 @@ watch(
             v-model="settings.deviceName"
             :placeholder="deviceModel()"
             maxlength="40"
+            autocomplete="off"
             class="mt-2 h-11 w-full rounded-xl border border-line bg-surface px-3 text-[15px] outline-none focus:border-accent"
           />
         </label>

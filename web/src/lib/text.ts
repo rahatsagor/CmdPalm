@@ -9,6 +9,13 @@ export function graphemes(text: string): string[] {
   return Array.from(text)
 }
 
+/** A field the on-screen keyboard types into. */
+export function isTextField(el: Element | null): boolean {
+  if (el instanceof HTMLTextAreaElement) return true
+  if (el instanceof HTMLInputElement) return !['checkbox', 'radio', 'button', 'range', 'submit', 'reset', 'color', 'file'].includes(el.type)
+  return el instanceof HTMLElement && el.isContentEditable
+}
+
 export function diff(previous: string, next: string): { delete: number; insert: string } {
   const a = graphemes(previous)
   const b = graphemes(next)

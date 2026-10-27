@@ -29,6 +29,7 @@ function save() {
       <input
         v-model="name"
         :maxlength="LIMITS.label"
+        autocomplete="off"
         class="mt-1 h-11 w-full rounded-xl border border-line bg-surface-2 px-3 text-[15px] outline-none focus:border-accent"
         @keydown.enter="save"
       />

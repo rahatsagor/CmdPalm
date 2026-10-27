@@ -208,6 +208,7 @@ const kindOf = (step: Action) => ACTION_KINDS.find((k) => k.kind === step.kind)
         <input
           :value="model.name"
           placeholder="Shortcut name"
+          autocomplete="off"
           class="h-11 w-full rounded-xl border border-line bg-surface-2 px-3 text-[15px] outline-none focus:border-accent"
           @input="patch({ name: ($event.target as HTMLInputElement).value })"
         />

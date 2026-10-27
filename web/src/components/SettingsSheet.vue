@@ -228,6 +228,7 @@ const times = (v: number) => `${v.toFixed(1)}×`
           v-model="settings.deviceName"
           :placeholder="deviceModel()"
           maxlength="40"
+          autocomplete="off"
           class="mt-2 h-11 w-full rounded-xl border border-line bg-surface-2 px-3 text-[15px] outline-none focus:border-accent"
         />
         <span class="mt-1 block text-[13px] text-muted">Shown on the Mac. Takes effect next time you connect.</span>
