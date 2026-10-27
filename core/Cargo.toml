@@ -14,7 +14,7 @@ crate-type = ["lib", "staticlib", "cdylib"]
 
 [dependencies]
 uniffi = "0.32"
-tokio = { version = "1.53", features = ["rt-multi-thread", "macros", "net", "io-util", "sync", "time", "fs"] }
+tokio = { version = "1.54", features = ["rt-multi-thread", "macros", "net", "io-util", "sync", "time", "fs"] }
 tokio-tungstenite = { version = "0.30", default-features = false, features = ["handshake"] }
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12", "logging"] }
 futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
@@ -38,5 +38,5 @@ objc2-core-graphics = "0.3"
 
 [dev-dependencies]
 tempfile = "3"
-tokio = { version = "1.53", features = ["rt-multi-thread", "macros", "net", "io-util", "sync", "time", "fs", "test-util"] }
+tokio = { version = "1.54", features = ["rt-multi-thread", "macros", "net", "io-util", "sync", "time", "fs", "test-util"] }
 tokio-tungstenite = { version = "0.30", default-features = false, features = ["handshake", "connect"] }
