@@ -6,11 +6,14 @@
 //    gesture that cancelled the other fingers mid-combo);
 //  * each finger keeps the key it landed on until it lifts, even if it slides;
 //  * touchstart is cancelled so iOS never shows the magnifier, text selection
-//    or callout, and never zooms, no matter how many fingers are down.
+//    or callout, and never zooms, no matter how many fingers are down. Key
+//    haptics on iPhone need the tap's click, so then the page's own
+//    touch-action, user-select and callout rules have to do that instead.
 //
 // Keys are elements with a `data-key` attribute.
 
 import { onBeforeUnmount, onDeactivated, onMounted, type Ref } from 'vue'
+import { needsClick } from './haptics'
 
 export interface TouchKeyHandlers {
   /** A finger landed on the key with this `data-key` value. */
@@ -56,7 +59,7 @@ export function useTouchKeys(root: Ref<HTMLElement | undefined>, handlers: Touch
     if (event.pointerType === 'mouse' && event.button !== 0) return
     const key = keyAt(event.clientX, event.clientY)
     if (key === undefined) return
-    event.preventDefault()
+    if (!needsClick(event, true)) event.preventDefault()
     try {
       root.value?.setPointerCapture(event.pointerId)
     } catch {
@@ -73,7 +76,7 @@ export function useTouchKeys(root: Ref<HTMLElement | undefined>, handlers: Touch
   const onUp = (event: PointerEvent) => finish(event, false)
   const onCancel = (event: PointerEvent) => finish(event, true)
   const onTouchStart = (event: TouchEvent) => {
-    if (enabled() && event.cancelable) event.preventDefault()
+    if (enabled() && event.cancelable && !needsClick(event, true)) event.preventDefault()
   }
   const onContextMenu = (event: Event) => event.preventDefault()
 

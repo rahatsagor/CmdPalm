@@ -4,12 +4,13 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { MEDIA } from '@/lib/actions'
 import { labels } from '@/lib/connection'
 import { actionLabel, actionName, emptyCells, fits, newId, type CustomKey, type CustomKeyboard } from '@/lib/customKeyboards'
-import { haptic } from '@/lib/haptics'
+import { haptic, keyHaptic } from '@/lib/haptics'
 import { buttonDown, buttonUp, keyDown, keyUp, modifiers, pressMedia } from '@/lib/input'
 import { ALL_MODS, Key } from '@/lib/keys'
 import { symbol } from '@/lib/symbols'
 import { useTouchKeys } from '@/lib/touchKeys'
 import CustomKeyEditor from './CustomKeyEditor.vue'
+import HapticSwitch from './HapticSwitch.vue'
 
 const props = defineProps<{ board: CustomKeyboard; editing: boolean }>()
 
@@ -94,7 +95,7 @@ const touch = useTouchKeys(root, {
   down(id, pointerId) {
     const key = props.board.keys.find((k) => k.id === id)
     if (!key) return
-    haptic('select')
+    keyHaptic()
     held.set(pointerId, { id, release: press(key, pointerId) })
   },
   up(pointerId, cancelled) {
@@ -214,7 +215,7 @@ function removeKey() {
 </script>
 
 <template>
-  <div
+  <label
     ref="root"
     class="board grid h-full w-full touch-none select-none"
     :style="{ ...vars, gridTemplateColumns: `repeat(${board.cols}, minmax(0, 1fr))`, gridTemplateRows: `repeat(${board.rows}, minmax(0, 1fr))` }"
@@ -269,7 +270,8 @@ function removeKey() {
     <p v-if="!editing && board.keys.length === 0" class="col-span-full row-span-full self-center text-center text-[15px] text-muted">
       No keys yet. Tap Edit to add some.
     </p>
-  </div>
+    <HapticSwitch />
+  </label>
 
   <CustomKeyEditor
     v-if="editingKey"

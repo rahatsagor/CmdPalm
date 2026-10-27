@@ -2,13 +2,14 @@
 import { computed, onBeforeUnmount, onDeactivated, reactive, ref, watch } from 'vue'
 import { pointer, runAction, state } from '@/lib/connection'
 import { GestureRecognizer, type Direction, type GestureHandler } from '@/lib/gestures'
-import { haptic } from '@/lib/haptics'
+import { haptic, holdPointer } from '@/lib/haptics'
 import { onPageHidden } from '@/lib/heldPointers'
 import { beginPointerGesture, buttonDown, buttonUp, click, tap } from '@/lib/input'
 import { Key } from '@/lib/keys'
 import { PointerGain } from '@/lib/pointerGain'
 import { Mod, ScrollPhase } from '@/lib/protocol'
 import { settings, type GestureMap } from '@/lib/settings'
+import HapticSwitch from './HapticSwitch.vue'
 
 const surface = ref<HTMLElement>()
 const touches = reactive(new Map<number, { x: number; y: number }>())
@@ -48,10 +49,7 @@ const handler: GestureHandler = {
     const k = scrollScale() * scrollSign()
     pointer.fling(vx * k, vy * k)
   },
-  click: (button) => {
-    click(button)
-    haptic('light')
-  },
+  click: (button) => click(button),
   buttonDown: (button) => {
     buttonDown(button)
     dragging.value = true
@@ -103,7 +101,7 @@ function local(event: PointerEvent) {
 
 function onDown(event: PointerEvent) {
   if (event.pointerType === 'mouse' && event.button !== 0) return
-  event.preventDefault()
+  holdPointer(event)
   surface.value?.setPointerCapture(event.pointerId)
   const p = local(event)
   touches.set(event.pointerId, p)
@@ -132,9 +130,10 @@ function onCancel(event: PointerEvent) {
 </script>
 
 <template>
-  <div
+  <!-- A label, so a tap on it can play a haptic on iPhone (see HapticSwitch). -->
+  <label
     ref="surface"
-    class="trackpad relative h-full w-full touch-none overflow-hidden rounded-[22px] bg-pad"
+    class="trackpad relative block h-full w-full touch-none overflow-hidden rounded-[22px] bg-pad"
     :class="dragging && 'ring-2 ring-accent/60'"
     role="application"
     aria-label="Trackpad. Move one finger to move the pointer, tap to click, two fingers to scroll."
@@ -155,7 +154,8 @@ function onCancel(event: PointerEvent) {
       />
     </template>
     <slot />
-  </div>
+    <HapticSwitch />
+  </label>
 </template>
 
 <style scoped>

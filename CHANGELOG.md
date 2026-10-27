@@ -9,6 +9,16 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Phone and tablet
+
+- Haptics work on iPhone again. iOS 26.5 stopped playing the haptics CmdPalm
+  asked for, and now plays one only when you tap something that is made to
+  give one. CmdPalm's trackpad, keys, click buttons and deck buttons are now
+  built that way, so you feel taps, clicks and key presses. Swipes and long
+  presses still can't be felt on iPhone.
+- **Key press haptics**, in the phone's settings, turns the tap you feel on
+  each key press on or off without turning off other haptics.
+
 ### Fixes
 
 - Editors that slide up from the bottom, such as the ones for naming a deck

@@ -3,13 +3,14 @@ import { Globe } from '@lucide/vue'
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { labels, runAction } from '@/lib/connection'
 import { MEDIA, SYSTEM } from '@/lib/actions'
-import { haptic } from '@/lib/haptics'
+import { keyHaptic } from '@/lib/haptics'
 import { keyDown, keyUp, modifiers, pressMedia } from '@/lib/input'
 import { Key, keyboardRows, type KeySpec } from '@/lib/keys'
 import { Mod } from '@/lib/protocol'
 import { settings } from '@/lib/settings'
 import { symbol } from '@/lib/symbols'
 import { useTouchKeys } from '@/lib/touchKeys'
+import HapticSwitch from './HapticSwitch.vue'
 
 const props = withDefaults(defineProps<{ functionRow?: boolean }>(), { functionRow: true })
 
@@ -96,7 +97,7 @@ useTouchKeys(root, {
   down(key, pointerId) {
     const spec = specs.value.get(Number(key))
     if (!spec) return
-    haptic('select')
+    keyHaptic()
     if (spec.kind === 'mod') {
       modifiers.press(pointerId, spec.mod, spec.code)
       held.set(pointerId, { code: spec.code, mod: true })
@@ -168,7 +169,7 @@ const rowStyle = (r: number) => ({ flex: r === 0 ? '0.72 1 0%' : '1 1 0%' })
 </script>
 
 <template>
-  <div ref="root" class="keyboard flex h-full w-full touch-none flex-col select-none" :style="vars" role="group" aria-label="Mac keyboard">
+  <label ref="root" class="keyboard flex h-full w-full touch-none flex-col select-none" :style="vars" role="group" aria-label="Mac keyboard">
     <template v-for="(row, r) in rows" :key="r">
       <div v-if="r > 0 || functionRow" class="row flex min-h-0" :style="rowStyle(r)">
         <template v-for="(spec, i) in row" :key="i">
@@ -271,7 +272,8 @@ const rowStyle = (r: number) => ({ flex: r === 0 ? '0.72 1 0%' : '1 1 0%' })
         </template>
       </div>
     </template>
-  </div>
+    <HapticSwitch />
+  </label>
 </template>
 
 <style scoped>

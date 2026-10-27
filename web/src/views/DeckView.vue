@@ -3,6 +3,7 @@ import { Check, LoaderCircle, Pencil, Plus } from '@lucide/vue'
 import { computed, nextTick, onBeforeUnmount, onDeactivated, onMounted, reactive, ref, watch } from 'vue'
 import PageEditor from '@/components/PageEditor.vue'
 import TileEditor from '@/components/TileEditor.vue'
+import HapticSwitch from '@/components/HapticSwitch.vue'
 import TileFace from '@/components/TileFace.vue'
 import { notify, runAction, state } from '@/lib/connection'
 import { LIMITS, clone, newId, newPage, newTile, saveDeck } from '@/lib/deck'
@@ -346,12 +347,12 @@ const dragged = computed(() => (press.value?.moved && editing.value ? page.value
         :aria-label="p.name"
       >
         <div class="grid gap-2.5" :style="{ gridTemplateColumns: `repeat(${columns(p)}, minmax(0, 1fr))` }">
-          <button
+          <label
             v-for="(tile, ti) in p.tiles"
             :key="tile.id"
-            type="button"
+            role="button"
             :data-tile-index="pi === index ? ti : undefined"
-            class="tile relative aspect-square rounded-[22px] border border-line transition-[transform,opacity,background-color] duration-150 active:scale-[0.96]"
+            class="tile relative block aspect-square rounded-[22px] border border-line transition-[transform,opacity,background-color] duration-150 active:scale-[0.96]"
             :class="[
               !tile.color && 'bg-surface',
               // Outside edit mode the page must still scroll under a finger.
@@ -372,7 +373,8 @@ const dragged = computed(() => (press.value?.moved && editing.value ? page.value
             <span v-if="status.get(tile.id) === 'running'" class="absolute inset-0 grid place-items-center rounded-[22px] bg-bg/50">
               <LoaderCircle class="animate-spin" :size="20" />
             </span>
-          </button>
+            <HapticSwitch />
+          </label>
           <button
             v-if="editing && p.tiles.length < LIMITS.tiles"
             type="button"

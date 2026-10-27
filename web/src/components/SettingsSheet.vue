@@ -7,7 +7,7 @@ import { disconnect, labels, state } from '@/lib/connection'
 import { actionProblem, clone } from '@/lib/deck'
 import { deviceModel } from '@/lib/device'
 import { canFullscreen, display, install, installHint, toggleFullscreen } from '@/lib/display'
-import { hapticsSupported } from '@/lib/haptics'
+import { hapticsSupported, switchOnly } from '@/lib/haptics'
 import type { Action } from '@/lib/protocol'
 import { lazy } from '@/lib/reload'
 import { DECK_SIZE, resetSettings, settings, type GestureMap, type GestureSlot } from '@/lib/settings'
@@ -242,7 +242,14 @@ const times = (v: number) => `${v.toFixed(1)}×`
           { value: 'light', label: 'Light' },
         ]"
       />
-      <Toggle v-if="hapticsSupported" v-model="settings.haptics" label="Haptic feedback" />
+      <template v-if="hapticsSupported">
+        <Toggle
+          v-model="settings.haptics"
+          label="Haptic feedback"
+          :hint="switchOnly ? 'iPhone plays haptics when you tap, not while you swipe or hold.' : undefined"
+        />
+        <Toggle v-if="settings.haptics" v-model="settings.keyHaptics" label="Key press haptics" hint="Feel each key on the keyboards and the modifier keys." />
+      </template>
       <Toggle
         v-model="settings.keepAwake"
         label="Keep screen on"

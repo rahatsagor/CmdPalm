@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onDeactivated, ref } from 'vue'
-import { haptic } from '@/lib/haptics'
+import { haptic, holdPointer } from '@/lib/haptics'
 import { onPageHidden } from '@/lib/heldPointers'
 import { buttonDown, buttonUp } from '@/lib/input'
 import type { MouseButton } from '@/lib/protocol'
+import HapticSwitch from './HapticSwitch.vue'
 
 withDefaults(defineProps<{ vertical?: boolean }>(), { vertical: false })
 
@@ -12,7 +13,7 @@ withDefaults(defineProps<{ vertical?: boolean }>(), { vertical: false })
 const held = ref<Record<string, number | null>>({ left: null, right: null })
 
 function down(button: MouseButton, event: PointerEvent) {
-  event.preventDefault()
+  holdPointer(event)
   if (held.value[button] != null) return
   ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
   held.value[button] = event.pointerId
@@ -41,11 +42,11 @@ onPageHidden(letGo)
 
 <template>
   <div class="grid gap-1.5" :class="vertical ? 'w-24 shrink-0 grid-rows-[3fr_2fr]' : 'h-14 grid-cols-[3fr_2fr]'">
-    <button
+    <label
       v-for="button in ['left', 'right'] as const"
       :key="button"
-      type="button"
-      class="touch-none rounded-2xl border border-line text-[13px] font-medium text-muted transition-colors"
+      role="button"
+      class="grid touch-none place-items-center rounded-2xl border border-line text-[13px] font-medium text-muted transition-colors"
       :class="held[button] != null ? 'bg-key-down text-text' : 'bg-pad'"
       :aria-label="`${button} mouse button`"
       @pointerdown="down(button, $event)"
@@ -53,7 +54,8 @@ onPageHidden(letGo)
       @pointercancel="up(button, $event)"
       @contextmenu.prevent
     >
-      {{ button === 'left' ? 'Click' : 'Right-click' }}
-    </button>
+      <span>{{ button === 'left' ? 'Click' : 'Right-click' }}</span>
+      <HapticSwitch />
+    </label>
   </div>
 </template>

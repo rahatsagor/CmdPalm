@@ -2,13 +2,14 @@
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, ClipboardPaste, CornerDownLeft, Delete, Eraser, Mic, Send, Square } from '@lucide/vue'
 import { computed, onBeforeUnmount, onDeactivated, ref } from 'vue'
 import { onMessage, send, state } from '@/lib/connection'
-import { haptic } from '@/lib/haptics'
+import { haptic, holdPointer, keyHaptic } from '@/lib/haptics'
 import { useHeldPointers } from '@/lib/heldPointers'
 import { edit, keyDown, keyUp, modifiers, tap, tapChar, typeText } from '@/lib/input'
 import { Key } from '@/lib/keys'
 import { settings } from '@/lib/settings'
 import { diff, graphemes } from '@/lib/text'
 import { startVoice, stopVoice, voice, voiceSupported } from '@/lib/voice'
+import HapticSwitch from './HapticSwitch.vue'
 import ModifierStrip from './ModifierStrip.vue'
 
 withDefaults(defineProps<{ autofocus?: boolean }>(), { autofocus: false })
@@ -147,11 +148,11 @@ const arrows = [
 const fingers = useHeldPointers(keyUp)
 
 function down(code: number, event: PointerEvent) {
-  event.preventDefault()
+  holdPointer(event, true)
   ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
   keyDown(event.pointerId, code)
   fingers.hold(event.pointerId)
-  haptic('select')
+  keyHaptic()
 }
 
 function up(event: PointerEvent) {
@@ -166,11 +167,11 @@ defineExpose({ focus: () => field.value?.focus() })
   <div class="flex flex-col gap-2">
     <ModifierStrip />
     <div class="flex h-11 gap-1.5">
-      <button
+      <label
         v-for="key in arrows"
         :key="key.code"
-        type="button"
-        class="key grid min-w-0 flex-1 touch-none place-items-center rounded-[9px] bg-key text-muted active:bg-key-down"
+        role="button"
+        class="key relative grid min-w-0 flex-1 touch-none place-items-center rounded-[9px] bg-key text-muted active:bg-key-down"
         :aria-label="key.label"
         @pointerdown="down(key.code, $event)"
         @pointerup="up"
@@ -178,7 +179,8 @@ defineExpose({ focus: () => field.value?.focus() })
         @contextmenu.prevent
       >
         <component :is="key.icon" :size="18" />
-      </button>
+        <HapticSwitch />
+      </label>
     </div>
 
     <div class="rounded-2xl border border-line bg-surface-2 focus-within:border-accent/60">

@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { haptic } from '@/lib/haptics'
+import { holdPointer, keyHaptic } from '@/lib/haptics'
 import { useHeldPointers } from '@/lib/heldPointers'
 import { modifiers } from '@/lib/input'
+import HapticSwitch from './HapticSwitch.vue'
 
 const props = defineProps<{ mod: number; code: number; symbol: string; label?: string; align?: 'left' | 'right' | 'center' }>()
 const status = computed(() => modifiers.status(props.mod))
@@ -10,11 +11,11 @@ const status = computed(() => modifiers.status(props.mod))
 const fingers = useHeldPointers((id) => modifiers.cancel(id))
 
 function down(event: PointerEvent) {
-  event.preventDefault()
+  holdPointer(event, true)
   ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
   modifiers.press(event.pointerId, props.mod, props.code)
   fingers.hold(event.pointerId)
-  haptic('select')
+  keyHaptic()
 }
 
 function up(event: PointerEvent, cancelled: boolean) {
@@ -25,8 +26,8 @@ function up(event: PointerEvent, cancelled: boolean) {
 </script>
 
 <template>
-  <button
-    type="button"
+  <label
+    role="button"
     class="key relative flex h-full w-full touch-none flex-col justify-between overflow-hidden rounded-[9px] px-2 py-1.5 text-muted transition-colors"
     :class="{
       'bg-accent text-accent-text': status === 'locked',
@@ -47,7 +48,8 @@ function up(event: PointerEvent, cancelled: boolean) {
     <span class="text-[15px] leading-none">{{ symbol }}</span>
     <span v-if="label && align" class="text-[10px] leading-none">{{ label }}</span>
     <span v-if="status === 'locked'" class="absolute top-1 right-1 size-1.5 rounded-full bg-accent-text/80" />
-  </button>
+    <HapticSwitch />
+  </label>
 </template>
 
 <style scoped>

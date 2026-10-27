@@ -311,11 +311,15 @@ export class GestureRecognizer {
       }
       if (this.secondTap) {
         // Second tap of a double tap: the first click was held back.
+        this.handler.feedback('light')
         this.handler.click('left')
         this.handler.click('left')
         return
       }
       if (duration > TAP_MS || !this.options.tapToClick) return
+      // Felt as the finger lifts, even when the click itself is held back to
+      // see whether a drag follows: iPhones only play haptics during a tap.
+      this.handler.feedback('light')
       const p = this.lastPosition
       if (this.options.tapAndDrag) {
         this.lastTap = { t, x: p.x, y: p.y }
@@ -326,10 +330,16 @@ export class GestureRecognizer {
       return
     }
     if (this.maxFingers === 2) {
-      if (this.options.twoFingerTap && duration <= TAP_MS * 1.4) this.handler.click('right')
+      if (this.options.twoFingerTap && duration <= TAP_MS * 1.4) {
+        this.handler.feedback('light')
+        this.handler.click('right')
+      }
       return
     }
-    if (duration <= TAP_MS * 1.5) this.handler.multiTap(Math.min(this.maxFingers, 4))
+    if (duration <= TAP_MS * 1.5) {
+      this.handler.feedback('light')
+      this.handler.multiTap(Math.min(this.maxFingers, 4))
+    }
   }
 
   /** The tap held back for a possible double tap was a plain click after all. */
