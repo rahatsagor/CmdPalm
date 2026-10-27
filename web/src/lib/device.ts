@@ -3,6 +3,7 @@ import { settings } from './settings'
 
 const ID_KEY = 'cmdpalm.deviceId'
 const TOKEN_KEY = 'cmdpalm.token'
+const HOST_KEY = 'cmdpalm.hostName'
 
 function randomId(): string {
   if (typeof crypto.randomUUID === 'function') return crypto.randomUUID()
@@ -58,6 +59,12 @@ export function deviceInfo(): DeviceInfo {
 export function isTablet(): boolean {
   const model = deviceModel()
   return model === 'iPad' || model === 'Android tablet' || Math.min(screen.width, screen.height) >= 700
+}
+
+/** The Mac's name from the last connection, for screens shown before the next. */
+export const lastHost = {
+  get: (): string => safeGet(HOST_KEY) ?? '',
+  set: (name: string) => safeSet(HOST_KEY, name || null),
 }
 
 export const token = {

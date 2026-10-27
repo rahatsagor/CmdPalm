@@ -2,7 +2,7 @@
 // and coalesced pointer traffic.
 
 import { reactive, shallowRef } from 'vue'
-import { deviceInfo, token } from './device'
+import { deviceInfo, lastHost, token } from './device'
 import { LabelMap } from './keys'
 import {
   PROTOCOL_VERSION,
@@ -257,8 +257,17 @@ export function reconnectSoon() {
   connect()
 }
 
+/** Try the Mac again right away, from a button the person pressed. */
+export function retryNow() {
+  state.attempts = 0
+  connect()
+}
+
 export function disconnect(forget: boolean) {
-  if (forget) token.set(null)
+  if (forget) {
+    token.set(null)
+    lastHost.set('')
+  }
   state.status = 'idle'
   teardown()
 }
@@ -270,6 +279,7 @@ function handle(message: ServerMessage) {
       state.status = 'connected'
       state.attempts = 0
       state.hostName = message.host.name
+      lastHost.set(message.host.name)
       state.hostVersion = message.host.version
       state.features = message.features
       state.deck = message.deck

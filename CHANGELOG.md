@@ -43,6 +43,13 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ### Phone and tablet
 
+- When the Mac is asleep, off or on another network, CmdPalm shows a clear
+  screen that says it can't reach the Mac, what to check and a **Try
+  again** button, instead of a spinner or a blank page. It reconnects by
+  itself as soon as the Mac is back, and the same screen covers the app if
+  the connection is gone for a while. With the encrypted connection, the
+  home screen app keeps a copy of itself and a small offline page, so it
+  opens even the first time the Mac can't be reached.
 - Haptics work on iPhone again. iOS 26.5 stopped playing the haptics CmdPalm
   asked for, and now plays one only when you tap something that is made to
   give one. CmdPalm's trackpad, keys, click buttons and deck buttons are now

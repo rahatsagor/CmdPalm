@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { LoaderCircle } from '@lucide/vue'
 import { computed, onMounted, ref, watch, watchEffect } from 'vue'
 import SettingsSheet from '@/components/SettingsSheet.vue'
 import SideRail from '@/components/SideRail.vue'
@@ -13,6 +12,7 @@ import { pairingLink } from '@/lib/pairing'
 import { lazy } from '@/lib/reload'
 import { settings } from '@/lib/settings'
 import ConnectView from '@/views/ConnectView.vue'
+import OfflineView from '@/views/OfflineView.vue'
 import TrackpadView from '@/views/TrackpadView.vue'
 
 // Less-used sections load on first visit to keep startup fast on phones.
@@ -24,7 +24,26 @@ const MediaView = lazy(() => import('@/views/MediaView.vue'))
 const views = { trackpad: TrackpadView, keyboard: KeyboardView, deck: DeckView, apps: AppsView, media: MediaView }
 
 const showSettings = ref(false)
-const slow = ref(false)
+
+/** Reconnecting for long enough that the Mac is probably asleep or off. */
+const LOST_AFTER_MS = 6000
+const lost = ref(false)
+let lostTimer: ReturnType<typeof setTimeout> | undefined
+watch(
+  () => state.status,
+  (status) => {
+    if (status !== 'reconnecting') {
+      clearTimeout(lostTimer)
+      lostTimer = undefined
+      lost.value = false
+    } else if (!lostTimer && !lost.value) {
+      lostTimer = setTimeout(() => {
+        lostTimer = undefined
+        lost.value = true
+      }, LOST_AFTER_MS)
+    }
+  },
+)
 
 const welcomed = ref(false)
 watch(
@@ -55,7 +74,6 @@ watchEffect(() => {
 onMounted(() => {
   // A pairing link wins over a saved token: ConnectView pairs with its code.
   if (!pairingLink) connect()
-  setTimeout(() => (slow.value = true), 6000)
 })
 </script>
 
@@ -79,22 +97,14 @@ onMounted(() => {
               <p class="mt-1 text-[14px] text-muted">Resume from the CmdPalm menu in the Mac’s menu bar.</p>
             </div>
           </div>
+          <OfflineView v-if="lost" :patience="0" class="absolute inset-0 z-20" />
         </main>
       </div>
       <TabBar v-if="!layout.compact" />
       <SettingsSheet v-if="showSettings" @close="showSettings = false" />
     </template>
 
-    <div v-else-if="view === 'splash'" class="grid flex-1 place-items-center px-8 text-center">
-      <div class="flex flex-col items-center gap-4">
-        <LoaderCircle class="animate-spin text-muted" :size="28" />
-        <p class="text-[15px] text-muted">Connecting to your Mac…</p>
-        <div v-if="slow" class="max-w-xs text-[14px] leading-relaxed text-faint">
-          Make sure CmdPalm is running on the Mac and both devices are on the same Wi-Fi.
-          <button type="button" class="mt-3 block w-full text-[15px] font-medium text-accent" @click="disconnect(true)">Pair again</button>
-        </div>
-      </div>
-    </div>
+    <OfflineView v-else-if="view === 'splash'" class="safe-top safe-x min-h-0 flex-1" />
 
     <ConnectView v-else class="min-h-0 flex-1" />
     <Toasts />
