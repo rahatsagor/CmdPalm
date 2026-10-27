@@ -231,6 +231,60 @@ describe('two fingers', () => {
     expect(calls.some((c) => c[0] === 'zoom' || c[0] === 'scroll')).toBe(false)
   })
 
+  // Most people twist or pinch around one finger that stays put, which also
+  // moves the point between the fingers like the start of a scroll.
+  it('twisting around a still finger rotates instead of scrolling', () => {
+    const { g, calls } = setup()
+    g.down(1, 200, 400, 0)
+    g.down(2, 200, 300, 5)
+    // Finger 2 swings 20° clockwise around finger 1, in small steps.
+    for (let deg = 2; deg <= 20; deg += 2) {
+      const r = (deg * Math.PI) / 180
+      g.move(2, 200 + 100 * Math.sin(r), 400 - 100 * Math.cos(r), 10 + deg)
+    }
+    g.up(2, 60)
+    g.up(1, 61)
+    expect(calls.some((c) => c[0] === 'scroll' || c[0] === 'zoom')).toBe(false)
+    const turned = calls.filter((c) => c[0] === 'rotate' && c[1] !== ScrollPhase.Ended).reduce((sum, c) => sum + (c[2] as number), 0)
+    expect(turned).toBeLessThan(-14)
+  })
+
+  it('pinching with one finger still zooms right away instead of scrolling', () => {
+    const { g, calls } = setup()
+    g.down(1, 200, 400, 0)
+    g.down(2, 200, 300, 5)
+    for (const y of [295, 290, 285, 280]) g.move(2, 201, y, 300 - y)
+    expect(calls.some((c) => c[0] === 'scroll' || c[0] === 'rotate')).toBe(false)
+    expect(calls.filter((c) => c[0] === 'zoom')[0]?.[1]).toBe(ScrollPhase.Began)
+  })
+
+  it('a scroll with a slow second finger still scrolls', () => {
+    const { g, calls } = setup()
+    g.down(1, 100, 300, 0)
+    g.down(2, 160, 300, 5)
+    // Finger 1 leads; finger 2 starts slower and trails behind.
+    g.move(1, 100, 290, 10)
+    g.move(2, 161, 295, 10)
+    for (let y = 280; y >= 220; y -= 10) {
+      g.move(1, 100, y, 300 - y)
+      g.move(2, 161, y + 4, 300 - y)
+    }
+    expect(calls.some((c) => c[0] === 'zoom' || c[0] === 'rotate')).toBe(false)
+    expect(calls.filter((c) => c[0] === 'scroll')[0]?.[1]).toBe(ScrollPhase.Began)
+  })
+
+  it('a twist that turns out to be a scroll still scrolls', () => {
+    const { g, calls } = setup()
+    g.down(1, 100, 300, 0)
+    g.down(2, 160, 300, 5)
+    // Finger 2 hasn't moved yet when finger 1 has gone far enough to decide.
+    g.move(1, 100, 290, 10)
+    g.move(2, 160, 294, 20)
+    g.move(1, 100, 284, 20)
+    expect(calls.some((c) => c[0] === 'zoom' || c[0] === 'rotate')).toBe(false)
+    expect(calls.filter((c) => c[0] === 'scroll')[0]?.[1]).toBe(ScrollPhase.Began)
+  })
+
   it('a two-finger double-tap smart zooms instead of right-clicking', () => {
     const { g, names } = setup({ smartZoom: true })
     const twoTap = (t: number) => {

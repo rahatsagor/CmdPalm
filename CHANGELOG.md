@@ -15,6 +15,9 @@ and versions follow [Semantic Versioning](https://semver.org/).
   support it, such as Safari, Photos, Preview and Maps. To keep pressing
   ⌘+ and ⌘− instead, choose it under **Pinching** in the advanced settings.
 - Turn two fingers to rotate photos, maps and PDFs.
+- Zooming and rotating start as soon as your fingers move, even when you
+  pinch or turn around one finger that stays still, instead of starting a
+  scroll. Two fingers only scroll when both move the same way.
 - **Smart zoom**: double-tap with two fingers to zoom in on a web page or
   PDF, and again to zoom back out. It's off at first, because right-clicks
   then wait a moment to see whether a second tap follows.

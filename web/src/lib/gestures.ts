@@ -60,12 +60,30 @@ export const LONG_PRESS_MS = 450
 export const DOUBLE_TAP_MS = 260
 const DOUBLE_TAP_DISTANCE = 40
 const SWIPE_DISTANCE = 38
-const PINCH_START = 0.14
 const PINCH_STEP = 1.22
 /** From one two-finger tap's lift to the next's, for a smart zoom. */
 const SMART_ZOOM_MS = 400
-/** Degrees two fingers turn before it counts as rotating. */
-const ROTATE_START = 14
+/** Two fingers: how far the furthest one travels before deciding between
+ * scrolling and zooming or rotating. */
+const TWO_FINGER_DECIDE = 9
+/**
+ * Fingers moving toward, away from or around each other zoom or rotate;
+ * fingers moving together scroll. It is a transform when the fingers' motion
+ * relative to each other is this much larger than their shared motion. A
+ * pinch or twist around one still finger has a ratio of 2, a scroll about 0.
+ */
+const TRANSFORM_RATIO = 1.1
+/** Once transforming, the travel in px, along or across the line between
+ * the fingers, that starts a zoom or a rotation. */
+const ZOOM_START_PX = 8
+const TURN_START_PX = 10
+/** A zoom or rotation only starts while it is at least this share of the
+ * other motion, so a pinch doesn't turn a photo and a twist doesn't zoom. */
+const DOMINANCE = 0.6
+/** Both fingers moving at least this far, the same way, is a scroll. A
+ * pinch or twist moves them apart, together or around, or keeps one still. */
+const TOGETHER_MIN = 4
+const TOGETHER_COS = 0.7
 /** Three or more fingers: how far their spread changes to count as a pinch. */
 const MULTI_PINCH_IN = 0.68
 const MULTI_PINCH_OUT = 1.45
@@ -229,9 +247,12 @@ export class GestureRecognizer {
     }
     const { cx, cy } = this.centroidShift()
     if (fingers === 2) {
-      const steady = Math.hypot(cx, cy) < MULTI_SLOP * 3
-      if (steady && (this.zoomStarted() || this.turnStarted())) {
-        this.releaseTwoTap()
+      const { furthest, shared, relative, together } = this.pairMotion()
+      if (furthest <= TWO_FINGER_DECIDE) return
+      this.releaseTwoTap()
+      const { radial, twist } = this.transformTravel()
+      const enabled = radial >= twist ? this.options.pinch : this.options.rotate
+      if (enabled && !together && relative > shared * TRANSFORM_RATIO) {
         this.mode = 'transforming'
         this.pinchBase = this.spread(true)
         this.zoomFrom = this.pinchBase
@@ -239,14 +260,8 @@ export class GestureRecognizer {
         this.zooming = this.turning = false
         this.handler.begin()
         this.updateTransform()
-        return
-      }
-      if (Math.hypot(cx, cy) > MULTI_SLOP) {
-        this.releaseTwoTap()
-        this.mode = 'scrolling'
-        this.handler.begin()
-        this.handler.scroll(ScrollPhase.Began, cx, cy)
-        this.sample(t, cx, cy)
+      } else {
+        this.startScroll(t, cx, cy)
       }
       return
     }
@@ -277,13 +292,44 @@ export class GestureRecognizer {
     }
   }
 
-  private zoomStarted(): boolean {
-    const start = this.spread(true)
-    return this.options.pinch && start > 0 && Math.abs(this.spread() / start - 1) > PINCH_START
+  private startScroll(t: number, cx: number, cy: number) {
+    this.mode = 'scrolling'
+    this.handler.begin()
+    this.handler.scroll(ScrollPhase.Began, cx, cy)
+    this.sample(t, cx, cy)
   }
 
-  private turnStarted(): boolean {
-    return this.options.rotate && Math.abs(turn(this.angle(true), this.angle())) > ROTATE_START
+  /**
+   * Two fingers' travel since they landed: the furthest one's, what they
+   * share, relative to each other, and whether both go the same way.
+   */
+  private pairMotion(): { furthest: number; shared: number; relative: number; together: boolean } {
+    const [a, b] = [...this.points.values()]
+    if (!a || !b) return { furthest: 0, shared: 0, relative: 0, together: false }
+    const ax = a.x - a.startX
+    const ay = a.y - a.startY
+    const bx = b.x - b.startX
+    const by = b.y - b.startY
+    const la = Math.hypot(ax, ay)
+    const lb = Math.hypot(bx, by)
+    return {
+      furthest: Math.max(la, lb),
+      shared: Math.hypot((ax + bx) / 2, (ay + by) / 2),
+      relative: Math.hypot(bx - ax, by - ay),
+      together: la >= TOGETHER_MIN && lb >= TOGETHER_MIN && (ax * bx + ay * by) / (la * lb) >= TOGETHER_COS,
+    }
+  }
+
+  /** How far two fingers moved apart or together, and around each other, in px since they landed. */
+  private transformTravel(): { radial: number; twist: number } {
+    const start = this.spread(true)
+    const radial = Math.abs(this.spread() - start)
+    const twist = (Math.abs(turn(this.angle(true), this.angle())) * Math.PI * start) / 180
+    return { radial, twist }
+  }
+
+  private lastMoveAt(): number {
+    return Math.max(...[...this.points.values()].map((p) => p.t))
   }
 
   /** Average distance of the fingers from their center. */
@@ -324,6 +370,16 @@ export class GestureRecognizer {
   }
 
   private updateTransform() {
+    // A scroll whose second finger was slow to get going can look like a
+    // pinch at first. Until a zoom or rotation starts, it can still become one.
+    if (!this.zooming && !this.turning && this.points.size === 2) {
+      const { shared, relative, together } = this.pairMotion()
+      if (together || (shared > TWO_FINGER_DECIDE && relative < shared * 0.6)) {
+        const { cx, cy } = this.centroidShift()
+        this.startScroll(this.lastMoveAt(), cx, cy)
+        return
+      }
+    }
     if (this.options.pinch) {
       if (this.options.zoomKeys) this.stepZoom()
       else this.smoothZoom()
@@ -337,7 +393,10 @@ export class GestureRecognizer {
   private smoothZoom() {
     const spread = this.spread()
     if (!this.zoomFrom || !spread) return
-    if (!this.zooming && Math.abs(spread / this.pinchBase - 1) <= PINCH_START) return
+    if (!this.zooming) {
+      const { radial, twist } = this.transformTravel()
+      if (radial < ZOOM_START_PX || radial < twist * DOMINANCE) return
+    }
     const delta = spread / this.zoomFrom - 1
     if (Math.abs(delta) < 0.001) return
     this.handler.zoom(this.zooming ? ScrollPhase.Changed : ScrollPhase.Began, delta)
@@ -348,7 +407,10 @@ export class GestureRecognizer {
   private smoothTurn() {
     const angle = this.angle()
     const degrees = turn(this.turnFrom, angle)
-    if (!this.turning && Math.abs(degrees) <= ROTATE_START) return
+    if (!this.turning) {
+      const { radial, twist } = this.transformTravel()
+      if (twist < TURN_START_PX || twist < radial * DOMINANCE) return
+    }
     if (Math.abs(degrees) < 0.1) return
     // Screen y points down, so a clockwise turn has a growing angle; macOS
     // counts counterclockwise as positive.
