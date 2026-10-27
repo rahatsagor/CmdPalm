@@ -28,6 +28,10 @@ export interface Settings {
   fourFinger: GestureMap
   keyboard: 'auto' | 'mac' | 'custom' | 'phone'
   functionRow: 'media' | 'function'
+  /** On a phone held upright, the Mac keyboard fills the screen turned on its side. */
+  sidewaysKeyboard: boolean
+  /** Which way the phone is turned to read it. */
+  sidewaysTurn: 'left' | 'right'
   keyRepeat: boolean
   textMode: TextMode
   liveTyping: boolean
@@ -87,6 +91,8 @@ export function defaultSettings(): Settings {
     },
     keyboard: 'auto',
     functionRow: 'media',
+    sidewaysKeyboard: false,
+    sidewaysTurn: 'left',
     keyRepeat: true,
     textMode: 'unicode',
     liveTyping: true,
@@ -120,6 +126,7 @@ const CHOICES: Partial<Record<keyof Settings, readonly string[]>> = {
   scrollStripWidth: ['normal', 'wide', 'wider'],
   keyboard: ['auto', 'mac', 'custom', 'phone'],
   functionRow: ['media', 'function'],
+  sidewaysTurn: ['left', 'right'],
   textMode: ['unicode', 'keystrokes', 'paste'],
   theme: ['system', 'dark', 'light'],
   tab: ['trackpad', 'keyboard', 'deck', 'apps', 'media'],

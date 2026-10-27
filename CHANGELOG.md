@@ -9,6 +9,14 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Keyboard
+
+- **Sideways keyboard** shows the full Mac keyboard across the whole screen
+  of a phone held upright, turned on its side and without the trackpad.
+  Turn the phone to type with landscape-sized keys, even with rotation
+  locked. Switch it on in the phone's settings or with the button next to
+  **Mac** on the Keyboard tab.
+
 ### Trackpad
 
 - **Scroll strip at the screen edge** moves the scroll strip right up to the

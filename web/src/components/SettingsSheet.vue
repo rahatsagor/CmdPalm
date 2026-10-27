@@ -205,6 +205,20 @@ const times = (v: number) => `${v.toFixed(1)}×`
           { value: 'function', label: 'F1 – F12' },
         ]"
       />
+      <Toggle
+        v-model="settings.sidewaysKeyboard"
+        label="Sideways keyboard"
+        hint="On a phone held upright, the Mac keyboard fills the screen on its side, without the trackpad. Turn the phone to type, even with rotation locked."
+      />
+      <Segmented
+        v-if="settings.sidewaysKeyboard"
+        v-model="settings.sidewaysTurn"
+        label="Turn the phone"
+        :options="[
+          { value: 'left', label: 'To the left' },
+          { value: 'right', label: 'To the right' },
+        ]"
+      />
       <Toggle v-model="settings.keyRepeat" label="Key repeat" hint="Holding a key repeats it, using the Mac’s repeat speed." />
       <Toggle v-model="settings.liveTyping" label="Live typing" hint="Text appears on the Mac as you type, including autocorrect." />
       <Segmented

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Check, Pencil, Plus } from '@lucide/vue'
+import { Check, Pencil, Plus, RotateCcwSquare, RotateCwSquare } from '@lucide/vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import BoardEditor from '@/components/BoardEditor.vue'
 import Composer from '@/components/Composer.vue'
@@ -33,8 +33,18 @@ type Mode = 'mac' | 'custom' | 'phone'
 // phones) and the phone's own keyboard on narrow screens.
 const mode = computed<Mode>(() => {
   if (settings.keyboard !== 'auto') return settings.keyboard
-  return isTablet() || size.value.width >= 560 ? 'mac' : 'phone'
+  return isTablet() || settings.sidewaysKeyboard || size.value.width >= 560 ? 'mac' : 'phone'
 })
+
+const upright = computed(() => size.value.height > size.value.width)
+const sideways = computed(() => settings.sidewaysKeyboard && upright.value)
+// Laid out at the screen's height and width, then turned to fill it. Touches
+// still find their keys: hit testing follows the turn.
+const sidewaysStyle = computed(() => ({
+  width: `${size.value.height}px`,
+  height: `${size.value.width}px`,
+  transform: `translate(-50%, -50%) rotate(${settings.sidewaysTurn === 'left' ? 90 : -90}deg)`,
+}))
 
 const choice = computed({
   get: () => mode.value,
@@ -112,15 +122,29 @@ const customLayout = computed(() => {
 <template>
   <div class="flex h-full flex-col gap-2 px-2 pb-2" :class="layout.compact ? 'pt-0' : 'pt-1'">
     <div class="flex flex-wrap items-center justify-center gap-x-3 gap-y-1">
-      <Segmented
-        v-model="choice"
-        class="w-full max-w-xs py-0!"
-        :options="[
-          { value: 'mac', label: 'Mac' },
-          { value: 'custom', label: 'Custom' },
-          { value: 'phone', label: 'Type' },
-        ]"
-      />
+      <div class="flex w-full max-w-xs items-center gap-2">
+        <Segmented
+          v-model="choice"
+          class="min-w-0 flex-1 py-0!"
+          :options="[
+            { value: 'mac', label: 'Mac' },
+            { value: 'custom', label: 'Custom' },
+            { value: 'phone', label: 'Type' },
+          ]"
+        />
+        <button
+          v-if="mode === 'mac' && upright"
+          type="button"
+          class="grid size-8 shrink-0 place-items-center rounded-full transition-colors"
+          :class="settings.sidewaysKeyboard ? 'bg-accent text-accent-text' : 'bg-surface-3 text-muted'"
+          :aria-pressed="settings.sidewaysKeyboard"
+          aria-label="Sideways keyboard"
+          @click="settings.sidewaysKeyboard = !settings.sidewaysKeyboard"
+        >
+          <RotateCcwSquare v-if="settings.sidewaysTurn === 'left'" :size="17" />
+          <RotateCwSquare v-else :size="17" />
+        </button>
+      </div>
       <div v-if="mode === 'custom'" class="flex min-w-0 flex-1 basis-60 items-center gap-2">
         <div ref="chips" class="no-scrollbar flex min-w-0 flex-1 gap-1 overflow-x-auto" role="tablist" aria-label="Custom keyboards">
           <button
@@ -160,7 +184,12 @@ const customLayout = computed(() => {
     </div>
 
     <div ref="root" class="flex min-h-0 flex-1 flex-col gap-2">
-      <template v-if="mode === 'mac'">
+      <div v-if="mode === 'mac' && sideways" class="relative min-h-0 flex-1 overflow-hidden">
+        <div class="absolute top-1/2 left-1/2" :style="sidewaysStyle">
+          <VirtualKeyboard />
+        </div>
+      </div>
+      <template v-else-if="mode === 'mac'">
         <TrackpadSurface v-if="macLayout.pad" class="min-h-0 flex-1">
           <ScrollRail v-if="settings.scrollStrip !== 'off'" />
         </TrackpadSurface>
