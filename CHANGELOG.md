@@ -9,14 +9,6 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-### Keyboard
-
-- **Sideways keyboard** shows the full Mac keyboard across the whole screen
-  of a phone held upright, turned on its side and without the trackpad.
-  Turn the phone to type with landscape-sized keys, even with rotation
-  locked. Switch it on in the phone's settings or with the button next to
-  **Mac** on the Keyboard tab.
-
 ### Trackpad
 
 - Pinching zooms smoothly, the way a Mac trackpad does, in apps that
@@ -41,6 +33,23 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - The setting that hides the Click and Right-click buttons is now called
   **Show click buttons**.
 
+### Keyboard
+
+- **Sideways keyboard** shows the full Mac keyboard across the whole screen
+  of a phone held upright, turned on its side and without the trackpad.
+  Turn the phone to type with landscape-sized keys, even with rotation
+  locked. Switch it on in the phone's settings or with the button next to
+  **Mac** on the Keyboard tab.
+
+### Deck, apps and media
+
+- A deck button whose shell command fails says why, such as "command not
+  found", instead of seeming to do nothing. Buttons wait up to a moment and
+  a half for their command, so the steps after it run once it's done.
+- Shell commands typed on an iPhone keep plain quotes and dashes. iOS turned
+  `"` into `“` and `--` into `—` as you typed, which broke longer
+  commands while short ones like `say test` still worked.
+
 ### Phone and tablet
 
 - When the Mac is asleep, off or on another network, CmdPalm shows a clear
@@ -57,15 +66,6 @@ and versions follow [Semantic Versioning](https://semver.org/).
   presses still can't be felt on iPhone.
 - **Key press haptics**, in the phone's settings, turns the tap you feel on
   each key press on or off without turning off other haptics.
-
-### Deck, apps and media
-
-- A deck button whose shell command fails says why, such as "command not
-  found", instead of seeming to do nothing. Buttons wait up to a moment and
-  a half for their command, so the steps after it run once it's done.
-- Shell commands typed on an iPhone keep plain quotes and dashes. iOS turned
-  `"` into `“` and `--` into `—` as you typed, which broke longer
-  commands while short ones like `say test` still worked.
 
 ### Fixes
 
