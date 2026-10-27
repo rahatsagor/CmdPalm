@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Keyboard, KeyboardOff } from '@lucide/vue'
-import { nextTick, ref } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import ClickBar from '@/components/ClickBar.vue'
 import Composer from '@/components/Composer.vue'
 import ModifierStrip from '@/components/ModifierStrip.vue'
@@ -12,6 +12,9 @@ import { settings } from '@/lib/settings'
 const typing = ref(false)
 const composer = ref<InstanceType<typeof Composer>>()
 const touched = ref(false)
+
+// On a landscape phone the click buttons sit right of the trackpad.
+const atEdge = computed(() => !layout.compact || typing.value || settings.scrollStripSide !== 'right' || !settings.clickButtons)
 
 async function toggleTyping() {
   typing.value = !typing.value
@@ -38,7 +41,7 @@ async function toggleTyping() {
         </button>
       </ModifierStrip>
 
-      <TrackpadSurface class="min-h-0 min-w-0 flex-1" @pointerdown.capture="touched = true">
+      <TrackpadSurface class="min-h-0 min-w-0 flex-1" :edge="atEdge" @pointerdown.capture="touched = true">
         <ScrollRail v-if="settings.scrollStrip !== 'off'" />
         <div
           v-if="!touched"

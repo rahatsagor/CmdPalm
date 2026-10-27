@@ -9,6 +9,15 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Trackpad
+
+- **Scroll strip at the screen edge** moves the scroll strip right up to the
+  edge of the screen. Slide a finger along the side of the phone, or the
+  edge of its case, to scroll without looking.
+- **Scroll strip width** makes the strip wider and easier to hit.
+- The setting that hides the Click and Right-click buttons is now called
+  **Show click buttons**.
+
 ### Phone and tablet
 
 - Haptics work on iPhone again. iOS 26.5 stopped playing the haptics CmdPalm

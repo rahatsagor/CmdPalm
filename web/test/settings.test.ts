@@ -27,8 +27,9 @@ describe('migrating stored settings', () => {
   })
 
   it('drops values of the wrong type or outside the choices', () => {
-    const out = migrate({ theme: 'sepia', haptics: 'yes', scrollSpeed: 99 })
+    const out = migrate({ theme: 'sepia', haptics: 'yes', scrollSpeed: 99, scrollStripWidth: 'huge' })
     expect(out.theme).toBe('system')
+    expect(out.scrollStripWidth).toBe('normal')
     expect(out.haptics).toBe(true)
     expect(out.scrollSpeed).toBe(4)
   })

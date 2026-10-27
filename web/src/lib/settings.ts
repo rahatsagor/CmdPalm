@@ -19,6 +19,9 @@ export interface Settings {
   momentum: boolean
   scrollStrip: 'short' | 'long' | 'off'
   scrollStripSide: 'right' | 'left'
+  scrollStripWidth: 'normal' | 'wide' | 'wider'
+  /** The strip runs along the screen edge instead of inside the trackpad. */
+  scrollStripEdge: boolean
   scrollHold: boolean
   pinchToZoom: boolean
   threeFinger: GestureMap
@@ -63,6 +66,8 @@ export function defaultSettings(): Settings {
     momentum: true,
     scrollStrip: 'short',
     scrollStripSide: 'right',
+    scrollStripWidth: 'normal',
+    scrollStripEdge: false,
     scrollHold: true,
     pinchToZoom: true,
     threeFinger: {
@@ -112,6 +117,7 @@ const CHOICES: Partial<Record<keyof Settings, readonly string[]>> = {
   longPress: ['drag', 'rightClick', 'off'],
   scrollStrip: ['short', 'long', 'off'],
   scrollStripSide: ['right', 'left'],
+  scrollStripWidth: ['normal', 'wide', 'wider'],
   keyboard: ['auto', 'mac', 'custom', 'phone'],
   functionRow: ['media', 'function'],
   textMode: ['unicode', 'keystrokes', 'paste'],

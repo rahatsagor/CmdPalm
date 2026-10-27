@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ChevronDown, ChevronUp } from '@lucide/vue'
-import { onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
 import { pointer, state } from '@/lib/connection'
 import { haptic } from '@/lib/haptics'
 import { beginPointerGesture } from '@/lib/input'
@@ -18,6 +18,14 @@ const HOLD_SPEED = 360
 const HOLD_GAIN = 14
 const HOLD_MAX = 2400
 const HOLD_TICK_MS = 16
+/** Strip widths in CSS px. */
+const WIDTH = { normal: 36, wide: 52, wider: 68 } as const
+
+const placement = computed(() => ({
+  width: `${WIDTH[settings.scrollStripWidth]}px`,
+  // At the edge, a finger sliding along the phone's side or case lands on it.
+  [settings.scrollStripSide]: settings.scrollStripEdge ? '0px' : '6px',
+}))
 
 const track = ref<HTMLElement>()
 const handle = ref<HTMLElement>()
@@ -154,8 +162,9 @@ const listeners = {
 <template>
   <div
     v-if="settings.scrollStrip === 'long'"
-    class="absolute inset-y-3 w-9 touch-none rounded-full transition-colors"
-    :class="[settings.scrollStripSide === 'left' ? 'left-1.5' : 'right-1.5', active !== null ? 'bg-text/10' : 'bg-text/[0.035]']"
+    class="absolute inset-y-3 touch-none rounded-full transition-colors"
+    :class="active !== null ? 'bg-text/10' : 'bg-text/[0.035]'"
+    :style="placement"
     aria-label="Scroll strip"
     v-on="listeners"
   >
@@ -163,7 +172,7 @@ const listeners = {
       <span v-for="i in 3" :key="i" class="h-1 w-1 rounded-full bg-text/25" />
     </div>
   </div>
-  <div v-else ref="track" class="pointer-events-none absolute inset-y-3 w-9" :class="settings.scrollStripSide === 'left' ? 'left-1.5' : 'right-1.5'">
+  <div v-else ref="track" class="pointer-events-none absolute inset-y-3" :style="placement">
     <div
       ref="handle"
       class="pointer-events-auto absolute inset-x-0 top-1/2 flex h-24 max-h-full touch-none flex-col items-center justify-between rounded-full py-2"

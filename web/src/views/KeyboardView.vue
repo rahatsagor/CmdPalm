@@ -171,7 +171,11 @@ const customLayout = computed(() => {
 
       <template v-else-if="mode === 'custom'">
         <div class="flex min-h-0 flex-1 gap-2" :class="customLayout.direction === 'row' ? 'flex-row' : 'flex-col'">
-          <TrackpadSurface v-if="board.trackpad" class="min-h-0 min-w-0 flex-1">
+          <TrackpadSurface
+            v-if="board.trackpad"
+            class="min-h-0 min-w-0 flex-1"
+            :edge="customLayout.direction === 'col' || settings.scrollStripSide === 'left'"
+          >
             <ScrollRail v-if="settings.scrollStrip !== 'off'" />
           </TrackpadSurface>
           <div class="min-h-0 min-w-0 shrink-0" :style="customLayout.style">

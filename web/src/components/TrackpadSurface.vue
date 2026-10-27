@@ -6,12 +6,25 @@ import { haptic, holdPointer } from '@/lib/haptics'
 import { onPageHidden } from '@/lib/heldPointers'
 import { beginPointerGesture, buttonDown, buttonUp, click, tap } from '@/lib/input'
 import { Key } from '@/lib/keys'
+import { layout } from '@/lib/layout'
 import { PointerGain } from '@/lib/pointerGain'
 import { Mod, ScrollPhase } from '@/lib/protocol'
 import { settings, type GestureMap } from '@/lib/settings'
 import HapticSwitch from './HapticSwitch.vue'
 
+/** `edge`: the scroll strip's side of the trackpad is at the screen edge. */
+const props = withDefaults(defineProps<{ edge?: boolean }>(), { edge: true })
+
 const surface = ref<HTMLElement>()
+
+// Reaching the edge, the trackpad covers the views' side padding there.
+// Landscape phones keep the tab rail on the left.
+const reach = computed(() => {
+  const side = settings.scrollStripSide
+  if (!props.edge || settings.scrollStrip === 'off' || !settings.scrollStripEdge || (layout.compact && side === 'left')) return {}
+  const name = side === 'left' ? 'Left' : 'Right'
+  return { [`margin${name}`]: '-0.5rem', [`borderTop${name}Radius`]: '0px', [`borderBottom${name}Radius`]: '0px' }
+})
 const touches = reactive(new Map<number, { x: number; y: number }>())
 const dragging = ref(false)
 
@@ -135,6 +148,7 @@ function onCancel(event: PointerEvent) {
     ref="surface"
     class="trackpad relative block h-full w-full touch-none overflow-hidden rounded-[22px] bg-pad"
     :class="dragging && 'ring-2 ring-accent/60'"
+    :style="reach"
     role="application"
     aria-label="Trackpad. Move one finger to move the pointer, tap to click, two fingers to scroll."
     @pointerdown="onDown"

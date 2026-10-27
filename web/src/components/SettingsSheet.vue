@@ -97,7 +97,11 @@ const times = (v: number) => `${v.toFixed(1)}×`
       <RangeRow v-if="settings.showAdvanced" v-model="settings.pointerAcceleration" label="Acceleration" :min="0" :max="1" :format="pct" />
       <Toggle v-model="settings.tapToClick" label="Tap to click" />
       <Toggle v-model="settings.twoFingerTapRightClick" label="Two-finger tap to right-click" />
-      <Toggle v-model="settings.clickButtons" label="Click buttons" hint="Buttons under the trackpad. Hold one and move another finger to drag." />
+      <Toggle
+        v-model="settings.clickButtons"
+        label="Show click buttons"
+        hint="Click and Right-click buttons under the trackpad. Hold one and move another finger to drag."
+      />
       <template v-if="settings.showAdvanced">
         <Segmented
           v-model="settings.longPress"
@@ -129,6 +133,22 @@ const times = (v: number) => `${v.toFixed(1)}×`
           { value: 'off', label: 'Hide' },
         ]"
       />
+      <template v-if="settings.scrollStrip !== 'off'">
+        <Segmented
+          v-model="settings.scrollStripWidth"
+          label="Scroll strip width"
+          :options="[
+            { value: 'normal', label: 'Normal' },
+            { value: 'wide', label: 'Wide' },
+            { value: 'wider', label: 'Extra wide' },
+          ]"
+        />
+        <Toggle
+          v-model="settings.scrollStripEdge"
+          label="Scroll strip at the screen edge"
+          hint="Slide a finger along the side of the phone, or its case, to scroll without looking."
+        />
+      </template>
       <template v-if="settings.showAdvanced && settings.scrollStrip !== 'off'">
         <Segmented
           v-model="settings.scrollStripSide"
