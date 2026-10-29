@@ -41,6 +41,8 @@ final class HostController {
     /// Starts, stops and restarts run one after another, so two quick
     /// restarts can't interleave and leave the server on an old setting.
     @ObservationIgnored private var lifecycle: Task<Void, Never>?
+    /// The stop half of a restart reports Stopped; the server isn't off.
+    @ObservationIgnored private var pendingRestarts = 0
     @ObservationIgnored private let network = NWPathMonitor()
     @ObservationIgnored var onApprovalsChanged: (() -> Void)?
 
@@ -115,18 +117,19 @@ final class HostController {
         // start, and a config captured for later would undo settings changed
         // while the server restarts, such as turning shell commands off.
         host.updateConfig(config: makeConfig())
-        launch { host in
+        pendingRestarts += 1
+        launch(restart: true) { host in
             host.stop()
             _ = try host.start()
         }
     }
 
-    private func launch(_ work: @escaping @Sendable (CoreHost) throws -> Void) {
+    private func launch(restart: Bool = false, _ work: @escaping @Sendable (CoreHost) throws -> Void) {
         status = .starting
-        enqueue(work)
+        enqueue(restart: restart, work)
     }
 
-    private func enqueue(_ work: @escaping @Sendable (CoreHost) throws -> Void) {
+    private func enqueue(restart: Bool = false, _ work: @escaping @Sendable (CoreHost) throws -> Void) {
         let host = host!
         let previous = lifecycle
         lifecycle = Task.detached {
@@ -141,6 +144,9 @@ final class HostController {
                     if let self, !self.isRunning { self.status = .failed(message) }
                 }
             }
+            // Events are delivered on the main queue, so the restart's own
+            // Stopped event has been handled by the time this runs.
+            if restart { await MainActor.run { [weak self] in self?.pendingRestarts -= 1 } }
         }
     }
 
@@ -156,6 +162,7 @@ final class HostController {
     func shutdown() {
         network.cancel()
         host.stop()
+        bridge.pasteboard.endPendingPastes()
     }
 
     // MARK: Actions
@@ -222,7 +229,7 @@ final class HostController {
             refreshPairing()
             sendSystemState()
         case .stopped:
-            status = .stopped
+            status = pendingRestarts > 0 ? .starting : .stopped
             connected = []
             if !approvals.isEmpty {
                 approvals = []

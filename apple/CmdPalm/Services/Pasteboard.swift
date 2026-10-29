@@ -23,23 +23,30 @@ final class Pasteboard: Sendable {
     }
 
     private let state = Mutex(State())
+    private let name: NSPasteboard.Name
+
+    init(name: NSPasteboard.Name = .general) {
+        self.name = name
+    }
+
+    private var board: NSPasteboard { NSPasteboard(name: name) }
 
     /// Nil for passwords and other contents apps ask clipboard tools to skip.
     func text() -> String? {
-        let board = NSPasteboard.general
+        let board = self.board
         if let types = board.types, types.contains(Self.concealed) || types.contains(Self.transient) { return nil }
         return board.string(forType: .string)
     }
 
     func setText(_ text: String) {
-        let board = NSPasteboard.general
+        let board = self.board
         board.clearContents()
         board.setString(text, forType: .string)
     }
 
     func beginPaste(_ text: String) -> Bool {
         state.withLock { state in
-            let board = NSPasteboard.general
+            let board = self.board
             let current = Self.snapshot(board)
             // During an overlapping paste the board holds the earlier pasted
             // text, so keep the earlier snapshot unless someone copied since.
@@ -69,11 +76,26 @@ final class Pasteboard: Sendable {
             state.depth -= 1
             guard state.depth == 0, let saved = state.saved else { return }
             state.saved = nil
-            let board = NSPasteboard.general
-            // Something else copied in the meantime; keep that instead.
-            guard board.changeCount == saved.changeCount else { return }
-            Self.restore(saved.items, to: board)
+            restore(saved)
         }
+    }
+
+    /// Puts back the clipboard of a paste that hasn't ended, for when the app
+    /// quits before the core's delayed restore.
+    func endPendingPastes() {
+        state.withLock { state in
+            state.depth = 0
+            guard let saved = state.saved else { return }
+            state.saved = nil
+            restore(saved)
+        }
+    }
+
+    private func restore(_ saved: Saved) {
+        let board = self.board
+        // Something else copied in the meantime; keep that instead.
+        guard board.changeCount == saved.changeCount else { return }
+        Self.restore(saved.items, to: board)
     }
 
     private static func snapshot(_ board: NSPasteboard) -> [[NSPasteboard.PasteboardType: Data]] {

@@ -34,7 +34,7 @@ final class SpeechService: @unchecked Sendable {
         }
     }
 
-    private final class Session {
+    private final class Session: @unchecked Sendable {
         let recognizer: SFSpeechRecognizer
         var current: Utterance?
         /// Utterances whose audio has ended but whose final text has not arrived.
@@ -73,7 +73,10 @@ final class SpeechService: @unchecked Sendable {
         guard Self.mayBeAvailable, let recognizer = Self.recognizer(for: locale) else { return false }
         recognizer.queue = handlerQueue
         queue.async { [self] in
-            if let old = sessions.removeValue(forKey: id) { discard(old) }
+            if let old = sessions.removeValue(forKey: id) {
+                if old.stopping { deliverPending(id, old) }
+                discard(old)
+            }
             sessions[id] = Session(recognizer: recognizer)
             switch Self.authorization {
             case .authorized:
@@ -123,8 +126,9 @@ final class SpeechService: @unchecked Sendable {
                 finish(id, session)
             }
             queue.asyncAfter(deadline: .now() + Self.stopTimeout) { [self] in
-                // The recognizer never delivered a final result.
-                guard let session = sessions[id], session.stopping else { return }
+                // The recognizer never delivered a final result. The id is
+                // reused by the next dictation, which this must not end.
+                guard sessions[id] === session, session.stopping else { return }
                 finish(id, session)
             }
         }
@@ -133,7 +137,8 @@ final class SpeechService: @unchecked Sendable {
     // MARK: Recognition
 
     private func begin(_ id: UInt64) {
-        guard let session = sessions[id], !session.stopping else { return }
+        // Two starts during the permission prompt both ask to begin.
+        guard let session = sessions[id], !session.stopping, session.current == nil else { return }
         // Speech never leaves the Mac: without on-device support for the
         // language, the recognizer would send audio to Apple's servers.
         guard session.recognizer.supportsOnDeviceRecognition else {
@@ -242,6 +247,16 @@ final class SpeechService: @unchecked Sendable {
         sessions[id] = nil
         discard(session)
         send(id, .stopped)
+    }
+
+    /// A new dictation replaces one still waiting for its final text; send
+    /// what was heard so far instead of losing the last phrase.
+    private func deliverPending(_ id: UInt64, _ session: Session) {
+        let pending = session.closing.values.sorted { $0.generation < $1.generation } + [session.current].compactMap { $0 }
+        for utterance in pending {
+            let text = utterance.text.trimmingCharacters(in: .whitespaces)
+            if !text.isEmpty { send(id, .listening, text: text, final: true) }
+        }
     }
 
     private func discard(_ session: Session) {

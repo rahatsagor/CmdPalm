@@ -188,3 +188,53 @@ import Testing
         #expect(QRCodeView.image(for: "") == nil)
     }
 }
+
+@Suite struct PasteboardTests {
+    private func withBoard(_ body: (NSPasteboard, CmdPalm.Pasteboard) throws -> Void) rethrows {
+        let name = NSPasteboard.Name("app.cmdpalm.tests.\(UUID().uuidString)")
+        let board = NSPasteboard(name: name)
+        defer { board.releaseGlobally() }
+        try body(board, CmdPalm.Pasteboard(name: name))
+    }
+
+    private func copy(_ text: String, to board: NSPasteboard) {
+        board.clearContents()
+        board.setString(text, forType: .string)
+    }
+
+    @Test func restoresTheClipboardAfterAPaste() {
+        withBoard { board, pasteboard in
+            copy("mine", to: board)
+            #expect(pasteboard.beginPaste("typed"))
+            #expect(board.string(forType: .string) == "typed")
+            #expect(pasteboard.text() == nil, "pasted text is marked transient")
+            pasteboard.endPaste()
+            #expect(board.string(forType: .string) == "mine")
+        }
+    }
+
+    @Test func restoresAPendingPasteOnQuit() {
+        withBoard { board, pasteboard in
+            copy("mine", to: board)
+            #expect(pasteboard.beginPaste("first"))
+            #expect(pasteboard.beginPaste("second"))
+            pasteboard.endPendingPastes()
+            #expect(board.string(forType: .string) == "mine")
+            // The core's late restore must not undo anything copied since.
+            copy("later", to: board)
+            pasteboard.endPaste()
+            pasteboard.endPaste()
+            #expect(board.string(forType: .string) == "later")
+        }
+    }
+
+    @Test func keepsWhatWasCopiedDuringAPendingPaste() {
+        withBoard { board, pasteboard in
+            copy("mine", to: board)
+            #expect(pasteboard.beginPaste("typed"))
+            copy("newer", to: board)
+            pasteboard.endPendingPastes()
+            #expect(board.string(forType: .string) == "newer")
+        }
+    }
+}

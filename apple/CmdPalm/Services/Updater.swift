@@ -104,12 +104,23 @@ extension Updater: SPUStandardUserDriverDelegate {
         let version = update.displayVersionString
         let userInitiated = state.userInitiated
         Task { @MainActor in
-            if !handleShowingUpdate, !userInitiated { self.pendingVersion = version }
-            if handleShowingUpdate { AppActivation.shared.enter() }
+            if handleShowingUpdate {
+                self.pendingVersion = nil
+                AppActivation.shared.enter()
+            } else if !userInitiated {
+                self.pendingVersion = version
+            }
         }
     }
 
+    nonisolated func standardUserDriverDidReceiveUserAttention(forUpdate update: SUAppcastItem) {
+        Task { @MainActor in self.pendingVersion = nil }
+    }
+
     nonisolated func standardUserDriverWillFinishUpdateSession() {
-        Task { @MainActor in AppActivation.shared.leave() }
+        Task { @MainActor in
+            self.pendingVersion = nil
+            AppActivation.shared.leave()
+        }
     }
 }

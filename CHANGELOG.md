@@ -40,6 +40,15 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - Several phones and tablets on the same Wi-Fi can connect at once over
   IPv6. They shared one connection limit, so loading the app on one could
   leave another unable to connect.
+- Dictation keeps your last phrase when you tap the microphone off and on
+  again quickly, and a short dictation right after another is no longer cut
+  off before its text arrives.
+- Quitting CmdPalm right after it pastes text puts back what was on your
+  clipboard.
+- The "CmdPalm is available" note in the menu goes away once you've seen
+  the update, even if you skip it or choose to be reminded later.
+- Changing a server setting no longer shows CmdPalm as off for a moment
+  while the server restarts.
 
 ## [0.5.0] - 2026-10-28
 
