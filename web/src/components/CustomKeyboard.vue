@@ -192,6 +192,12 @@ function onEditUp(event: PointerEvent, cancelled = false) {
 
 const dropFits = (d: Drag) => fits(props.board, { ...d.target, w: d.key.w, h: d.key.h }, d.key.id)
 
+// A click on a label is passed on to its first control, which in edit mode
+// is an "Add key here" button, so a tap on a key or a gap would add a key.
+function onBoardClick(event: MouseEvent) {
+  if (props.editing && !(event.target as Element).closest('button')) event.preventDefault()
+}
+
 function addAt(x: number, y: number) {
   editingKey.value = { key: { id: newId(), x, y, w: 1, h: 1, action: { kind: 'key', code: Key.Space, mods: 0 } }, isNew: true }
 }
@@ -221,6 +227,7 @@ function removeKey() {
     :style="{ ...vars, gridTemplateColumns: `repeat(${board.cols}, minmax(0, 1fr))`, gridTemplateRows: `repeat(${board.rows}, minmax(0, 1fr))` }"
     role="group"
     :aria-label="board.name"
+    @click="onBoardClick"
   >
     <button
       v-for="c in empty"

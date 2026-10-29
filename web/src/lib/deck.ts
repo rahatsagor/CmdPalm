@@ -4,7 +4,7 @@
 import { notify, onMessage, send, state } from './connection'
 import type { Action, Deck, DeckPage, Tile } from './protocol'
 
-export const LIMITS = { pages: 24, tiles: 64, label: 80, text: 4096, steps: 64, depth: 3, delayMs: 10_000 }
+export const LIMITS = { pages: 24, tiles: 64, label: 80, text: 4096, name: 512, steps: 64, depth: 3, delayMs: 10_000 }
 
 export function newId(prefix = 't'): string {
   const bytes = crypto.getRandomValues(new Uint8Array(6))
@@ -13,7 +13,7 @@ export function newId(prefix = 't'): string {
 
 const encoder = new TextEncoder()
 /** The Mac limits text by its UTF-8 size. */
-const tooLong = (text: string) => encoder.encode(text).length > LIMITS.text
+const tooLong = (text: string, limit = LIMITS.text) => encoder.encode(text).length > limit
 
 /** Returns a problem with the action, or '' when it can be saved. */
 export function actionProblem(action: Action, depth = 0): string {
@@ -32,7 +32,8 @@ export function actionProblem(action: Action, depth = 0): string {
     case 'app':
       return action.id ? '' : 'Choose an app.'
     case 'shortcut':
-      return action.name.trim() ? '' : 'Enter the name of a shortcut from the Shortcuts app.'
+      if (!action.name.trim()) return 'Enter the name of a shortcut from the Shortcuts app.'
+      return tooLong(action.name, LIMITS.name) ? 'The shortcut name is too long.' : ''
     case 'delay':
       return action.ms >= 0 && action.ms <= LIMITS.delayMs ? '' : 'Waits are limited to 10 seconds.'
     case 'mouse':

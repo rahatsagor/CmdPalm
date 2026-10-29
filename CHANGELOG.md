@@ -28,6 +28,9 @@ and versions follow [Semantic Versioning](https://semver.org/).
   your changes, so you can save them once it reconnects, and **Add page**
   no longer opens a page that was never saved.
 - The row of deck page names scrolls to keep the selected page in view.
+- On Android and in desktop browsers, tapping a key while editing a custom
+  keyboard opens **Edit key** for that key, instead of a **New key** sheet
+  that couldn't delete it.
 
 ## [0.5.0] - 2026-10-28
 
