@@ -70,6 +70,12 @@ function pointer(el: HTMLElement, type: string) {
   el.dispatchEvent(new PointerEvent(type, { pointerId: 1, pointerType: 'touch', isPrimary: true, bubbles: true }))
 }
 
+function dialogButton(text: string): HTMLButtonElement {
+  const button = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')).find((b) => b.textContent?.trim() === text)
+  if (!button) throw new Error(`no ${text} button`)
+  return button
+}
+
 describe('DeckView', () => {
   // The selected page and the page on screen can differ, for example after
   // the scroll position was lost while another tab was open.
@@ -98,15 +104,24 @@ describe('DeckView', () => {
     field.value = 'Safari'
     field.dispatchEvent(new Event('input'))
     await nextTick()
-    Array.from(document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'))
-      .find((b) => b.textContent?.trim() === 'Save')!
-      .click()
+    dialogButton('Save').click()
     await nextTick()
     const saved = socket.sent.filter((m) => m.t === 'deckSave').at(-1) as { deck: typeof deck } | undefined
     expect(saved?.deck.pages.map((p) => p.tiles.map((t) => t.label))).toEqual([
       ['Mute', 'Play / Pause'],
       ['Finder', 'Safari'],
     ])
+    view.unmount()
+  })
+
+  it('stays on the selected page when a new page could not be saved', async () => {
+    const { socket, settings, view } = await deckView('apps')
+    await view.findAll('button').find((b) => b.text() === 'Edit')!.trigger('click')
+    socket.readyState = FakeSocket.CLOSED
+    await view.find('button[aria-label="Add page"]').trigger('click')
+    expect(settings.deckPage).toBe('apps')
+    expect(view.findAll('[role="tab"]').map((t) => t.text())).toEqual(['Essentials', 'Apps'])
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
     view.unmount()
   })
 
@@ -124,6 +139,64 @@ describe('DeckView', () => {
     shown.value = true
     await nextTick()
     expect(scrollTo).toHaveBeenLastCalledWith({ left: 320, behavior: 'instant' })
+    view.unmount()
+  })
+  it('scrolls to the selected page when another device reorders the pages', async () => {
+    const { socket, view } = await deckView('essentials')
+    const strip = document.querySelector<HTMLElement>('[role="tabpanel"]')!.parentElement!
+    Object.defineProperty(strip, 'clientWidth', { value: 320 })
+    const scrollTo = vi.spyOn(strip, 'scrollTo')
+    socket.receive({ t: 'deck', deck: { ...deck, pages: [...deck.pages].reverse() } })
+    await nextTick()
+    await nextTick()
+    expect(scrollTo).toHaveBeenLastCalledWith({ left: 320, behavior: 'instant' })
+    view.unmount()
+  })
+
+  it('saves the edited button by id after another device reorders its page', async () => {
+    const { socket, view } = await deckView('apps')
+    const target = tile('My Button')
+    pointer(target, 'pointerdown')
+    vi.advanceTimersByTime(600)
+    pointer(target, 'pointerup')
+    await nextTick()
+    const apps = deck.pages[1]!
+    socket.receive({ t: 'deck', deck: { ...deck, pages: [deck.pages[0], { ...apps, tiles: [...apps.tiles].reverse() }] } })
+    await nextTick()
+    const field = document.querySelector<HTMLInputElement>('[role="dialog"] input')!
+    field.value = 'Safari'
+    field.dispatchEvent(new Event('input'))
+    await nextTick()
+    dialogButton('Save').click()
+    await nextTick()
+    const saved = socket.sent.filter((m) => m.t === 'deckSave').at(-1) as { deck: typeof deck } | undefined
+    expect(saved?.deck.pages[1]?.tiles.map((t) => t.label)).toEqual(['Safari', 'Finder'])
+    view.unmount()
+  })
+
+  it('keeps the button editor open when the change could not be saved', async () => {
+    const { socket, view } = await deckView('apps')
+    const target = tile('My Button')
+    pointer(target, 'pointerdown')
+    vi.advanceTimersByTime(600)
+    pointer(target, 'pointerup')
+    await nextTick()
+    socket.readyState = FakeSocket.CLOSED
+    dialogButton('Save').click()
+    await nextTick()
+    expect(document.querySelector('[role="dialog"]')?.getAttribute('aria-label')).toBe('Edit button')
+    view.unmount()
+  })
+
+  it('closes the page editor when another device deletes the page', async () => {
+    const { socket, view } = await deckView('apps')
+    await view.findAll('button').find((b) => b.text() === 'Edit')!.trigger('click')
+    await view.findAll('[role="tab"]').find((t) => t.text().includes('Apps'))!.trigger('click')
+    expect(document.querySelector('[role="dialog"]')?.getAttribute('aria-label')).toBe('Page')
+    socket.receive({ t: 'deck', deck: { ...deck, pages: [deck.pages[0]] } })
+    await nextTick()
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+    expect(socket.sent.filter((m) => m.t === 'deckSave')).toEqual([])
     view.unmount()
   })
 })

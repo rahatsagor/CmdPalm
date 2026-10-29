@@ -19,8 +19,10 @@ const page = computed(() => pages.value[index.value])
 const pageById = (id: string) => pages.value.find((p) => p.id === id)
 
 const editing = ref(false)
-const tileEdit = ref<{ tile: Tile; pageId: string; index: number | null } | null>(null)
-const pageEdit = ref(false)
+const tileEdit = ref<{ tile: Tile; pageId: string; isNew: boolean } | null>(null)
+/** The id of the page being edited. */
+const pageEdit = ref<string | null>(null)
+const editedPage = computed(() => (pageEdit.value ? pageById(pageEdit.value) : undefined))
 const scroller = ref<HTMLElement>()
 
 /** Width inside a page's padding (px-3 on each side). */
@@ -39,11 +41,11 @@ onBeforeUnmount(() => resizer?.disconnect())
 const columns = (p: DeckPage) => deckColumns(p.columns, gridWidth.value, settings.deckButtonSize)
 const tileSize = (p: DeckPage) => tileWidth(columns(p), gridWidth.value || REFERENCE_WIDTH)
 
-function mutate(change: (deck: Deck) => void) {
-  if (!deck.value) return
+function mutate(change: (deck: Deck) => void): boolean {
+  if (!deck.value) return false
   const next = clone(deck.value)
   change(next)
-  saveDeck(next)
+  return saveDeck(next)
 }
 
 function selectPage(i: number, smooth = true) {
@@ -69,6 +71,8 @@ function onScroll() {
   }, 60)
 }
 
+// Runs on every deck change, as the getter returns a new array each time:
+// another device can also reorder the pages.
 watch(
   () => [pages.value.length, editing.value],
   async () => {
@@ -78,8 +82,18 @@ watch(
   { immediate: true },
 )
 
+const tabs = ref<HTMLElement>()
+async function showSelectedTab() {
+  await nextTick()
+  tabs.value?.querySelector('[aria-selected="true"]')?.scrollIntoView({ inline: 'nearest', block: 'nearest', behavior: 'smooth' })
+}
+watch(index, showSelectedTab)
+
 // The page strip loses its scroll position while another tab is open.
-onActivated(() => selectPage(index.value, false))
+onActivated(() => {
+  selectPage(index.value, false)
+  void showSelectedTab()
+})
 
 const status = reactive(new Map<string, 'running' | 'failed'>())
 
@@ -182,7 +196,7 @@ function onTileUp(event: PointerEvent, cancelled = false) {
     return
   }
   if (!tile || cancelled || p.moved) return
-  if (editing.value || p.longPressed) tileEdit.value = { tile, pageId: p.pageId, index: p.index }
+  if (editing.value || p.longPressed) tileEdit.value = { tile, pageId: p.pageId, isNew: false }
   else void run(tile)
 }
 
@@ -218,50 +232,54 @@ onBeforeUnmount(() => {
 function addTile(target: DeckPage) {
   if (target.tiles.length >= LIMITS.tiles) return
   settings.deckPage = target.id
-  tileEdit.value = { tile: newTile({ kind: 'keys', code: 0x08, mods: 1, char: 'c' }), pageId: target.id, index: null }
+  tileEdit.value = { tile: newTile({ kind: 'keys', code: 0x08, mods: 1, char: 'c' }), pageId: target.id, isNew: true }
+}
+
+// Tiles are found by id, not position: another device can change the page
+// while the editor is open. The editor stays open when the change can't be
+// saved, so nothing typed into it is lost.
+function editTile(change: (tiles: Tile[], at: number) => void) {
+  const edit = tileEdit.value
+  if (!edit) return
+  const saved = mutate((d) => {
+    const target = d.pages.find((p) => p.id === edit.pageId)
+    if (target) change(target.tiles, target.tiles.findIndex((t) => t.id === edit.tile.id))
+  })
+  if (saved) tileEdit.value = null
 }
 
 function saveTile(tile: Tile) {
-  const edit = tileEdit.value
-  tileEdit.value = null
-  if (!edit) return
-  mutate((d) => {
-    const target = d.pages.find((p) => p.id === edit.pageId)
-    if (!target) return
-    if (edit.index == null) target.tiles.push(tile)
-    else target.tiles[edit.index] = tile
+  editTile((tiles, at) => {
+    if (at < 0) tiles.push(tile)
+    else tiles[at] = tile
   })
 }
 
 function removeTile() {
-  const edit = tileEdit.value
-  tileEdit.value = null
-  if (edit?.index == null) return
-  mutate((d) => d.pages.find((p) => p.id === edit.pageId)?.tiles.splice(edit.index!, 1))
+  editTile((tiles, at) => at >= 0 && tiles.splice(at, 1))
 }
 
 function duplicateTile() {
-  const edit = tileEdit.value
-  tileEdit.value = null
-  if (edit?.index == null || (pageById(edit.pageId)?.tiles.length ?? LIMITS.tiles) >= LIMITS.tiles) return
-  mutate((d) => {
-    const target = d.pages.find((p) => p.id === edit.pageId)
-    const source = target?.tiles[edit.index!]
-    if (target && source) target.tiles.splice(edit.index! + 1, 0, { ...clone(source), id: newId() })
+  editTile((tiles, at) => {
+    if (at >= 0 && tiles.length < LIMITS.tiles) tiles.splice(at + 1, 0, { ...clone(tiles[at]!), id: newId() })
   })
 }
 
 function addPage() {
   if (pages.value.length >= LIMITS.pages) return
   const created = newPage(`Page ${pages.value.length + 1}`)
-  mutate((d) => d.pages.push(created))
+  if (!mutate((d) => d.pages.push(created))) return
   settings.deckPage = created.id
-  pageEdit.value = true
+  pageEdit.value = created.id
 }
 
+// Like tiles, the edited page is found by id, and the editor closes by
+// itself if another device removes the page.
 function savePage(values: { name: string; columns: number }) {
-  pageEdit.value = false
-  const id = page.value?.id
+  const id = pageEdit.value
+  pageEdit.value = null
+  const current = id ? pageById(id) : undefined
+  if (!current || (current.name === values.name && current.columns === values.columns)) return
   mutate((d) => {
     const target = d.pages.find((p) => p.id === id)
     if (target) Object.assign(target, values)
@@ -269,21 +287,24 @@ function savePage(values: { name: string; columns: number }) {
 }
 
 function movePage(by: number) {
-  const i = index.value
+  const id = pageEdit.value
   mutate((d) => {
+    const i = d.pages.findIndex((p) => p.id === id)
     const j = i + by
-    if (j < 0 || j >= d.pages.length) return
+    if (i < 0 || j < 0 || j >= d.pages.length) return
     ;[d.pages[i], d.pages[j]] = [d.pages[j]!, d.pages[i]!]
   })
 }
 
 function removePage() {
-  pageEdit.value = false
-  const i = index.value
-  mutate((d) => {
+  const id = pageEdit.value
+  pageEdit.value = null
+  const i = pages.value.findIndex((p) => p.id === id)
+  if (i < 0) return
+  const removed = mutate((d) => {
     if (d.pages.length > 1) d.pages.splice(i, 1)
   })
-  settings.deckPage = pages.value[Math.max(0, i - 1)]?.id ?? ''
+  if (removed) settings.deckPage = pages.value[Math.max(0, i - 1)]?.id ?? ''
 }
 
 function tileStyle(tile: Tile) {
@@ -296,7 +317,7 @@ const dragged = computed(() => (press.value?.moved && editing.value ? pageById(p
 <template>
   <div class="flex h-full flex-col">
     <div class="flex items-center gap-2 px-3 pt-1 pb-2">
-      <div class="no-scrollbar flex min-w-0 flex-1 gap-1 overflow-x-auto" role="tablist">
+      <div ref="tabs" class="no-scrollbar flex min-w-0 flex-1 gap-1 overflow-x-auto" role="tablist">
         <button
           v-for="(p, i) in pages"
           :key="p.id"
@@ -305,7 +326,7 @@ const dragged = computed(() => (press.value?.moved && editing.value ? pageById(p
           :aria-selected="i === index"
           class="h-8 shrink-0 rounded-full px-3.5 text-[13px] font-medium whitespace-nowrap transition-colors"
           :class="i === index ? 'bg-text text-bg' : 'text-muted'"
-          @click="i === index && editing ? (pageEdit = true) : selectPage(i)"
+          @click="i === index && editing ? (pageEdit = p.id) : selectPage(i)"
         >
           {{ p.name || 'Page' }}
           <Pencil v-if="editing && i === index" :size="11" class="ml-1 inline align-[-1px]" />
@@ -410,13 +431,22 @@ const dragged = computed(() => (press.value?.moved && editing.value ? pageById(p
     <TileEditor
       v-if="tileEdit"
       :tile="tileEdit.tile"
-      :is-new="tileEdit.index === null"
+      :is-new="tileEdit.isNew"
       @save="saveTile"
       @remove="removeTile"
       @duplicate="duplicateTile"
       @close="tileEdit = null"
     />
-    <PageEditor v-if="pageEdit && page" :page="page" :index="index" :count="pages.length" @save="savePage" @move="movePage" @remove="removePage" @close="pageEdit = false" />
+    <PageEditor
+      v-if="editedPage"
+      :page="editedPage"
+      :index="pages.indexOf(editedPage)"
+      :count="pages.length"
+      @save="savePage"
+      @move="movePage"
+      @remove="removePage"
+      @close="pageEdit = null"
+    />
   </div>
 </template>
 

@@ -15,11 +15,19 @@ and versions follow [Semantic Versioning](https://semver.org/).
   clear and tinted appearances. Its shape and spacing line up with other
   icons in the Dock and Finder, including on macOS 15. The icon on the
   phone's home screen and in the browser matches it.
-- Deck buttons you add yourself open the right editor again. After you
-  switched tabs, the deck could show one page while acting on another, so
-  tapping or holding a button could run or edit the button in the same spot
-  on the other page, such as **Play / Pause**. The deck now also comes back
-  on the page you left it on.
+- Tapping or holding a deck button always acts on that button. After you
+  switched tabs, the deck could show one page while acting on another, so a
+  tap could run, and a hold could edit, the button in the same spot on the
+  other page. Editing a button you added could open **Play / Pause** or an
+  empty editor instead. The deck also comes back on the page you left it on.
+- Saving, deleting or duplicating a deck button acts on that button even if
+  another device changes the same page while its editor is open. The page
+  editor closes if another device deletes the page, instead of changing a
+  different one.
+- When the phone isn't connected, a deck button's editor stays open with
+  your changes, so you can save them once it reconnects, and **Add page**
+  no longer opens a page that was never saved.
+- The row of deck page names scrolls to keep the selected page in view.
 
 ## [0.5.0] - 2026-10-28
 
