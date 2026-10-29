@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Check, LoaderCircle, Pencil, Plus } from '@lucide/vue'
-import { computed, nextTick, onBeforeUnmount, onDeactivated, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, reactive, ref, watch } from 'vue'
 import PageEditor from '@/components/PageEditor.vue'
 import TileEditor from '@/components/TileEditor.vue'
 import HapticSwitch from '@/components/HapticSwitch.vue'
@@ -16,9 +16,10 @@ const deck = computed(() => state.deck)
 const pages = computed(() => deck.value?.pages ?? [])
 const index = computed(() => Math.max(0, pages.value.findIndex((p) => p.id === settings.deckPage)))
 const page = computed(() => pages.value[index.value])
+const pageById = (id: string) => pages.value.find((p) => p.id === id)
 
 const editing = ref(false)
-const tileEdit = ref<{ tile: Tile; index: number | null } | null>(null)
+const tileEdit = ref<{ tile: Tile; pageId: string; index: number | null } | null>(null)
 const pageEdit = ref(false)
 const scroller = ref<HTMLElement>()
 
@@ -77,6 +78,9 @@ watch(
   { immediate: true },
 )
 
+// The page strip loses its scroll position while another tab is open.
+onActivated(() => selectPage(index.value, false))
+
 const status = reactive(new Map<string, 'running' | 'failed'>())
 
 async function run(tile: Tile) {
@@ -96,6 +100,7 @@ async function run(tile: Tile) {
 
 interface Press {
   pointerId: number
+  pageId: string
   index: number
   x: number
   y: number
@@ -110,13 +115,14 @@ const press = ref<Press | null>(null)
 const ghost = ref({ x: 0, y: 0 })
 let longTimer: ReturnType<typeof setTimeout> | undefined
 
-function onTileDown(i: number, event: PointerEvent) {
+function onTileDown(pageId: string, i: number, event: PointerEvent) {
   if (press.value || (event.pointerType === 'mouse' && event.button !== 0)) return
   const el = event.currentTarget as HTMLElement
   el.setPointerCapture(event.pointerId)
   const rect = el.getBoundingClientRect()
   press.value = {
     pointerId: event.pointerId,
+    pageId,
     index: i,
     x: event.clientX,
     y: event.clientY,
@@ -134,6 +140,8 @@ function onTileDown(i: number, event: PointerEvent) {
       if (!press.value || press.value.moved) return
       press.value.longPressed = true
       haptic('medium')
+      // Edit mode shows only the selected page, so select the one held.
+      settings.deckPage = press.value.pageId
       editing.value = true
     }, 550)
   }
@@ -153,9 +161,9 @@ function onTileMove(event: PointerEvent) {
     .map((el) => (el as HTMLElement).closest<HTMLElement>('[data-tile-index]'))
     .find((el) => el && Number(el.dataset.tileIndex) !== p.index)
   const target = over ? Number(over.dataset.tileIndex) : -1
-  if (target < 0 || !page.value || !deck.value) return
+  const tiles = pageById(p.pageId)?.tiles
+  if (target < 0 || !tiles) return
   // Reorder locally while dragging; save once on release.
-  const tiles = page.value.tiles
   const [moved] = tiles.splice(p.index, 1)
   tiles.splice(target, 0, moved!)
   p.index = target
@@ -167,18 +175,14 @@ function onTileUp(event: PointerEvent, cancelled = false) {
   if (!p || p.pointerId !== event.pointerId) return
   clearTimeout(longTimer)
   press.value = null
-  const tile = page.value?.tiles[p.index]
+  const tile = pageById(p.pageId)?.tiles[p.index]
   if (editing.value && p.moved) {
     // The tiles were already reordered locally.
     if (deck.value) saveDeck(deck.value)
     return
   }
   if (!tile || cancelled || p.moved) return
-  if (p.longPressed) {
-    tileEdit.value = { tile, index: p.index }
-    return
-  }
-  if (editing.value) tileEdit.value = { tile, index: p.index }
+  if (editing.value || p.longPressed) tileEdit.value = { tile, pageId: p.pageId, index: p.index }
   else void run(tile)
 }
 
@@ -211,19 +215,20 @@ onBeforeUnmount(() => {
   document.removeEventListener('pointercancel', onStrayUp)
 })
 
-function addTile() {
-  if (!page.value || page.value.tiles.length >= LIMITS.tiles) return
-  tileEdit.value = { tile: newTile({ kind: 'keys', code: 0x08, mods: 1, char: 'c' }), index: null }
+function addTile(target: DeckPage) {
+  if (target.tiles.length >= LIMITS.tiles) return
+  settings.deckPage = target.id
+  tileEdit.value = { tile: newTile({ kind: 'keys', code: 0x08, mods: 1, char: 'c' }), pageId: target.id, index: null }
 }
 
 function saveTile(tile: Tile) {
   const edit = tileEdit.value
   tileEdit.value = null
-  const pageId = page.value?.id
+  if (!edit) return
   mutate((d) => {
-    const target = d.pages.find((p) => p.id === pageId)
+    const target = d.pages.find((p) => p.id === edit.pageId)
     if (!target) return
-    if (edit?.index == null) target.tiles.push(tile)
+    if (edit.index == null) target.tiles.push(tile)
     else target.tiles[edit.index] = tile
   })
 }
@@ -232,17 +237,15 @@ function removeTile() {
   const edit = tileEdit.value
   tileEdit.value = null
   if (edit?.index == null) return
-  const pageId = page.value?.id
-  mutate((d) => d.pages.find((p) => p.id === pageId)?.tiles.splice(edit.index!, 1))
+  mutate((d) => d.pages.find((p) => p.id === edit.pageId)?.tiles.splice(edit.index!, 1))
 }
 
 function duplicateTile() {
   const edit = tileEdit.value
   tileEdit.value = null
-  if (edit?.index == null || !page.value || page.value.tiles.length >= LIMITS.tiles) return
-  const pageId = page.value.id
+  if (edit?.index == null || (pageById(edit.pageId)?.tiles.length ?? LIMITS.tiles) >= LIMITS.tiles) return
   mutate((d) => {
-    const target = d.pages.find((p) => p.id === pageId)
+    const target = d.pages.find((p) => p.id === edit.pageId)
     const source = target?.tiles[edit.index!]
     if (target && source) target.tiles.splice(edit.index! + 1, 0, { ...clone(source), id: newId() })
   })
@@ -287,7 +290,7 @@ function tileStyle(tile: Tile) {
   return tile.color ? { background: `color-mix(in srgb, ${tile.color} 20%, var(--surface))`, color: tile.color } : {}
 }
 
-const dragged = computed(() => (press.value?.moved && editing.value ? page.value?.tiles[press.value.index] : undefined))
+const dragged = computed(() => (press.value?.moved && editing.value ? pageById(press.value.pageId)?.tiles[press.value.index] : undefined))
 </script>
 
 <template>
@@ -362,7 +365,7 @@ const dragged = computed(() => (press.value?.moved && editing.value ? page.value
             ]"
             :style="tileStyle(tile)"
             :aria-label="tile.label || undefined"
-            @pointerdown="onTileDown(ti, $event)"
+            @pointerdown="onTileDown(p.id, ti, $event)"
             @pointermove="onTileMove"
             @pointerup="onTileUp($event)"
             @pointercancel="onTileUp($event, true)"
@@ -380,14 +383,14 @@ const dragged = computed(() => (press.value?.moved && editing.value ? page.value
             type="button"
             class="grid aspect-square place-items-center rounded-[22px] border border-dashed border-line-strong text-muted"
             aria-label="Add button"
-            @click="addTile"
+            @click="addTile(p)"
           >
             <Plus :size="26" />
           </button>
         </div>
         <div v-if="p.tiles.length === 0 && !editing" class="flex flex-col items-center gap-3 py-16 text-center text-muted">
           <p class="text-[15px]">No buttons on this page yet.</p>
-          <button type="button" class="h-10 rounded-full bg-surface-3 px-4 text-[14px] font-medium text-text" @click="((editing = true), addTile())">
+          <button type="button" class="h-10 rounded-full bg-surface-3 px-4 text-[14px] font-medium text-text" @click="(addTile(p), (editing = true))">
             Add a button
           </button>
         </div>

@@ -9,6 +9,14 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixes
+
+- Deck buttons you add yourself open the right editor again. After you
+  switched tabs, the deck could show one page while acting on another, so
+  tapping or holding a button could run or edit the button in the same spot
+  on the other page, such as **Play / Pause**. The deck now also comes back
+  on the page you left it on.
+
 ## [0.5.0] - 2026-10-28
 
 The trackpad feels more like a Mac's. Pinch to zoom smoothly and turn two
