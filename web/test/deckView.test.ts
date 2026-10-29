@@ -1,6 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { nextTick } from 'vue'
+import { KeepAlive, defineComponent, h, nextTick, ref, type Component } from 'vue'
 import { FakeSocket, lastSocket, welcome } from './fakeSocket'
 
 let conn: typeof import('../src/lib/connection')
@@ -47,7 +47,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-async function deckView(selected: string) {
+async function deckView(selected: string, wrap?: (deckView: Component) => Component) {
   conn.connect()
   const socket = lastSocket()
   socket.open()
@@ -55,7 +55,7 @@ async function deckView(selected: string) {
   const { settings } = await import('../src/lib/settings')
   settings.deckPage = selected
   const { default: DeckView } = await import('../src/views/DeckView.vue')
-  const view = mount(DeckView, { attachTo: document.body })
+  const view = mount(wrap ? wrap(DeckView) : DeckView, { attachTo: document.body })
   await nextTick()
   return { socket, settings, view }
 }
@@ -107,6 +107,23 @@ describe('DeckView', () => {
       ['Mute', 'Play / Pause'],
       ['Finder', 'Safari'],
     ])
+    view.unmount()
+  })
+
+  it('scrolls back to the selected page when the deck comes back into view', async () => {
+    const shown = ref(true)
+    const Other = defineComponent({ render: () => h('div') })
+    const { view } = await deckView('apps', (DeckView) =>
+      defineComponent({ render: () => h(KeepAlive, null, { default: () => h(shown.value ? DeckView : Other) }) }),
+    )
+    const strip = document.querySelector<HTMLElement>('[role="tabpanel"]')!.parentElement!
+    Object.defineProperty(strip, 'clientWidth', { value: 320 })
+    const scrollTo = vi.spyOn(strip, 'scrollTo')
+    shown.value = false
+    await nextTick()
+    shown.value = true
+    await nextTick()
+    expect(scrollTo).toHaveBeenLastCalledWith({ left: 320, behavior: 'instant' })
     view.unmount()
   })
 })
