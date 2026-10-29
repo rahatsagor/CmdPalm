@@ -11,6 +11,10 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ### Fixes
 
+- The Mac app icon uses Liquid Glass on macOS 26 and later, with dark,
+  clear and tinted appearances. Its shape and spacing line up with other
+  icons in the Dock and Finder, including on macOS 15. The icon on the
+  phone's home screen and in the browser matches it.
 - Deck buttons you add yourself open the right editor again. After you
   switched tabs, the deck could show one page while acting on another, so
   tapping or holding a button could run or edit the button in the same spot

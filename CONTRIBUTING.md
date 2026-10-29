@@ -114,19 +114,36 @@ xcodebuild test -project CmdPalm.xcodeproj -scheme CmdPalm -destination "platfor
 
 ## App icon
 
-The editable artwork is [`apple/Resources/icon.svg`](apple/Resources/icon.svg).
-It combines a phone, the Mac Command key and a touch point. To change the
-artwork and regenerate the Mac, browser and home-screen icons:
+The icon combines a phone, the Mac Command key and a touch point. The Mac
+app uses [`apple/CmdPalm/AppIcon.icon`](apple/CmdPalm/AppIcon.icon), an Icon
+Composer document with editable SVG layers in its `Assets/` directory. Open
+it with **Xcode > Open Developer Tool > Icon Composer** to adjust the glass,
+colors and appearance variants. The Command symbol uses filled outlines so
+its loops stay open when Icon Composer applies a different fill.
+
+Keep the native layers on their full 1024px canvas without an outer corner
+mask, padding or baked shadows. Xcode supplies the final icon shape and
+spacing, compiles the layered icon for macOS 26 and later, and generates
+the fallback images for macOS 15. Preview Default, Dark and Mono (clear and
+tinted) appearances, both design generations, and small sizes before
+committing changes. Do not add a second `AppIcon` inside `Assets.xcassets`.
+
+The browser and phone home-screen icons are built from the same layers, so
+there is only one design to edit. After changing a layer, regenerate them:
 
 ```sh
 brew install librsvg
 scripts/icons.sh
 ```
 
-Commit the SVG and generated PNGs together. The web SVG keeps its rounded
-background; home-screen and Mac assets use square artwork for the platform
-mask. All of the artwork fits inside the home-screen icon's safe area.
-Normal app builds use the committed assets and don't need librsvg.
+The script reuses each layer's shapes and adds the web icon's own
+gradients and shadows. It restyles the layers by their fill colors and
+stops with an error if one is missing, so update the colors in
+`scripts/icons.sh` along with the layers when you change them. Commit the
+layers and the generated files in `web/public/` together. The web SVG keeps
+its rounded background; phone home-screen PNGs use square artwork for the
+platform mask. Normal app builds compile `AppIcon.icon` and use the
+committed web assets, so they do not need librsvg or a separate icon export.
 
 ## Guidelines
 

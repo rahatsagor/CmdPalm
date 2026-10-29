@@ -53,6 +53,7 @@ targets:
         PRODUCT_NAME: CmdPalm
         INFOPLIST_FILE: CmdPalm/Info.plist
         CODE_SIGN_ENTITLEMENTS: CmdPalm/CmdPalm.entitlements
+        # AppIcon.icon supplies Liquid Glass and Xcode's older-macOS fallback.
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         SWIFT_INCLUDE_PATHS: $(SRCROOT)/Generated

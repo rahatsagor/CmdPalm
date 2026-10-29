@@ -1,0 +1,106 @@
+{
+  "fill": {
+    "automatic-gradient": "extended-srgb:0.97647,0.50588,0.23922,1.00000"
+  },
+  "groups": [
+    {
+      "name": "Touch",
+      "layers": [
+        {
+          "image-name": "03-touch.svg",
+          "name": "Touch point"
+        }
+      ],
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.3
+      },
+      "translucency": {
+        "enabled": true,
+        "value": 0.12
+      }
+    },
+    {
+      "name": "Command",
+      "layers": [
+        {
+          "image-name": "02-command.svg",
+          "name": "Command",
+          "glass": false,
+          "fill-specializations": [
+            {
+              "appearance": "dark",
+              "value": {
+                "solid": "extended-srgb:1.00000,0.96078,0.89412,1.00000"
+              }
+            },
+            {
+              "appearance": "tinted",
+              "value": {
+                "solid": "extended-srgb:0.00000,0.00000,0.00000,1.00000"
+              }
+            }
+          ]
+        }
+      ],
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0
+      },
+      "translucency": {
+        "enabled": false,
+        "value": 0
+      }
+    },
+    {
+      "name": "Phone",
+      "layers": [
+        {
+          "image-name": "04-phone-details.svg",
+          "name": "Phone details",
+          "glass": false
+        },
+        {
+          "image-name": "01-phone.svg",
+          "name": "Phone surface",
+          "fill-specializations": [
+            {
+              "appearance": "dark",
+              "value": {
+                "solid": "extended-srgb:0.64314,0.27843,0.14510,1.00000"
+              }
+            },
+            {
+              "appearance": "tinted",
+              "value": {
+                "solid": "extended-srgb:1.00000,1.00000,1.00000,1.00000"
+              }
+            }
+          ]
+        }
+      ],
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.35
+      },
+      "translucency": {
+        "enabled": true,
+        "value": 0.18
+      },
+      "translucency-specializations": [
+        {
+          "appearance": "tinted",
+          "value": {
+            "enabled": false,
+            "value": 0
+          }
+        }
+      ]
+    }
+  ],
+  "supported-platforms": {
+    "squares": [
+      "macOS"
+    ]
+  }
+}
