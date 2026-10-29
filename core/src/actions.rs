@@ -136,7 +136,7 @@ pub(crate) fn paste(shared: &Shared, session: SessionId, text: &str) -> Result<(
 }
 
 fn url_allowed(url: &str, allow_shell: bool) -> bool {
-    let Some((scheme, _)) = url.split_once(':') else { return false };
+    let Some((scheme, _)) = url.trim().split_once(':') else { return false };
     let scheme = scheme.to_ascii_lowercase();
     if scheme.is_empty() || !scheme.chars().all(|c| c.is_ascii_alphanumeric() || "+-.".contains(c)) {
         return false;
@@ -147,6 +147,17 @@ fn url_allowed(url: &str, allow_shell: bool) -> bool {
         "file" => allow_shell,
         _ => true,
     }
+}
+
+/// Waits for the input queued before a step that acts outside the engine, so
+/// an app never comes forward mid-typing and a shortcut never reads the
+/// clipboard before ⌘C lands.
+fn settle(shared: &Shared, session: SessionId) -> Result<(), String> {
+    shared.flush_engine();
+    if shared.should_stop(session) {
+        return Err(STOPPED.into());
+    }
+    Ok(())
 }
 
 /// Runs one action. Steps stop as soon as the device disconnects or input is
@@ -171,15 +182,18 @@ pub(crate) fn execute(shared: &Shared, session: SessionId, action: &Action, dept
         }
         Action::Media { key } => input(shared, session, Input::Media { key: *key, op: PressOp::Click }),
         Action::App { id, op } => {
+            settle(shared, session)?;
             if !shared.delegate.app_action(id.clone(), *op) {
                 return Err(format!("Couldn't find the app “{id}” on the Mac."));
             }
         }
         Action::Url { url } => {
+            let url = url.trim();
             if !url_allowed(url, shared.config().allow_shell) {
                 return Err("That kind of link isn't allowed.".into());
             }
-            if !shared.delegate.open_url(url.clone()) {
+            settle(shared, session)?;
+            if !shared.delegate.open_url(url.to_string()) {
                 return Err("The Mac couldn't open that link.".into());
             }
         }
@@ -195,6 +209,7 @@ pub(crate) fn execute(shared: &Shared, session: SessionId, action: &Action, dept
             }
         },
         Action::Shortcut { name } => {
+            settle(shared, session)?;
             if !shared.delegate.run_shortcut(name.clone()) {
                 return Err(format!("Couldn't run the shortcut “{name}”."));
             }
@@ -203,6 +218,7 @@ pub(crate) fn execute(shared: &Shared, session: SessionId, action: &Action, dept
             if !shared.config().allow_shell {
                 return Err("Shell commands are turned off. Turn them on in CmdPalm settings on the Mac.".into());
             }
+            settle(shared, session)?;
             run_shell(command, shared.interrupts.clone())?;
         }
         Action::Mouse { button, clicks } => {
@@ -346,6 +362,7 @@ mod tests {
     #[test]
     fn file_links_need_shell_permission() {
         assert!(url_allowed("https://example.com", false));
+        assert!(url_allowed(" https://example.com\n", false), "pasted links often carry spaces");
         assert!(url_allowed("raycast://extensions", false));
         assert!(!url_allowed("file:///tmp/x.command", false));
         assert!(url_allowed("file:///tmp/x.command", true));

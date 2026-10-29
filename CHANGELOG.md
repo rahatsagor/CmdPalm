@@ -31,6 +31,15 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - On Android and in desktop browsers, tapping a key while editing a custom
   keyboard opens **Edit key** for that key, instead of a **New key** sheet
   that couldn't delete it.
+- A deck button's steps run in order. Opening an app or link, or running a
+  shortcut or shell command, now waits for the keys and text before it, so
+  text no longer lands in the app that just opened and a shortcut reads
+  what ⌘C copied.
+- Links pasted with a space before or after them open, instead of being
+  refused as a kind of link that isn't allowed.
+- Several phones and tablets on the same Wi-Fi can connect at once over
+  IPv6. They shared one connection limit, so loading the app on one could
+  leave another unable to connect.
 
 ## [0.5.0] - 2026-10-28
 

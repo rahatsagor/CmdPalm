@@ -171,7 +171,7 @@ deck buttons store, tagged by `kind`:
 | `text` | `text`, `enter` |
 | `media` | `key` |
 | `app` | `id` (bundle identifier), `op`: `open`, `toggle`, `hide`, `quit` |
-| `url` | `url`. `javascript:` and `data:` are refused; `file:` only works while shell commands are allowed |
+| `url` | `url`, with surrounding spaces ignored. `javascript:` and `data:` are refused; `file:` only works while shell commands are allowed |
 | `system` | `name`, e.g. `missionControl`, `launchpad`, `lockScreen`, `screenshotArea`; see `SystemAction` |
 | `shortcut` | `name` of a macOS Shortcuts automation |
 | `shell` | `command`; refused unless allowed on the Mac. Pausing input stops commands that are still running. |

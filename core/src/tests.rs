@@ -12,8 +12,8 @@ use tokio_tungstenite::tungstenite::Message;
 
 use crate::api::{HostConfig, HostDelegate, HostEvent, LinkHost, NativeCommand};
 use crate::host::{CoreHost, Shared};
-use crate::input::{InputEngine, SharedRecorder, Synth};
-use crate::keycodes::{KEY_COMMAND, KEY_Q, KEY_RIGHT_COMMAND, flags};
+use crate::input::{EventSink, InputEngine, SharedRecorder, Synth};
+use crate::keycodes::{KEY_C, KEY_COMMAND, KEY_Q, KEY_RIGHT_COMMAND, flags, mods};
 use crate::protocol::{AppEntry, AppOp};
 
 #[derive(Default)]
@@ -21,8 +21,19 @@ struct MockDelegate {
     events: Mutex<Vec<HostEvent>>,
     opened: Mutex<Vec<String>>,
     voice: Mutex<Vec<&'static str>>,
+    /// The events posted so far, to tell when each call below happened.
+    posted: SharedRecorder,
+    /// App, link and shortcut calls, with how many events were posted by then.
+    calls: Mutex<Vec<(String, usize)>>,
     /// The next app list is slow and lists an app that has since quit.
     slow_stale_apps: std::sync::atomic::AtomicBool,
+}
+
+impl MockDelegate {
+    fn call(&self, name: String) {
+        let posted = self.posted.0.lock().unwrap().len();
+        self.calls.lock().unwrap().push((name, posted));
+    }
 }
 
 impl HostDelegate for MockDelegate {
@@ -52,16 +63,19 @@ impl HostDelegate for MockDelegate {
         Some(b"\x89PNG".to_vec())
     }
     fn app_action(&self, id: String, _op: AppOp) -> bool {
+        self.call(format!("app {id}"));
         self.opened.lock().unwrap().push(id);
         true
     }
-    fn open_url(&self, _url: String) -> bool {
+    fn open_url(&self, url: String) -> bool {
+        self.call(format!("url {url}"));
         true
     }
     fn native(&self, _command: NativeCommand) -> bool {
         true
     }
-    fn run_shortcut(&self, _name: String) -> bool {
+    fn run_shortcut(&self, name: String) -> bool {
+        self.call(format!("shortcut {name}"));
         true
     }
     fn set_volume(&self, _value: Option<f32>, _muted: Option<bool>) {}
@@ -95,7 +109,26 @@ struct Fixture {
     rt: tokio::runtime::Runtime,
 }
 
+/// Sleeps through pauses like the Mac does, so typing takes real time.
+struct Paced(SharedRecorder);
+
+impl EventSink for Paced {
+    fn post(&mut self, event: Synth) {
+        if let Synth::Pause(duration) = event {
+            std::thread::sleep(duration);
+        }
+        self.0.post(event);
+    }
+    fn cursor(&mut self) -> (f64, f64) {
+        self.0.cursor()
+    }
+}
+
 fn fixture() -> Fixture {
+    fixture_with(false)
+}
+
+fn fixture_with(paced: bool) -> Fixture {
     let dir = tempfile::tempdir().unwrap();
     let web = dir.path().join("web");
     std::fs::create_dir_all(web.join("assets")).unwrap();
@@ -117,8 +150,12 @@ fn fixture() -> Fixture {
     };
     let recorder = SharedRecorder::default();
     let sink = recorder.clone();
-    let engine = InputEngine::spawn(move || sink, Box::new(|_| {}));
-    let delegate = Arc::new(MockDelegate::default());
+    let engine = if paced {
+        InputEngine::spawn(move || Paced(sink), Box::new(|_| {}))
+    } else {
+        InputEngine::spawn(move || sink, Box::new(|_| {}))
+    };
+    let delegate = Arc::new(MockDelegate { posted: recorder.clone(), ..MockDelegate::default() });
     let shared = Arc::new(Shared::new(config.clone(), delegate.clone(), &engine, Box::new(|| true)));
     let host = CoreHost::with_shared(shared, Some(engine));
     let port = host.start().unwrap();
@@ -510,11 +547,29 @@ fn a_proxy_on_ipv6_loopback_gets_the_proxy_limit() {
     let shared = Arc::new(Shared::new(config, f.delegate.clone(), &engine, Box::new(|| true)));
     let loopback: std::net::IpAddr = "::1".parse().unwrap();
     let slots: Vec<_> = std::iter::from_fn(|| ConnectionSlot::take(&shared, loopback)).take(100).collect();
-    assert_eq!(slots.len(), 64, "::1 is masked to its /64 only after the loopback check");
-    drop(slots);
-    let lan: std::net::IpAddr = "fd00::5".parse().unwrap();
-    let slots: Vec<_> = std::iter::from_fn(|| ConnectionSlot::take(&shared, lan)).take(100).collect();
-    assert_eq!(slots.len(), 16);
+    assert_eq!(slots.len(), 64);
+}
+
+#[test]
+fn phones_on_one_ipv6_network_get_their_own_connections() {
+    use crate::server::ConnectionSlot;
+    let f = fixture();
+    let engine = InputEngine::spawn(SharedRecorder::default, Box::new(|_| {}));
+    let shared = Arc::new(Shared::new(f.config.clone(), f.delegate.clone(), &engine, Box::new(|| true)));
+    let take = |address: &str| {
+        let address: std::net::IpAddr = address.parse().unwrap();
+        std::iter::from_fn(|| ConnectionSlot::take(&shared, address)).take(100).collect::<Vec<_>>()
+    };
+    let first = take("fd00::5");
+    assert_eq!(first.len(), 16);
+    let second = take("fd00::6");
+    assert_eq!(second.len(), 16, "a second phone in the same /64 isn't refused");
+    let rest: Vec<_> = (7..20).flat_map(|host| take(&format!("fd00::{host}"))).collect();
+    assert_eq!(rest.len(), 32, "one /64 can't take every connection");
+    let other = take("fd01::5");
+    assert_eq!(other.len(), 16);
+    drop(first);
+    assert_eq!(take("fd00::5").len(), 16, "closed connections free their slots");
 }
 
 #[test]
@@ -705,6 +760,43 @@ fn right_side_modifiers_arrive_from_the_wire_and_unknown_bits_are_refused() {
             Synth::Flags { code: KEY_RIGHT_COMMAND, flags: 0 },
         ],
         "only the tap with known bits is typed"
+    );
+}
+
+#[test]
+fn deck_steps_wait_for_the_input_queued_before_them() {
+    let f = fixture_with(true);
+    let code = f.host.pairing_info().link.split("#pair=").nth(1).unwrap().to_string();
+    // A hundred pieces of text, each followed by a short pause.
+    let text = "a".repeat(1600);
+    f.rt.block_on(async {
+        let mut ws = connect(f.port).await;
+        send(&mut ws, hello("phone", json!({"method": "pair", "code": code}))).await;
+        assert_eq!(recv(&mut ws).await["t"], "welcome");
+        let steps = json!([
+            {"kind": "text", "text": text},
+            {"kind": "app", "id": "com.apple.Notes"},
+            {"kind": "keys", "code": KEY_C, "mods": mods::COMMAND, "char": "c"},
+            {"kind": "shortcut", "name": "Tidy"},
+            {"kind": "url", "url": " https://example.com\n"},
+        ]);
+        send(&mut ws, json!({"t": "action", "id": 1, "action": {"kind": "sequence", "steps": steps}})).await;
+        let result = recv_kind(&mut ws, "actionResult").await;
+        assert_eq!(result["ok"], true, "{result}");
+    });
+    let events = f.recorder.take();
+    let typed = events.iter().filter(|e| matches!(e, Synth::Text { .. })).count();
+    assert_eq!(typed, 100);
+    assert!(events[typed..].iter().any(|e| matches!(e, Synth::Key { code: KEY_C, down: false, .. })), "{events:?}");
+    let all = events.len();
+    assert_eq!(
+        f.delegate.calls.lock().unwrap().as_slice(),
+        [
+            ("app com.apple.Notes".to_string(), typed),
+            ("shortcut Tidy".to_string(), all),
+            ("url https://example.com".to_string(), all),
+        ],
+        "the app comes forward after the typing, and the shortcut after ⌘C"
     );
 }
 

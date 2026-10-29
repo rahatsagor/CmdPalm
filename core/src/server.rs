@@ -31,6 +31,9 @@ const ICON_CACHE_LIMIT: usize = 256;
 /// file descriptors and lock out real phones.
 const MAX_CONNECTIONS: usize = 128;
 const MAX_CONNECTIONS_PER_ADDRESS: usize = 16;
+/// One machine can use any number of IPv6 addresses in its /64, but phones
+/// on the same home network share one too, so a /64 gets several devices' worth.
+const MAX_CONNECTIONS_PER_PREFIX: usize = MAX_CONNECTIONS / 2;
 const MAX_REQUESTS_PER_CONNECTION: usize = 200;
 const MAX_KEEP_ALIVE: Duration = Duration::from_secs(120);
 pub const MAX_MESSAGE: usize = 1 << 20;
@@ -187,8 +190,7 @@ fn open_connections(shared: &Shared) -> usize {
     shared.connections.lock().unwrap_or_else(|p| p.into_inner()).values().sum()
 }
 
-/// Counts an open connection until dropped. IPv6 peers are counted per /64,
-/// since one machine can use any number of addresses in its prefix.
+/// Counts an open connection until dropped.
 pub(crate) struct ConnectionSlot {
     shared: Arc<Shared>,
     peer: IpAddr,
@@ -197,15 +199,15 @@ pub(crate) struct ConnectionSlot {
 impl ConnectionSlot {
     pub(crate) fn take(shared: &Arc<Shared>, peer: IpAddr) -> Option<Self> {
         // A reverse proxy on this Mac connects from loopback on behalf of
-        // every phone that uses it. Checked before masking, which turns ::1
-        // into ::.
+        // every phone that uses it.
         let proxy = peer.is_loopback() && shared.config().allow_local_proxy;
-        let peer = auth::throttle_key(peer);
+        let prefix = auth::throttle_key(peer);
         let mut open = shared.connections.lock().unwrap_or_else(|p| p.into_inner());
         let total: usize = open.values().sum();
+        let in_prefix: usize = open.iter().filter(|(a, _)| auth::throttle_key(**a) == prefix).map(|(_, n)| n).sum();
         let limit = if proxy { MAX_CONNECTIONS / 2 } else { MAX_CONNECTIONS_PER_ADDRESS };
         let mine = open.entry(peer).or_insert(0);
-        if total >= MAX_CONNECTIONS || *mine >= limit {
+        if total >= MAX_CONNECTIONS || in_prefix >= MAX_CONNECTIONS_PER_PREFIX || *mine >= limit {
             if *mine == 0 {
                 open.remove(&peer);
             }

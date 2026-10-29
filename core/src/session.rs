@@ -152,7 +152,6 @@ pub(crate) async fn run<S>(
     let id = shared.next_id();
     let key = auth::random_token(18);
     let (tx, mut outgoing) = mpsc::unbounded_channel();
-    let features = shared.features(secure);
     let config = shared.config();
     let saved_settings = if authorized.remembered { shared.device_settings().get(&device.id).cloned() } else { None };
     let welcome = {
@@ -174,6 +173,9 @@ pub(crate) async fn run<S>(
                 tx,
             },
         );
+        // Read once the session is listed, so a settings or permission change
+        // that misses this read still sends it the new features.
+        let features = shared.features(secure);
         ServerMessage::Welcome {
             v: PROTOCOL_VERSION,
             host: HostInfo {

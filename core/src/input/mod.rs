@@ -163,7 +163,8 @@ impl EventSink for LogSink {
             Synth::Text { text } => {
                 tracing::info!(target: "cmdpalm::synth", "Text({} characters)", text.chars().count())
             }
-            Synth::Key { .. } => tracing::debug!(target: "cmdpalm::synth", "{event:?}"),
+            // Key codes would spell out what was typed.
+            Synth::Key { .. } => tracing::debug!(target: "cmdpalm::synth", "Key"),
             _ => tracing::info!(target: "cmdpalm::synth", "{event:?}"),
         }
     }
