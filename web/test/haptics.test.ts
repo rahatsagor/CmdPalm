@@ -50,15 +50,29 @@ describe('haptics on iPhone', () => {
   it('lets a tap on a haptic control play only the haptics it asked for', async () => {
     const { haptic, switchOnly, tapZone } = await import('@/lib/haptics')
     expect(switchOnly).toBe(true)
-    tapZone.down()
-    tapZone.up()
+    tapZone.down(1)
+    tapZone.up(1)
     expect(tapZone.claim()).toBe(false)
 
-    tapZone.down()
+    tapZone.down(1)
     haptic('select')
-    tapZone.up()
+    tapZone.up(1)
     expect(tapZone.claim()).toBe(true)
     expect(tapZone.claim()).toBe(false)
+  })
+
+  it('hears a lift even when the control was gone by then', async () => {
+    vi.useFakeTimers()
+    const { haptic, tapZone } = await import('@/lib/haptics')
+    tapZone.down(1)
+    document.dispatchEvent(new PointerEvent('pointerup', { pointerId: 1, bubbles: true }))
+    vi.advanceTimersByTime(500)
+    // No longer on a control, so this one plays at once instead of waiting.
+    haptic('select')
+    tapZone.down(2)
+    tapZone.up(2)
+    expect(tapZone.claim()).toBe(false)
+    vi.useRealTimers()
   })
 
   it('keeps pointerdown for taps that need their click, unless a field is focused', async () => {

@@ -200,6 +200,19 @@ function onTileUp(event: PointerEvent, cancelled = false) {
   else void run(tile)
 }
 
+/** A button pressed from a keyboard, or by a screen reader. */
+function activate(pageId: string, tile: Tile) {
+  if (editing.value) tileEdit.value = { tile, pageId, isNew: false }
+  else void run(tile)
+}
+
+// Taps run on pointerup and give their click a detail of 1 or more; a
+// screen reader's click has none. The hidden switch's own copy of the
+// click is ignored.
+function onTileClick(pageId: string, tile: Tile, event: MouseEvent) {
+  if (event.detail === 0 && !(event.target instanceof HTMLInputElement)) activate(pageId, tile)
+}
+
 function onLostCapture(event: PointerEvent) {
   // A tile being dragged can lose capture when the reorder moves it in the
   // DOM; the drag still ends on the next lift (see onStrayUp).
@@ -375,6 +388,7 @@ const dragged = computed(() => (press.value?.moved && editing.value ? pageById(p
             v-for="(tile, ti) in p.tiles"
             :key="tile.id"
             role="button"
+            tabindex="0"
             :data-tile-index="pi === index ? ti : undefined"
             class="tile relative block aspect-square rounded-[22px] border border-line transition-[transform,opacity,background-color] duration-150 active:scale-[0.96]"
             :class="[
@@ -391,6 +405,9 @@ const dragged = computed(() => (press.value?.moved && editing.value ? pageById(p
             @pointerup="onTileUp($event)"
             @pointercancel="onTileUp($event, true)"
             @lostpointercapture="onLostCapture"
+            @click="onTileClick(p.id, tile, $event)"
+            @keydown.enter.prevent="activate(p.id, tile)"
+            @keydown.space.prevent="activate(p.id, tile)"
             @contextmenu.prevent
           >
             <TileFace :tile="tile" :size="tileSize(p)" />

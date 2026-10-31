@@ -63,6 +63,12 @@ async function cachedCopy(request) {
 
 async function respond(event) {
   const request = event.request
+  // Built files have hashed names and never change, and a cached page opened
+  // while the Mac is unreachable would otherwise wait on each of them.
+  if (new URL(request.url).pathname.startsWith('/assets/')) {
+    const cached = await caches.match(request)
+    if (cached) return cached
+  }
   const network = fetch(request).then((response) => {
     if (response.ok) event.waitUntil(store(request, response.clone()).catch(() => {}))
     return response

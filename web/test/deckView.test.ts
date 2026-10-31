@@ -89,6 +89,21 @@ describe('DeckView', () => {
     view.unmount()
   })
 
+  it('runs a button from the keyboard, and edits it in edit mode', async () => {
+    const { socket, view } = await deckView('essentials')
+    const target = tile('My Button')
+    expect(target.tabIndex).toBe(0)
+    target.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await nextTick()
+    expect(socket.sent.filter((m) => m.t === 'action')).toMatchObject([{ action: { kind: 'app', id: 'com.apple.Safari' } }])
+
+    await view.findAll('button').find((b) => b.text() === 'Edit')!.trigger('click')
+    tile('Mute').dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }))
+    await nextTick()
+    expect(document.querySelector('[role="dialog"]')?.getAttribute('aria-label')).toBe('Edit button')
+    view.unmount()
+  })
+
   it('edits and saves the button that was held, on its own page', async () => {
     const { socket, settings, view } = await deckView('essentials')
     const target = tile('My Button')

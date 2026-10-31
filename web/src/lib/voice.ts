@@ -21,6 +21,9 @@ let finals: ((text: string) => void) | null = null
 let starting = false
 /** Bumped by every stop, so a start still awaiting the microphone knows it was cancelled. */
 let generation = 0
+/** Whether the Mac is dictating for this page. Its last update for a dictation
+ * already stopped here can arrive after the next start, and must not end it. */
+let macListening = false
 
 export function voiceSupported(): boolean {
   return window.isSecureContext && !!navigator.mediaDevices?.getUserMedia && typeof AudioWorkletNode !== 'undefined'
@@ -37,8 +40,8 @@ onMessage((message) => {
   } else if (message.state === 'stopped') {
     if (message.text) finals?.(message.text)
     voice.partial = ''
-    void stopVoice(false, false)
-  } else {
+    if (macListening) void stopVoice(false, false)
+  } else if (macListening) {
     voice.error = message.message ?? 'Speech recognition stopped.'
     void stopVoice(true, false)
   }
@@ -114,6 +117,7 @@ export async function startVoice(onFinal: (text: string) => void, locale = navig
     node = worklet
     finals = onFinal
     voice.active = true
+    macListening = true
     if (!send({ t: 'voiceStart', locale })) {
       voice.error = 'Not connected to the Mac.'
       await stopVoice(true, false)
@@ -131,6 +135,7 @@ export async function startVoice(onFinal: (text: string) => void, locale = navig
 export async function stopVoice(cancel = false, notifyMac = true) {
   generation++
   starting = false
+  macListening = false
   if (notifyMac && voice.active) send({ t: 'voiceStop', cancel })
   voice.active = false
   voice.level = 0

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { EyeOff, LoaderCircle, Power, RefreshCw, Search, SquarePlus, SquareArrowOutUpRight } from '@lucide/vue'
-import { computed, onActivated, onMounted, ref } from 'vue'
+import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref } from 'vue'
 import AppIcon from '@/components/AppIcon.vue'
 import Segmented from '@/components/Segmented.vue'
 import Sheet from '@/components/Sheet.vue'
@@ -58,6 +58,9 @@ function onDown(app: AppEntry) {
 function onUp() {
   clearTimeout(longTimer)
 }
+// A hold that outlives the tab would open the menu over another tab.
+onDeactivated(onUp)
+onBeforeUnmount(onUp)
 function onClick(app: AppEntry) {
   if (longFired) return
   act(app, 'toggle')

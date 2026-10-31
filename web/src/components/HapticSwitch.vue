@@ -7,8 +7,8 @@ import { switchOnly, tapZone } from '@/lib/haptics'
 const control = ref<HTMLInputElement>()
 let label: HTMLLabelElement | null = null
 
-const down = () => tapZone.down()
-const up = () => tapZone.up()
+// Lifts are heard by lib/haptics.ts itself, even after this label is gone.
+const down = (event: PointerEvent) => tapZone.down(event.pointerId)
 function click(event: MouseEvent) {
   if (event.target === control.value) return
   // Toggling the switch is what plays the haptic; a cancelled click leaves it alone.
@@ -22,14 +22,10 @@ onMounted(() => {
   label = control.value?.closest('label') ?? null
   if (!label) return
   label.addEventListener('pointerdown', down, true)
-  label.addEventListener('pointerup', up, true)
-  label.addEventListener('pointercancel', up, true)
   label.addEventListener('click', click)
 })
 onBeforeUnmount(() => {
   label?.removeEventListener('pointerdown', down, true)
-  label?.removeEventListener('pointerup', up, true)
-  label?.removeEventListener('pointercancel', up, true)
   label?.removeEventListener('click', click)
   label = null
 })

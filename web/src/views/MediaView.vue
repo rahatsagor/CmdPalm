@@ -11,6 +11,7 @@ import type { MediaKey } from '@/lib/protocol'
 
 // Media keys act on whatever the Mac's Now Playing app is.
 const held = ref<MediaKey | null>(null)
+let holder: number | null = null
 let release: (() => void) | null = null
 
 function down(key: MediaKey, event: PointerEvent) {
@@ -18,19 +19,27 @@ function down(key: MediaKey, event: PointerEvent) {
   if (held.value) return
   ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
   held.value = key
+  holder = event.pointerId
   release = pressMedia(key)
   haptic('light')
 }
-function up(key: MediaKey) {
-  if (held.value !== key) return
-  held.value = null
-  release?.()
-  release = null
+function up(key: MediaKey, event: PointerEvent) {
+  // A second finger on a held key mustn't let go of it when it lifts.
+  if (held.value !== key || event.pointerId !== holder) return
+  letGo()
 }
 function letGo() {
   held.value = null
+  holder = null
   release?.()
   release = null
+}
+// Taps act on pointerdown, and their click has a detail of 1 or more. A
+// click from a keyboard or screen reader has none, so it taps the key here.
+function activate(key: MediaKey, event: MouseEvent) {
+  if (event.detail !== 0 || held.value) return
+  pressMedia(key)()
+  haptic('light')
 }
 // The finger may still be down when the tab changes; its lift never arrives.
 onDeactivated(letGo)
@@ -100,8 +109,9 @@ const extra = [
           ]"
           :aria-label="item.label"
           @pointerdown="down(item.key, $event)"
-          @pointerup="up(item.key)"
-          @pointercancel="up(item.key)"
+          @pointerup="up(item.key, $event)"
+          @pointercancel="up(item.key, $event)"
+          @click="activate(item.key, $event)"
         >
           <span v-if="!item.icon" class="flex items-center">
             <Play :size="22" fill="currentColor" /><Pause :size="22" fill="currentColor" />
@@ -145,8 +155,9 @@ const extra = [
               class="h-10 flex-1 touch-none rounded-xl bg-surface-3 text-[18px]"
               :aria-label="key === 'volumeUp' ? 'Volume up' : 'Volume down'"
               @pointerdown="down(key, $event)"
-              @pointerup="up(key)"
-              @pointercancel="up(key)"
+              @pointerup="up(key, $event)"
+              @pointercancel="up(key, $event)"
+              @click="activate(key, $event)"
             >
               {{ key === 'volumeUp' ? '+' : '−' }}
             </button>
@@ -164,8 +175,9 @@ const extra = [
           :class="held === item.key ? 'bg-surface-3' : 'bg-surface'"
           :aria-label="item.name"
           @pointerdown="down(item.key, $event)"
-          @pointerup="up(item.key)"
-          @pointercancel="up(item.key)"
+          @pointerup="up(item.key, $event)"
+          @pointercancel="up(item.key, $event)"
+          @click="activate(item.key, $event)"
         >
           <component :is="item.icon" :size="19" class="shrink-0 text-muted" />
           {{ item.label }}

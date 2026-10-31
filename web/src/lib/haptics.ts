@@ -40,7 +40,8 @@ export const PATTERN: Record<Haptic, number[]> = {
 // Earlier iOS versions also play the haptic for a scripted click, which
 // covers everything outside those controls.
 
-let fingers = 0
+/** Pointers down on haptic controls. */
+const fingers = new Set<number>()
 let owed = 0
 let settle: ReturnType<typeof setTimeout> | undefined
 // The click for a tap arrives after the finger lifts; a touch that turned
@@ -48,17 +49,16 @@ let settle: ReturnType<typeof setTimeout> | undefined
 const SETTLE_MS = 400
 
 /** A finger is on a haptic control, or just lifted from one. */
-const onControl = () => fingers > 0 || settle !== undefined
+const onControl = () => fingers.size > 0 || settle !== undefined
 
 export const tapZone = {
-  down() {
-    fingers++
+  down(pointerId: number) {
+    fingers.add(pointerId)
     clearTimeout(settle)
     settle = undefined
   },
-  up() {
-    fingers = Math.max(0, fingers - 1)
-    if (fingers > 0) return
+  up(pointerId: number) {
+    if (!fingers.delete(pointerId) || fingers.size > 0) return
     clearTimeout(settle)
     settle = setTimeout(() => {
       settle = undefined
@@ -71,6 +71,20 @@ export const tapZone = {
     owed--
     return true
   },
+}
+
+if (typeof document !== 'undefined') {
+  // Lifts are watched on the whole page: a control can leave it while a
+  // finger is on it (a tab switch, or the keyboard opening), and its own
+  // listeners then never hear the lift. Left counted, the finger would keep
+  // every later haptic waiting for a tap that never comes.
+  const lifted = (event: PointerEvent) => tapZone.up(event.pointerId)
+  document.addEventListener('pointerup', lifted, true)
+  document.addEventListener('pointercancel', lifted, true)
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'hidden') return
+    for (const id of fingers) tapZone.up(id)
+  })
 }
 
 /**
@@ -122,7 +136,7 @@ export function haptic(kind: Haptic = 'light') {
     return
   }
   if (onControl()) {
-    owed = Math.min(owed + 1, Math.max(1, fingers))
+    owed = Math.min(owed + 1, Math.max(1, fingers.size))
     return
   }
   // Clicking the label focuses the switch, which would close the keyboard.
