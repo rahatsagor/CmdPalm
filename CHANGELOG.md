@@ -9,6 +9,68 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-10-31
+
+A round of fixes that keep input in order and every device responsive.
+Pasted text arrives before the keys you press after it, other phones keep
+working while a long text is typed, the phone follows the Mac's keyboard
+layout right away, and deck and media buttons work with a keyboard and
+screen readers.
+
+### Mac app
+
+- Switching the Mac's keyboard layout, say from U.S. to German, updates
+  the keys on the phone right away, even while you use another app. Before,
+  the phone could keep the old layout until CmdPalm was next opened.
+- The QR code and PIN in Settings keep renewing even when they were
+  refreshed in the last second before they expired.
+- Importing a deck checks the file's size before reading it, so picking a
+  very large file by mistake no longer stalls the app.
+- Quitting CmdPalm and opening it again straight away leaves it running.
+  The new copy could hand over to the one that was quitting, and then both
+  were gone.
+- Saving the deck or pairing a device no longer holds up the other
+  connected devices while the change is written to disk.
+
+### Deck, apps and media
+
+- Pausing CmdPalm also stops what a shell command left running in the
+  background, such as `cmd &` or `nohup`.
+
+### Keyboard and voice
+
+- Text that is pasted always arrives before the keys you press after it.
+  Pressing Return right after a paste could send a message before the text
+  was in it.
+- While a long text is typed as key presses, other phones and tablets keep
+  working. Their keys, clicks and releases go through at once instead of
+  waiting for the typing to finish.
+- Tapping the microphone off and straight back on no longer cancels the new
+  dictation without a word.
+
+### Phone and tablet
+
+- When the Mac is asleep or out of reach, the app shows its "can't reach
+  your Mac" screen sooner, instead of waiting on files it already has.
+- Holding rewind or fast forward keeps going when another finger taps the
+  same button.
+- Holding an app in **Apps** and switching tabs no longer opens that app's
+  menu over the other tab.
+- Deck buttons and media buttons work with a keyboard and with VoiceOver
+  and TalkBack.
+- On iPhone, haptics keep working after a button disappears while your
+  finger is on it, for example when you switch tabs mid-press.
+
+### Privacy and security
+
+- Wrong PINs from another device on the network no longer block pairing by
+  approval on the Mac.
+- Behind a reverse proxy that adds to the `X-Forwarded-Host` and
+  `X-Forwarded-Proto` headers, CmdPalm uses the values the proxy added, not
+  ones the phone sent.
+- A device you remove on the Mac can't sneak back in by reconnecting at the
+  moment it is removed.
+
 ## [0.5.1] - 2026-10-30
 
 CmdPalm has a new Mac icon made for Liquid Glass, and a round of fixes.
@@ -470,7 +532,8 @@ The first release.
   device, so they survive a cleared browser, and you can copy them from
   another device.
 
-[Unreleased]: https://github.com/rahatsagor/CmdPalm/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/rahatsagor/CmdPalm/compare/v0.5.2...HEAD
+[0.5.2]: https://github.com/rahatsagor/CmdPalm/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/rahatsagor/CmdPalm/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/rahatsagor/CmdPalm/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/rahatsagor/CmdPalm/compare/v0.3.2...v0.4.0
