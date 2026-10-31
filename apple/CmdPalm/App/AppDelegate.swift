@@ -79,9 +79,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     static func handOffToRunningCopy() {
         guard !SystemInfo.isRunningTests, let id = Bundle.main.bundleIdentifier else { return }
         let me = ProcessInfo.processInfo.processIdentifier
-        guard let other = NSRunningApplication.runningApplications(withBundleIdentifier: id)
-            .first(where: { $0.processIdentifier != me })
-        else { return }
+        guard let other = otherCopy(id, besides: me) else { return }
         if let url = other.bundleURL {
             let done = DispatchSemaphore(value: 0)
             NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration()) { _, _ in
@@ -91,6 +89,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } else {
             other.activate()
         }
-        exit(0)
+        // A copy that was quitting when this one opened still shows up while
+        // it shuts down, which takes about a second. If it goes, this copy
+        // carries on, so quitting and reopening never leaves CmdPalm closed.
+        let deadline = Date().addingTimeInterval(2)
+        while isAlive(other.processIdentifier), Date() < deadline {
+            usleep(50_000)
+        }
+        if isAlive(other.processIdentifier) || otherCopy(id, besides: me) != nil {
+            exit(0)
+        }
+    }
+
+    private static func otherCopy(_ id: String, besides me: pid_t) -> NSRunningApplication? {
+        NSRunningApplication.runningApplications(withBundleIdentifier: id)
+            .first { $0.processIdentifier != me && isAlive($0.processIdentifier) }
+    }
+
+    /// Checked with the process itself: `isTerminated` only updates as the
+    /// run loop turns, and this runs before it starts.
+    private static func isAlive(_ pid: pid_t) -> Bool {
+        kill(pid, 0) == 0 || errno == EPERM
     }
 }

@@ -117,8 +117,10 @@ struct DeckPane: View {
         AppActivation.shared.present {
             guard panel.runModal() == .OK, let url = panel.url else { return }
             do {
-                let data = try Data(contentsOf: url)
-                guard data.count < 2_000_000, let json = String(data: data, encoding: .utf8) else {
+                // Checked before reading, so picking a huge file can't stall the app.
+                let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+                let data = size < 2_000_000 ? try Data(contentsOf: url) : Data()
+                guard !data.isEmpty, data.count < 2_000_000, let json = String(data: data, encoding: .utf8) else {
                     self.error = "That file isn’t a CmdPalm deck."
                     return
                 }

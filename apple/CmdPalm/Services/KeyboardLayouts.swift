@@ -78,10 +78,27 @@ enum KeyboardLayouts {
 
     /// Calls `handler` on the main actor whenever the input source changes.
     static func observe(_ handler: @escaping @MainActor () -> Void) -> NSObjectProtocol {
+        let observer = InputSourceObserver(handler)
+        // AppKit holds back distributed notifications while an app is inactive,
+        // which a menu bar app nearly always is, so the phone would keep the old
+        // layout until CmdPalm was next activated.
         DistributedNotificationCenter.default().addObserver(
-            forName: NSNotification.Name(kTISNotifySelectedKeyboardInputSourceChanged as String), object: nil, queue: .main
-        ) { _ in
-            MainActor.assumeIsolated { handler() }
-        }
+            observer, selector: #selector(InputSourceObserver.changed(_:)),
+            name: NSNotification.Name(kTISNotifySelectedKeyboardInputSourceChanged as String), object: nil,
+            suspensionBehavior: .deliverImmediately
+        )
+        return observer
+    }
+}
+
+private final class InputSourceObserver: NSObject {
+    private let handler: @MainActor () -> Void
+
+    init(_ handler: @escaping @MainActor () -> Void) {
+        self.handler = handler
+    }
+
+    @objc func changed(_ notification: Notification) {
+        Task { @MainActor [handler] in handler() }
     }
 }

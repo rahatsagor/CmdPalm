@@ -324,8 +324,8 @@ final class HostController {
 
     private func schedulePairingRefresh(after seconds: TimeInterval) {
         pairingTimer?.invalidate()
-        guard seconds > 0 else { return }
-        let timer = Timer(timeInterval: seconds + 0.25, repeats: false) { [weak self] _ in
+        // Whole seconds round down, so 0 means the code expires within a second.
+        let timer = Timer(timeInterval: max(seconds, 1) + 0.25, repeats: false) { [weak self] _ in
             MainActor.assumeIsolated { self?.refreshPairing() }
         }
         RunLoop.main.add(timer, forMode: .common)
