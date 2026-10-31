@@ -333,6 +333,10 @@ pub(crate) struct Engine<S: EventSink> {
     last_notice: HashMap<Notice, Instant>,
     ended: VecDeque<SessionId>,
     pub(crate) interrupts: Arc<Interrupts>,
+    /// Set while running, so typing can serve other devices between characters.
+    rx: Option<Receiver<Command>>,
+    /// Commands put off until the text being typed is finished.
+    backlog: VecDeque<Command>,
 }
 
 impl<S: EventSink> Engine<S> {
@@ -356,35 +360,86 @@ impl<S: EventSink> Engine<S> {
             last_watchdog: Instant::now(),
             last_notice: HashMap::new(),
             ended: VecDeque::new(),
+            rx: None,
+            backlog: VecDeque::new(),
         }
     }
 
     fn run(&mut self, rx: Receiver<Command>) {
+        self.rx = Some(rx);
         loop {
-            let now = Instant::now();
-            let wait = self
-                .next_deadline(now)
-                .map(|deadline| deadline.saturating_duration_since(now))
-                .unwrap_or(Duration::from_secs(1));
-            match rx.recv_timeout(wait) {
-                Ok(command) => {
-                    if !self.handle(command, Instant::now()) {
-                        break;
-                    }
-                    // Drain bursts (e.g. pointer moves) before running timers.
-                    while let Ok(command) = rx.try_recv() {
-                        if !self.handle(command, Instant::now()) {
-                            self.release_everything();
-                            return;
+            let command = match self.backlog.pop_front() {
+                Some(command) => command,
+                None => {
+                    let now = Instant::now();
+                    let wait = self
+                        .next_deadline(now)
+                        .map(|deadline| deadline.saturating_duration_since(now))
+                        .unwrap_or(Duration::from_secs(1));
+                    let Some(rx) = &self.rx else { break };
+                    match rx.recv_timeout(wait) {
+                        Ok(command) => command,
+                        Err(RecvTimeoutError::Timeout) => {
+                            self.tick(Instant::now());
+                            continue;
                         }
+                        Err(RecvTimeoutError::Disconnected) => break,
                     }
                 }
-                Err(RecvTimeoutError::Timeout) => {}
-                Err(RecvTimeoutError::Disconnected) => break,
+            };
+            if !self.handle(command, Instant::now()) {
+                break;
+            }
+            // Drain bursts (e.g. pointer moves) before running timers. Commands
+            // put off during typing are older, so they go first.
+            while self.backlog.is_empty()
+                && let Some(command) = self.rx.as_ref().and_then(|rx| rx.try_recv().ok())
+            {
+                if !self.handle(command, Instant::now()) {
+                    self.release_everything();
+                    return;
+                }
             }
             self.tick(Instant::now());
         }
         self.release_everything();
+    }
+
+    /// Runs what other devices sent while `typing` has text being typed, so
+    /// a long text can't hold up their key-ups, releases or the watchdog.
+    /// The typing device's later input, other devices' own text, and anything
+    /// that must follow the text (flushes, layout changes, shutdown) wait in
+    /// `backlog`, in order.
+    fn serve_others(&mut self, typing: SessionId) {
+        if self.rx.is_none() {
+            return;
+        }
+        while let Some(command) = self.rx.as_ref().and_then(|rx| rx.try_recv().ok()) {
+            let now_ok = match &command {
+                Command::Input { session, input } => {
+                    *session != typing
+                        && !matches!(input, Input::Text { .. } | Input::Edit { .. })
+                        && !self.waiting(*session)
+                }
+                Command::Alive(_) => true,
+                Command::EndSession(session) => *session != typing && !self.waiting(*session),
+                _ => false,
+            };
+            if now_ok {
+                self.handle(command, Instant::now());
+            } else {
+                self.backlog.push_back(command);
+            }
+        }
+        self.tick(Instant::now());
+    }
+
+    /// Whether `session` has commands waiting, which its later ones must follow.
+    fn waiting(&self, session: SessionId) -> bool {
+        self.backlog.iter().any(|command| match command {
+            Command::Input { session: s, .. } | Command::EndSession(s) => *s == session,
+            _ => false,
+        })
     }
 
     fn next_deadline(&self, now: Instant) -> Option<Instant> {
@@ -549,6 +604,7 @@ impl<S: EventSink> Engine<S> {
             Input::Text { text, mode } => self.type_text(session, &text, mode),
             Input::Edit { delete, insert } => {
                 for _ in 0..delete.min(MAX_EDIT_DELETES) {
+                    self.serve_others(session);
                     if self.interrupts.should_stop(session) {
                         return;
                     }
@@ -753,6 +809,7 @@ impl<S: EventSink> Engine<S> {
         self.repeat = None;
         let mut first = true;
         for segment in segments(text) {
+            self.serve_others(session);
             if self.interrupts.should_stop(session) {
                 return;
             }
@@ -766,6 +823,7 @@ impl<S: EventSink> Engine<S> {
                 Segment::Text(chunk) if mode == TypeMode::Keystrokes => {
                     let mut pending = String::new();
                     for ch in chunk.chars() {
+                        self.serve_others(session);
                         if self.interrupts.should_stop(session) {
                             return;
                         }
@@ -2081,6 +2139,37 @@ mod tests {
                 assert!(!engine.sessions.contains_key(&A));
             }
         }
+    }
+
+    #[test]
+    fn other_devices_are_served_while_a_long_text_is_typed() {
+        let mut h = Harness::new();
+        let (tx, rx) = mpsc::channel();
+        h.engine.rx = Some(rx);
+        h.engine.layout.chars.insert('w', (KEY_A, 0));
+        let (flushed_tx, flushed) = mpsc::channel();
+        let key = |code, down| Input::Key { code, down, mods: 0, repeat: false };
+        tx.send(Command::Input { session: B, input: key(KEY_Q, true) }).unwrap();
+        tx.send(Command::Input { session: A, input: Input::Tap { code: KEY_C, mods: 0 } }).unwrap();
+        tx.send(Command::Flush(flushed_tx)).unwrap();
+        tx.send(Command::Input { session: B, input: key(KEY_Q, false) }).unwrap();
+        h.input(A, Input::Text { text: "w".repeat(50), mode: TypeMode::Keystrokes });
+
+        let events = h.take();
+        let at = |code, down| {
+            events.iter().position(|e| matches!(e, Synth::Key { code: c, down: d, .. } if *c == code && *d == down))
+        };
+        let last_typed = events.iter().rposition(|e| matches!(e, Synth::Key { code: KEY_A, .. })).unwrap();
+        assert!(at(KEY_Q, true).unwrap() < last_typed, "another device's key goes through mid-text");
+        assert!(at(KEY_Q, false).unwrap() < last_typed, "and so does its key-up");
+        assert_eq!(at(KEY_C, true), None, "the typing device's next key waits for its text");
+        assert!(flushed.try_recv().is_err(), "a flush waits for the text queued before it");
+
+        while let Some(command) = h.engine.backlog.pop_front() {
+            h.engine.handle(command, h.now);
+        }
+        assert!(h.take().contains(&key_ev(KEY_C, true, 0)));
+        assert!(flushed.try_recv().is_ok());
     }
 
     #[test]

@@ -46,12 +46,27 @@ pub enum SaveError {
     Io(#[from] std::io::Error),
 }
 
+/// Orders deck saves by when they were asked for.
+pub(crate) fn deck_ticket(shared: &Shared) -> u64 {
+    shared.deck_tickets.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1
+}
+
 pub(crate) fn save_deck(shared: &Shared, deck: Deck) -> Result<(), SaveError> {
+    save_deck_as(shared, deck, deck_ticket(shared))
+}
+
+/// Saves can run on separate threads and get here out of order. One older
+/// than the deck already saved is dropped, as if it had come first.
+pub(crate) fn save_deck_as(shared: &Shared, deck: Deck, ticket: u64) -> Result<(), SaveError> {
     deck.validate()?;
-    let _serial = shared.deck_lock.lock().unwrap_or_else(|p| p.into_inner());
+    let mut newest = shared.deck_lock.lock().unwrap_or_else(|p| p.into_inner());
+    if ticket < *newest {
+        return Ok(());
+    }
     if let Some(dir) = shared.data_dir() {
         store::save(&dir.join("deck.json"), &deck)?;
     }
+    *newest = ticket;
     shared.state().deck = deck.clone();
     shared.broadcast(ServerMessage::Deck { deck });
     Ok(())
@@ -579,11 +594,13 @@ pub(crate) fn client(request: &Request, peer: IpAddr, secure: bool, allow_proxy:
     let Some(address) = forwarded else {
         return Client { address: peer, secure, host };
     };
-    let first = |value: &'static str| request.header(value).map(|v| v.split(',').next().unwrap_or(v).trim());
+    // Last entries here too: a proxy that appends would otherwise let the
+    // phone pick the host used for the Host and Origin checks.
+    let last = |value: &'static str| request.header(value).map(|v| v.rsplit(',').next().unwrap_or(v).trim());
     Client {
         address: address.to_canonical(),
-        secure: secure || first("x-forwarded-proto").is_some_and(|proto| proto.eq_ignore_ascii_case("https")),
-        host: first("x-forwarded-host").filter(|h| !h.is_empty()).or(host),
+        secure: secure || last("x-forwarded-proto").is_some_and(|proto| proto.eq_ignore_ascii_case("https")),
+        host: last("x-forwarded-host").filter(|h| !h.is_empty()).or(host),
     }
 }
 

@@ -4,7 +4,7 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 
 use crate::api::NativeCommand;
 use crate::deck::{MAX_DELAY_MS, MAX_DEPTH};
@@ -31,6 +31,10 @@ const SHELL_REPORT_WINDOW: Duration = Duration::from_millis(1500);
 /// How much of a failed command's error output the phone is shown.
 const SHELL_ERROR_CHARS: usize = 240;
 const SHELL_ERROR_READ: u64 = 16 * 1024;
+/// Commands whose process group is still being watched. Each has a thread,
+/// so a button pressed over and over can't pile up threads without end.
+const MAX_RUNNING_COMMANDS: usize = 32;
+static RUNNING_COMMANDS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
 pub(crate) async fn worker(shared: Arc<Shared>, session: SessionId, mut jobs: mpsc::Receiver<Job>) {
     while let Some(job) = jobs.recv().await {
@@ -118,7 +122,14 @@ fn single_letter(text: &str) -> Option<char> {
     }
 }
 
-pub(crate) fn paste(shared: &Shared, session: SessionId, text: &str) -> Result<(), String> {
+/// `queued` is told (or dropped) once ⌘V is in the input queue, so input the
+/// device sends after the paste can't be posted before it.
+pub(crate) fn paste(
+    shared: &Shared,
+    session: SessionId,
+    text: &str,
+    queued: oneshot::Sender<()>,
+) -> Result<(), String> {
     let _serial = shared.paste_lock.lock().unwrap_or_else(|p| p.into_inner());
     if shared.should_stop(session) {
         return Ok(());
@@ -127,6 +138,7 @@ pub(crate) fn paste(shared: &Shared, session: SessionId, text: &str) -> Result<(
         return Err("Couldn't use the clipboard.".into());
     }
     input(shared, session, Input::CharTap { ch: 'v', fallback: kc::KEY_V, mods: mods::COMMAND });
+    let _ = queued.send(());
     // Restoring the clipboard before ⌘V is posted, say behind a long text
     // from another device, would paste the person's previous clipboard.
     shared.finish_engine();
@@ -250,6 +262,18 @@ pub(crate) fn execute(shared: &Shared, session: SessionId, action: &Action, dept
 fn run_shell(command: &str, interrupts: Arc<Interrupts>) -> Result<(), String> {
     use std::os::unix::process::CommandExt as _;
     use std::process::Stdio;
+    use std::sync::atomic::Ordering;
+    if RUNNING_COMMANDS.fetch_add(1, Ordering::SeqCst) >= MAX_RUNNING_COMMANDS {
+        RUNNING_COMMANDS.fetch_sub(1, Ordering::SeqCst);
+        return Err("Too many shell commands are still running. Pause CmdPalm on the Mac to stop them.".into());
+    }
+    struct Running;
+    impl Drop for Running {
+        fn drop(&mut self) {
+            RUNNING_COMMANDS.fetch_sub(1, Ordering::SeqCst);
+        }
+    }
+    let running = Running;
     let errors = error_file();
     let stderr = errors.as_ref().and_then(|f| f.try_clone().ok()).map_or_else(Stdio::null, Stdio::from);
     let mut child = std::process::Command::new("/bin/zsh")
@@ -266,14 +290,29 @@ fn run_shell(command: &str, interrupts: Arc<Interrupts>) -> Result<(), String> {
     let (done, finished) = std::sync::mpsc::channel();
     // Reap the process when it finishes so it never lingers as a zombie, and
     // stop it if input is paused while it runs: the command inherits CmdPalm's
-    // Accessibility permission, so it must not outlive Pause.
+    // Accessibility permission, so it must not outlive Pause. That includes
+    // what it left running in the background (`cmd &`, `nohup`), so the
+    // watch goes on until its whole process group is gone.
     std::thread::spawn(move || {
+        let _running = running;
         let mut signalled: Option<Instant> = None;
-        let status = loop {
-            match child.try_wait() {
-                Ok(None) => {}
-                Ok(Some(status)) => break Some(status),
-                Err(_) => break None,
+        let mut shell_done = false;
+        loop {
+            if !shell_done {
+                let status = match child.try_wait() {
+                    Ok(None) => None,
+                    Ok(Some(status)) => Some(Some(status)),
+                    Err(_) => Some(None),
+                };
+                if let Some(status) = status {
+                    shell_done = true;
+                    let _ = done.send((status, interrupts.paused()));
+                }
+            }
+            // SAFETY: signal 0 only checks whether the group created above
+            // still has members.
+            if shell_done && unsafe { libc::killpg(group, 0) } != 0 {
+                break;
             }
             if interrupts.paused() {
                 match signalled {
@@ -290,8 +329,7 @@ fn run_shell(command: &str, interrupts: Arc<Interrupts>) -> Result<(), String> {
                 }
             }
             std::thread::sleep(SHELL_POLL);
-        };
-        let _ = done.send((status, interrupts.paused()));
+        }
     });
     match finished.recv_timeout(SHELL_REPORT_WINDOW) {
         Ok((_, true)) => Err(STOPPED.into()),
@@ -382,6 +420,19 @@ mod tests {
         interrupts.set_paused(true);
         std::thread::sleep(Duration::from_millis(2600));
         assert!(!marker.exists(), "the paused command never finished");
+    }
+
+    #[test]
+    fn pause_stops_what_a_shell_command_left_running() {
+        let dir = tempfile::tempdir().unwrap();
+        let marker = dir.path().join("done");
+        let interrupts = Arc::new(Interrupts::default());
+        // The shell exits at once; its background job carries on.
+        run_shell(&format!("(sleep 2; touch '{}') &", marker.display()), interrupts.clone()).unwrap();
+        std::thread::sleep(Duration::from_millis(300));
+        interrupts.set_paused(true);
+        std::thread::sleep(Duration::from_millis(2600));
+        assert!(!marker.exists(), "the background job was stopped");
     }
 
     #[test]

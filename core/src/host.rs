@@ -62,8 +62,12 @@ pub(crate) struct Shared {
     /// Serializes clipboard swaps so overlapping pastes can't lose the
     /// clipboard the user had before.
     pub paste_lock: Mutex<()>,
-    /// Keeps the saved deck file and the in-memory deck in step.
-    pub deck_lock: Mutex<()>,
+    /// Keeps the saved deck file and the in-memory deck in step, and holds
+    /// the ticket of the deck saved last.
+    pub deck_lock: Mutex<u64>,
+    pub deck_tickets: AtomicU64,
+    /// The trusted-device file revision written last; see [`Shared::save_trust`].
+    trust_written: Mutex<u64>,
     /// Open connections per address; see `server::ConnectionSlot`.
     pub connections: Mutex<HashMap<IpAddr, usize>>,
     pub settings: Mutex<DeviceSettings>,
@@ -97,7 +101,9 @@ impl Shared {
             engine: Mutex::new(engine.sender()),
             interrupts: engine.interrupts(),
             paste_lock: Mutex::new(()),
-            deck_lock: Mutex::new(()),
+            deck_lock: Mutex::new(0),
+            deck_tickets: AtomicU64::new(0),
+            trust_written: Mutex::new(0),
             connections: Mutex::new(HashMap::new()),
             settings: Mutex::new(settings),
             state: Mutex::new(State {
@@ -164,6 +170,15 @@ impl Shared {
     pub fn send_to(&self, session: SessionId, message: ServerMessage) {
         if let Some(live) = self.state().sessions.get(&session) {
             let _ = live.tx.send(Outgoing::Message(message));
+        }
+    }
+
+    /// Write changes to the trusted devices. Saving syncs to disk, so call it
+    /// after the state lock is released, never while holding it.
+    pub fn save_trust(&self) {
+        let pending = self.state().trust.pending_save();
+        if let Some(save) = pending {
+            save.write(&self.trust_written);
         }
     }
 
@@ -543,6 +558,7 @@ impl CoreHost {
 
     pub fn forget_device(&self, id: String) {
         let removed = self.shared.state().trust.remove(&id);
+        self.shared.save_trust();
         self.shared.device_settings().remove(&id);
         self.close_device(&id, "This device was removed on the Mac. Pair again to reconnect.");
         if removed {
@@ -552,13 +568,16 @@ impl CoreHost {
 
     pub fn forget_all_devices(&self) {
         self.shared.state().trust.clear();
+        self.shared.save_trust();
         self.shared.device_settings().retain(&[]);
         self.close_sessions("All devices were removed on the Mac. Pair again to reconnect.", false);
         self.shared.emit(HostEvent::DevicesChanged);
     }
 
     pub fn rename_device(&self, id: String, name: String) {
-        if self.shared.state().trust.rename(&id, &name) {
+        let renamed = self.shared.state().trust.rename(&id, &name);
+        self.shared.save_trust();
+        if renamed {
             self.shared.emit(HostEvent::DevicesChanged);
         }
     }

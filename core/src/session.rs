@@ -26,7 +26,7 @@ use crate::protocol::{
     Action, AuthRequest, ClientMessage, DenyReason, DeviceInfo, HostInfo, NoticeLevel, PROTOCOL_VERSION, ServerMessage,
     SettingsSource, TextMode, VoiceState, binary,
 };
-use crate::server::save_deck;
+use crate::server::{deck_ticket, save_deck_as};
 
 const HELLO_TIMEOUT: Duration = Duration::from_secs(10);
 const APPROVAL_TIMEOUT: Duration = Duration::from_secs(120);
@@ -42,6 +42,9 @@ const MAX_IN_FLIGHT: usize = 8;
 const SEND_TIMEOUT: Duration = Duration::from_secs(5);
 /// Voice starts a device may have waiting at once.
 const MAX_VOICE_STARTS: usize = 4;
+/// How long a device's next message may wait for its paste's ⌘V to be
+/// queued, should the clipboard be slow to take the text.
+const PASTE_QUEUE_TIMEOUT: Duration = Duration::from_secs(3);
 
 enum VoiceOp {
     Start(Option<String>),
@@ -154,8 +157,13 @@ pub(crate) async fn run<S>(
     let (tx, mut outgoing) = mpsc::unbounded_channel();
     let config = shared.config();
     let saved_settings = if authorized.remembered { shared.device_settings().get(&device.id).cloned() } else { None };
-    let welcome = {
+    let welcome = 'welcome: {
         let mut state = shared.state();
+        // Checked under the same lock as the insert, so a device removed on
+        // the Mac since it authenticated can't slip in unseen by the removal.
+        if authorized.remembered && !state.trust.contains(&device.id) {
+            break 'welcome None;
+        }
         state.sessions.insert(
             id,
             LiveSession {
@@ -176,7 +184,7 @@ pub(crate) async fn run<S>(
         // Read once the session is listed, so a settings or permission change
         // that misses this read still sends it the new features.
         let features = shared.features(secure);
-        ServerMessage::Welcome {
+        Some(ServerMessage::Welcome {
             v: PROTOCOL_VERSION,
             host: HostInfo {
                 name: config.computer_name.clone(),
@@ -191,7 +199,10 @@ pub(crate) async fn run<S>(
             volume: state.volume,
             paused: state.paused,
             settings: saved_settings,
-        }
+        })
+    };
+    let Some(welcome) = welcome else {
+        return close(&mut sink, deny(DenyReason::Unknown, None)).await;
     };
     if authorized.newly_paired {
         shared.emit(HostEvent::Paired { name: authorized.name.clone() });
@@ -220,6 +231,7 @@ pub(crate) async fn run<S>(
         in_flight: Arc::new(AtomicUsize::new(0)),
         apps_requested: 0,
         apps_sent: Arc::new(Mutex::new(0)),
+        paste_queued: None,
     };
 
     if send(&mut sink, &welcome).await {
@@ -237,6 +249,11 @@ pub(crate) async fn run<S>(
                     };
                     if let Some(reply) = reply && !send(&mut sink, &reply).await {
                         break;
+                    }
+                    // What the device sends after a paste must not reach the
+                    // engine before the paste's ⌘V.
+                    if let Some(queued) = conn.paste_queued.take() {
+                        let _ = timeout(PASTE_QUEUE_TIMEOUT, queued).await;
                     }
                 }
                 out = outgoing.recv() => match out {
@@ -298,11 +315,13 @@ where
     let accept = |shared: &Shared| {
         let name = fallback_name();
         let token = remember.then(|| shared.state().trust.issue(device, peer));
+        shared.save_trust();
         Ok(Authorized { token, remembered: remember, newly_paired: true, name })
     };
     match request {
         AuthRequest::Token { token } => {
             let found = shared.state().trust.verify(device, &token, peer);
+            shared.save_trust();
             match found {
                 Some(trusted) => Ok(Authorized {
                     token: None,
@@ -436,6 +455,8 @@ struct Connection {
     /// separate threads and can finish out of order.
     apps_requested: u64,
     apps_sent: Arc<Mutex<u64>>,
+    /// Resolves once the latest paste's ⌘V is queued.
+    paste_queued: Option<oneshot::Receiver<()>>,
 }
 
 /// Device IDs are compared byte for byte when a remembered device returns,
@@ -554,8 +575,12 @@ impl Connection {
                     TextMode::Keystrokes => self.input(Input::Text { text, mode: TypeMode::Keystrokes }),
                     TextMode::Paste => {
                         let id = self.id;
+                        let (queued, wait) = oneshot::channel();
+                        self.paste_queued = Some(wait);
                         self.blocking(move |shared| {
-                            actions::paste(shared, id, &text).err().map(|m| notice(NoticeLevel::Error, "paste", &m))
+                            actions::paste(shared, id, &text, queued)
+                                .err()
+                                .map(|m| notice(NoticeLevel::Error, "paste", &m))
                         });
                     }
                 }
@@ -593,10 +618,21 @@ impl Connection {
                 });
                 None
             }
-            ClientMessage::DeckSave { deck } => match save_deck(&self.shared, deck) {
-                Ok(()) => None,
-                Err(err) => Some(notice(NoticeLevel::Error, "deck", &err.to_string())),
-            },
+            ClientMessage::DeckSave { deck } => {
+                if let Err(err) = deck.validate() {
+                    return Some(notice(NoticeLevel::Error, "deck", &err.to_string()));
+                }
+                // Saving syncs to disk, so it runs off the network threads. The
+                // ticket, taken in arrival order, keeps an older save from
+                // landing after a newer one.
+                let ticket = deck_ticket(&self.shared);
+                self.blocking(move |shared| {
+                    save_deck_as(shared, deck, ticket)
+                        .err()
+                        .map(|err| notice(NoticeLevel::Error, "deck", &err.to_string()))
+                });
+                None
+            }
             ClientMessage::Volume { value, muted } => {
                 let value = value.filter(|v| v.is_finite()).map(|v| v.clamp(0.0, 1.0));
                 self.blocking(move |shared| {

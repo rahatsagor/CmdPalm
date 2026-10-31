@@ -9,6 +9,7 @@
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv6Addr};
 use std::path::PathBuf;
+use std::sync::Mutex;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use base64::Engine as _;
@@ -64,6 +65,32 @@ struct TrustFile {
 pub struct TrustStore {
     path: Option<PathBuf>,
     devices: Vec<StoredDevice>,
+    /// Bumped by every change. The store lives under the state lock, so the
+    /// file is written later, by whoever made the change, once it is released.
+    revision: u64,
+    taken: u64,
+}
+
+/// A copy of the trusted devices, to write once the state lock is released.
+pub struct TrustSave {
+    path: PathBuf,
+    revision: u64,
+    file: TrustFile,
+}
+
+impl TrustSave {
+    /// Writes the copy unless a newer one was written first; `written` holds
+    /// the revision written last and keeps writers one at a time.
+    pub fn write(self, written: &Mutex<u64>) {
+        let mut last = written.lock().unwrap_or_else(|p| p.into_inner());
+        if self.revision <= *last {
+            return;
+        }
+        match store::save(&self.path, &self.file) {
+            Ok(()) => *last = self.revision,
+            Err(err) => tracing::error!(%err, "could not save trusted devices"),
+        }
+    }
 }
 
 pub fn unix_now() -> i64 {
@@ -103,16 +130,21 @@ pub(crate) fn clean(text: &str, max: usize) -> String {
 impl TrustStore {
     pub fn load(path: Option<PathBuf>) -> Self {
         let devices = path.as_deref().and_then(store::load::<TrustFile>).map(|file| file.devices).unwrap_or_default();
-        Self { path, devices }
+        Self { path, devices, revision: 0, taken: 0 }
     }
 
-    fn save(&self) {
-        if let Some(path) = &self.path {
-            let file = TrustFile { version: 1, devices: self.devices.clone() };
-            if let Err(err) = store::save(path, &file) {
-                tracing::error!(%err, "could not save trusted devices");
-            }
+    fn save(&mut self) {
+        self.revision += 1;
+    }
+
+    /// The changes made since the last call, to write with [`TrustSave::write`].
+    pub fn pending_save(&mut self) -> Option<TrustSave> {
+        if self.taken == self.revision {
+            return None;
         }
+        self.taken = self.revision;
+        let path = self.path.clone()?;
+        Some(TrustSave { path, revision: self.revision, file: TrustFile { version: 1, devices: self.devices.clone() } })
     }
 
     pub fn contains(&self, id: &str) -> bool {
@@ -369,12 +401,15 @@ impl Pairing {
     }
 
     /// Approval requests from an address that keeps getting declined (or
-    /// ignored) wait before they can ask again.
+    /// ignored) wait before they can ask again. The global PIN limit doesn't
+    /// apply: someone at the Mac answers every request, and counting it would
+    /// let one host guessing PINs block approval for every device.
     pub fn approval_locked(&mut self, address: IpAddr, now: Instant) -> Option<Duration> {
-        if let Some(wait) = self.locked(address, now) {
+        let key = throttle_key(address);
+        if let Some(wait) = self.failures.get(&key).and_then(|f| f.locked(now)) {
             return Some(wait);
         }
-        self.declined.get(&throttle_key(address))?.locked(now)
+        self.declined.get(&key)?.locked(now)
     }
 
     pub fn approval_declined(&mut self, address: IpAddr, now: Instant) {
@@ -460,6 +495,9 @@ mod tests {
         let path = dir.path().join("devices.json");
         let mut trust = TrustStore::load(Some(path.clone()));
         let token = trust.issue(&device("a"), PHONE);
+        assert!(!path.exists(), "written once the state lock is released, not inside it");
+        trust.pending_save().unwrap().write(&Mutex::new(0));
+        assert!(trust.pending_save().is_none());
         let raw = std::fs::read_to_string(&path).unwrap();
         assert!(!raw.contains(&token), "raw tokens must never be stored");
 
@@ -474,6 +512,22 @@ mod tests {
 
         assert!(trust.remove("a"));
         assert!(trust.verify(&device("a"), &second, PHONE).is_none());
+    }
+
+    #[test]
+    fn an_older_copy_of_the_trusted_devices_never_replaces_a_newer_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("devices.json");
+        let mut trust = TrustStore::load(Some(path.clone()));
+        trust.issue(&device("a"), PHONE);
+        let older = trust.pending_save().unwrap();
+        trust.issue(&device("b"), PHONE);
+        let newer = trust.pending_save().unwrap();
+        let written = Mutex::new(0);
+        newer.write(&written);
+        older.write(&written);
+        let saved = TrustStore::load(Some(path));
+        assert!(saved.contains("a") && saved.contains("b"));
     }
 
     #[test]
@@ -576,6 +630,23 @@ mod tests {
         assert_eq!(pairing.approval_locked(PHONE, now), Some(FIRST_LOCKOUT));
         assert!(pairing.approval_locked(OTHER, now).is_none());
         assert!(pairing.approval_locked(PHONE, now + FIRST_LOCKOUT).is_none());
+    }
+
+    #[test]
+    fn pin_guessing_elsewhere_does_not_block_approval() {
+        let now = Instant::now();
+        let mut pairing = shown(now);
+        for i in 0..GLOBAL_MAX_FAILURES {
+            let address = IpAddr::V4(Ipv4Addr::new(10, 0, (i / 250) as u8, (i % 250) as u8));
+            pairing.check_pin("000000", address, now);
+        }
+        assert!(matches!(pairing.check_pin("000000", PHONE, now), Verdict::Locked(_)));
+        assert!(pairing.approval_locked(OTHER, now).is_none());
+
+        for _ in 0..MAX_FAILURES_PER_ADDRESS {
+            pairing.check_pin("000000", OTHER, now + GLOBAL_WINDOW);
+        }
+        assert!(pairing.approval_locked(OTHER, now + GLOBAL_WINDOW).is_some(), "an address's own guesses still count");
     }
 
     #[test]

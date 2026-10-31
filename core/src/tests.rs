@@ -13,7 +13,7 @@ use tokio_tungstenite::tungstenite::Message;
 use crate::api::{HostConfig, HostDelegate, HostEvent, LinkHost, NativeCommand};
 use crate::host::{CoreHost, Shared};
 use crate::input::{EventSink, InputEngine, SharedRecorder, Synth};
-use crate::keycodes::{KEY_C, KEY_COMMAND, KEY_Q, KEY_RIGHT_COMMAND, flags, mods};
+use crate::keycodes::{KEY_C, KEY_COMMAND, KEY_Q, KEY_RETURN, KEY_RIGHT_COMMAND, KEY_V, flags, mods};
 use crate::protocol::{AppEntry, AppOp};
 
 #[derive(Default)]
@@ -27,6 +27,8 @@ struct MockDelegate {
     calls: Mutex<Vec<(String, usize)>>,
     /// The next app list is slow and lists an app that has since quit.
     slow_stale_apps: std::sync::atomic::AtomicBool,
+    /// The clipboard takes a while to accept pasted text.
+    slow_paste: std::sync::atomic::AtomicBool,
 }
 
 impl MockDelegate {
@@ -84,6 +86,9 @@ impl HostDelegate for MockDelegate {
     }
     fn set_clipboard_text(&self, _text: String) {}
     fn begin_paste(&self, _text: String) -> bool {
+        if self.slow_paste.load(std::sync::atomic::Ordering::SeqCst) {
+            std::thread::sleep(Duration::from_millis(300));
+        }
         true
     }
     fn end_paste(&self) {}
@@ -476,6 +481,11 @@ fn trusts_forwarded_headers_only_from_an_allowed_proxy_on_this_mac() {
     assert_eq!(direct.address, lan, "a device on the network can't claim another address");
     assert!(!direct.secure);
 
+    let appended = parse_head(b"GET /ws HTTP/1.1\r\nHost: 127.0.0.1:8790\r\nX-Forwarded-For: 10.0.0.9, 10.8.0.3\r\nX-Forwarded-Proto: http, https\r\nX-Forwarded-Host: evil.example, mac.example.com\r\n").unwrap();
+    let appended = client(&appended, loopback, false, true);
+    assert_eq!(appended.host, Some("mac.example.com"), "the phone can't choose the host by sending its own header");
+    assert!(appended.secure);
+
     let ported = parse_head(b"GET / HTTP/1.1\r\nHost: mac.local\r\nX-Forwarded-For: [fd00::9]:51234\r\n").unwrap();
     assert_eq!(client(&ported, loopback, false, true).address, "fd00::9".parse::<std::net::IpAddr>().unwrap());
 
@@ -824,4 +834,25 @@ fn a_slow_app_list_never_replaces_a_newer_one() {
             }
         }
     });
+}
+
+#[test]
+fn input_sent_after_a_paste_waits_for_its_command_v() {
+    let f = fixture();
+    let code = f.host.pairing_info().link.split("#pair=").nth(1).unwrap().to_string();
+    f.delegate.slow_paste.store(true, std::sync::atomic::Ordering::SeqCst);
+    f.rt.block_on(async {
+        let mut ws = connect(f.port).await;
+        send(&mut ws, hello("phone", json!({"method": "pair", "code": code}))).await;
+        assert_eq!(recv(&mut ws).await["t"], "welcome");
+        send(&mut ws, json!({"t": "text", "text": "hello", "mode": "paste"})).await;
+        send(&mut ws, json!({"t": "tap", "code": KEY_RETURN})).await;
+        send(&mut ws, json!({"t": "ping", "id": 1})).await;
+        recv_kind(&mut ws, "pong").await;
+    });
+    std::thread::sleep(Duration::from_millis(200));
+    let events = f.recorder.take();
+    let down = |key| events.iter().position(|e| matches!(e, Synth::Key { code, down: true, .. } if *code == key));
+    let (pasted, returned) = (down(KEY_V).expect("⌘V posted"), down(KEY_RETURN).expect("Return posted"));
+    assert!(pasted < returned, "Return arrived before the paste: {events:?}");
 }
