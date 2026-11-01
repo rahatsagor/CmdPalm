@@ -66,9 +66,9 @@ deck for your Mac.<br />
 
 #### Trackpad
 Tap to click, drag, two-finger scrolling with real momentum, a one-thumb
-scroll strip that keeps going while you hold it, pinch to zoom, and three-
-and four-finger gestures you can assign. The pointer glides smoothly even on
-busy Wi-Fi.
+scroll strip that keeps going while you hold it, smooth pinch zoom and
+two-finger rotation like a Mac trackpad, and three- and four-finger gestures
+you can assign. The pointer glides smoothly even on busy Wi-Fi.
 
 </td>
 <td width="50%" valign="top">
@@ -76,9 +76,11 @@ busy Wi-Fi.
 <img src="docs/media/keyboard.webp" width="100%" alt="Typing on a full Mac keyboard on the phone" />
 
 #### Keyboard
-Shows your Mac's own layout, with sticky modifiers, function and media keys.
-Shortcuts arrive intact even on shaky Wi-Fi, and you can hold several keys
-at once for any combination.
+Shows your Mac's own layout, with sticky modifiers, function and media keys,
+and follows the Mac when you switch input sources. Shortcuts arrive intact
+even on shaky Wi-Fi, and you can hold several keys at once for any
+combination. Sideways keyboard fills an upright phone with the full Mac
+keyboard.
 
 </td>
 </tr>
@@ -100,8 +102,8 @@ touch it.
 #### Deck
 A button grid like a Stream Deck: shortcuts, text snippets, apps, websites,
 system actions, Shortcuts automations, mouse clicks and multi-step
-sequences, shared by all your devices. Shell commands work too, once you
-allow them.
+sequences that run in order, shared by all your devices. Shell commands work
+too, once you allow them.
 
 </td>
 </tr>
@@ -212,7 +214,7 @@ the Mac. You can remove a device at any time.
 
 **One switch to stop everything**<br />
 Pause in the menu bar stops all input instantly, including text that is
-still being typed.
+still being typed and shell commands left running in the background.
 
 </td>
 <td valign="top">
