@@ -19,7 +19,7 @@ const tooLong = (text: string, limit = LIMITS.text) => encoder.encode(text).leng
 export function actionProblem(action: Action, depth = 0): string {
   switch (action.kind) {
     case 'keys':
-      return action.code < 0 || action.code > 0xff ? 'Pick a key.' : ''
+      return !Number.isInteger(action.code) || action.code < 0 || action.code > 0xff ? 'Pick a key.' : ''
     case 'text':
       if (!action.text) return 'Enter the text to type.'
       return tooLong(action.text) ? 'The text is too long.' : ''

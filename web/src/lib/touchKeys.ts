@@ -14,6 +14,7 @@
 
 import { onBeforeUnmount, onDeactivated, onMounted, type Ref } from 'vue'
 import { needsClick } from './haptics'
+import { onPageHidden } from './heldPointers'
 
 export interface TouchKeyHandlers {
   /** A finger landed on the key with this `data-key` value. */
@@ -99,6 +100,7 @@ export function useTouchKeys(root: Ref<HTMLElement | undefined>, handlers: Touch
   })
   // Switching tabs keeps views alive; a finger still down must not stay held.
   onDeactivated(() => releaseAll())
+  onPageHidden(() => releaseAll())
 
   /** Lift every finger, e.g. when the view hides or the layout changes. */
   function releaseAll() {

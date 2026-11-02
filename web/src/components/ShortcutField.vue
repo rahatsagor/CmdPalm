@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { labels } from '@/lib/connection'
-import { MOD_ORDER, SPECIAL_KEYS, comboLabel, fromDomCode, keyName } from '@/lib/keys'
+import { Key, MOD_ORDER, SPECIAL_KEYS, comboLabel, fromDomCode, keyName } from '@/lib/keys'
 import { Mod } from '@/lib/protocol'
 
 const model = defineModel<{ code: number; mods: number; char?: string }>({ required: true })
@@ -16,21 +16,32 @@ const prompt = computed(() => {
   return typedKey.value ? `${typedKey.value} · tap to change` : 'Tap, then type a key'
 })
 
+/** Modifiers the last typed character needed (⇧ for "?"), not ones chosen with the buttons. */
+let implied = 0
+
 function toggleMod(mod: number) {
+  implied &= ~mod
   model.value = { ...model.value, mods: model.value.mods ^ mod }
 }
 
 function setKey(code: number, extraMods = 0, char?: string) {
-  model.value = { code, mods: model.value.mods | extraMods, ...(char ? { char } : {}) }
+  const chosen = model.value.mods & ~implied
+  implied = extraMods & ~chosen
+  model.value = { code, mods: chosen | extraMods, ...(char ? { char } : {}) }
 }
 
 // Hardware keyboards (iPad) report the key position and modifiers directly.
 function onKeydown(event: KeyboardEvent) {
   const code = fromDomCode(event.code)
   if (code === undefined) return
+  // Tab moves on to the next control; the Tab button below picks the key.
+  if (code === Key.Tab && !event.metaKey && !event.altKey && !event.ctrlKey) return
   event.preventDefault()
+  // Escape is a key to record here, not a request to close the sheet.
+  event.stopPropagation()
   const mods =
     (event.metaKey ? Mod.Command : 0) | (event.shiftKey ? Mod.Shift : 0) | (event.altKey ? Mod.Option : 0) | (event.ctrlKey ? Mod.Control : 0)
+  implied = 0
   model.value = { code, mods: mods || model.value.mods }
   input.value?.blur()
 }

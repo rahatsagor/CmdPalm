@@ -356,7 +356,17 @@ function handle(message: ServerMessage) {
     default:
       break
   }
-  for (const listener of listeners) listener(message)
+  for (const listener of listeners) {
+    // One failing listener must not keep the message from the rest, such as
+    // the one that presses locked modifiers again after a reconnect.
+    try {
+      listener(message)
+    } catch (error) {
+      queueMicrotask(() => {
+        throw error
+      })
+    }
+  }
 }
 
 function startHeartbeat() {

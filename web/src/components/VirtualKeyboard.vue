@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Globe } from '@lucide/vue'
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { labels, runAction } from '@/lib/connection'
 import { MEDIA, SYSTEM } from '@/lib/actions'
 import { keyHaptic } from '@/lib/haptics'
@@ -93,7 +93,7 @@ function pressFn(spec: FnSpec, pointerId: number) {
   keyDown(pointerId, spec.code)
 }
 
-useTouchKeys(root, {
+const touch = useTouchKeys(root, {
   down(key, pointerId) {
     const spec = specs.value.get(Number(key))
     if (!spec) return
@@ -120,6 +120,8 @@ useTouchKeys(root, {
     else keyUp(pointerId)
   },
 })
+// A layout change (ANSI to ISO) moves keys without resizing the keyboard.
+watch(rows, () => touch.invalidate())
 
 const caps = computed(() => {
   const map = new Map<number, { main: string; alt: string }>()

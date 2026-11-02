@@ -1,7 +1,7 @@
 // Forwards a hardware keyboard attached to the phone or iPad (e.g. a Magic
 // Keyboard) to the Mac, key by key, whenever no text field has focus.
 
-import { send } from './connection'
+import { onMessage, send } from './connection'
 import { Key, fromDomCode } from './keys'
 
 const MODIFIERS: Record<string, number> = {
@@ -50,4 +50,13 @@ export function installHardwareKeyboard() {
   addEventListener('keyup', onKeyUp)
   // Key-up events are lost when focus leaves the page mid-press.
   addEventListener('blur', releaseHardwareKeys)
+  // The Mac lets go of every key on reconnect, on pause and when the page
+  // hides. Forgetting them here lets a key still held press again on its
+  // next repeat instead of being ignored.
+  onMessage((message) => {
+    if (message.t === 'welcome' || message.t === 'paused') down.clear()
+  })
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') down.clear()
+  })
 }

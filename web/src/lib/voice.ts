@@ -118,6 +118,17 @@ export async function startVoice(onFinal: (text: string) => void, locale = navig
     finals = onFinal
     voice.active = true
     macListening = true
+    // A phone call, Siri or another app can take the microphone mid-dictation.
+    const live = audio
+    const lost = () => {
+      if (context !== live) return
+      voice.error = 'The microphone stopped.'
+      void stopVoice()
+    }
+    for (const track of media.getTracks()) track.addEventListener('ended', lost)
+    live.onstatechange = () => {
+      if (live.state !== 'running') lost()
+    }
     if (!send({ t: 'voiceStart', locale })) {
       voice.error = 'Not connected to the Mac.'
       await stopVoice(true, false)
@@ -143,7 +154,9 @@ export async function stopVoice(cancel = false, notifyMac = true) {
   node = null
   stream?.getTracks().forEach((t) => t.stop())
   stream = null
-  await context?.close().catch(() => {})
+  // Cleared before waiting, so a start meanwhile keeps the context it creates.
+  const closing = context
   context = null
+  await closing?.close().catch(() => {})
   if (cancel) finals = null
 }

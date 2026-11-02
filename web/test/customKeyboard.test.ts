@@ -1,5 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
+import { nextTick } from 'vue'
 import CustomKeyboard from '../src/components/CustomKeyboard.vue'
 import { actionProblem } from '../src/lib/deck'
 import type { CustomKeyboard as Board } from '../src/lib/customKeyboards'
@@ -31,9 +32,30 @@ describe('CustomKeyboard', () => {
   })
 })
 
+describe('CustomKeyboard while the page hides', () => {
+  // A finger lift after the page hides never arrives.
+  it('stops showing a held key as pressed', async () => {
+    const view = mount(CustomKeyboard, { props: { board, editing: false }, attachTo: document.body })
+    view.find('.key').element.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 1, pointerType: 'touch', bubbles: true, cancelable: true }))
+    await nextTick()
+    expect(view.find('.key').classes()).toContain('is-down')
+
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' })
+    document.dispatchEvent(new Event('visibilitychange'))
+    Reflect.deleteProperty(document, 'visibilityState')
+    await nextTick()
+    expect(view.find('.key').classes()).not.toContain('is-down')
+    view.unmount()
+  })
+})
+
 describe('actionProblem', () => {
   it('refuses shortcut names longer than the Mac accepts', () => {
     expect(actionProblem({ kind: 'shortcut', name: 'é'.repeat(256) })).toBe('')
     expect(actionProblem({ kind: 'shortcut', name: 'é'.repeat(257) })).toBe('The shortcut name is too long.')
+  })
+
+  it('asks for a key when a keys action has none', () => {
+    expect(actionProblem({ kind: 'keys' } as Parameters<typeof actionProblem>[0])).toBe('Pick a key.')
   })
 })

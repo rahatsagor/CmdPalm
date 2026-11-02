@@ -123,6 +123,8 @@ interface Press {
   width: number
   height: number
   moved: boolean
+  /** Tiles were reordered on screen, not yet on the Mac. */
+  reordered: boolean
   longPressed: boolean
 }
 const press = ref<Press | null>(null)
@@ -145,6 +147,7 @@ function onTileDown(pageId: string, i: number, event: PointerEvent) {
     width: rect.width,
     height: rect.height,
     moved: false,
+    reordered: false,
     longPressed: false,
   }
   ghost.value = { x: rect.left, y: rect.top }
@@ -181,20 +184,15 @@ function onTileMove(event: PointerEvent) {
   const [moved] = tiles.splice(p.index, 1)
   tiles.splice(target, 0, moved!)
   p.index = target
+  p.reordered = true
   haptic('select')
 }
 
 function onTileUp(event: PointerEvent, cancelled = false) {
   const p = press.value
   if (!p || p.pointerId !== event.pointerId) return
-  clearTimeout(longTimer)
-  press.value = null
+  endPress()
   const tile = pageById(p.pageId)?.tiles[p.index]
-  if (editing.value && p.moved) {
-    // The tiles were already reordered locally.
-    if (deck.value) saveDeck(deck.value)
-    return
-  }
   if (!tile || cancelled || p.moved) return
   if (editing.value || p.longPressed) tileEdit.value = { tile, pageId: p.pageId, isNew: false }
   else void run(tile)
@@ -228,7 +226,11 @@ function onStrayUp(event: PointerEvent) {
 
 function endPress() {
   clearTimeout(longTimer)
+  const p = press.value
   press.value = null
+  // Keep the new order even when the drag ends early (Done tapped or the tab
+  // switched mid-drag): otherwise it shows here but never reaches the Mac.
+  if (p?.reordered && deck.value) saveDeck(deck.value)
 }
 
 onMounted(() => {

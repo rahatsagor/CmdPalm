@@ -29,9 +29,19 @@ function step(axis: 'cols' | 'rows', by: number) {
   props.board.rows = rows
 }
 
-function close() {
+function saveName() {
   props.board.name = name.value.trim().slice(0, LIMITS.name) || 'Keyboard'
+}
+
+function close() {
+  saveName()
   emit('close')
+}
+
+// The sheet closes without `close`, so a new name typed first would be lost.
+function duplicate() {
+  saveName()
+  emit('duplicate')
 }
 </script>
 
@@ -83,7 +93,7 @@ function close() {
         type="button"
         class="flex h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-surface-2 text-[14px] disabled:opacity-40"
         :disabled="keyboards.boards.length >= LIMITS.boards"
-        @click="emit('duplicate')"
+        @click="duplicate"
       >
         <Copy :size="16" /> Duplicate
       </button>

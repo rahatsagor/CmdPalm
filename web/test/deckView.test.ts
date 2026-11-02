@@ -203,6 +203,26 @@ describe('DeckView', () => {
     view.unmount()
   })
 
+  it('saves a reorder when Done is tapped before the dragging finger lifts', async () => {
+    const { socket, view } = await deckView('essentials')
+    await view.findAll('button').find((b) => b.text() === 'Edit')!.trigger('click')
+    const mute = tile('Mute')
+    const play = tile('Play / Pause')
+    Object.defineProperty(document, 'elementsFromPoint', { configurable: true, value: () => [play] })
+    const at = (type: string, clientX: number) =>
+      mute.dispatchEvent(new PointerEvent(type, { pointerId: 1, pointerType: 'touch', isPrimary: true, clientX, clientY: 0, bubbles: true }))
+    at('pointerdown', 0)
+    at('pointermove', 40)
+    await nextTick()
+    await view.findAll('button').find((b) => b.text() === 'Done')!.trigger('click')
+    at('pointerup', 40)
+    await nextTick()
+    Reflect.deleteProperty(document, 'elementsFromPoint')
+    const saved = socket.sent.filter((m) => m.t === 'deckSave').at(-1) as { deck: typeof deck } | undefined
+    expect(saved?.deck.pages[0]?.tiles.map((t) => t.label)).toEqual(['Play / Pause', 'Mute'])
+    view.unmount()
+  })
+
   it('closes the page editor when another device deletes the page', async () => {
     const { socket, view } = await deckView('apps')
     await view.findAll('button').find((b) => b.text() === 'Edit')!.trigger('click')

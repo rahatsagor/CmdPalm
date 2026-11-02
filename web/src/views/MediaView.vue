@@ -41,11 +41,6 @@ function activate(key: MediaKey, event: MouseEvent) {
   pressMedia(key)()
   haptic('light')
 }
-// The finger may still be down when the tab changes; its lift never arrives.
-onDeactivated(letGo)
-onBeforeUnmount(letGo)
-onPageHidden(letGo)
-
 // The slider shows our own value while dragging, then follows the Mac.
 const dragging = ref(false)
 const local = ref(state.volume?.value ?? 0.5)
@@ -55,6 +50,15 @@ watch(
     if (!dragging.value && value !== undefined) local.value = value
   },
 )
+
+// The finger may still be down when the tab changes; its lift never arrives.
+function letGoAll() {
+  letGo()
+  dragging.value = false
+}
+onDeactivated(letGoAll)
+onBeforeUnmount(letGoAll)
+onPageHidden(letGoAll)
 let sendTimer: ReturnType<typeof setTimeout> | undefined
 let lastSent = 0
 function setVolume(value: number) {
