@@ -119,9 +119,16 @@ jobs:
       - name: Verify release files
         env:
           VERSION: ${{ steps.version.outputs.version }}
+          SPARKLE_PUBLIC_KEY: ${{ vars.SPARKLE_PUBLIC_KEY }}
         run: |
           cp "dist/CmdPalm-$VERSION.dmg" dist/CmdPalm.dmg
           unzip -tq "dist/CmdPalm-$VERSION.zip"
+          # An app without the right update key or feed could never update itself.
+          info() { unzip -p "dist/CmdPalm-$VERSION.zip" CmdPalm.app/Contents/Info.plist | plutil -extract "$1" raw -o - -; }
+          if [[ "$(info SUPublicEDKey)" != "$SPARKLE_PUBLIC_KEY" || "$(info SUFeedURL)" != https://* ]]; then
+            echo "::error::The app's update key or feed doesn't match the release settings"
+            exit 1
+          fi
           hdiutil verify "dist/CmdPalm-$VERSION.dmg"
           cd dist
           shasum -a 256 "CmdPalm-$VERSION.zip" "CmdPalm-$VERSION.dmg" CmdPalm.dmg appcast.xml > SHA256SUMS
@@ -137,15 +144,23 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.version }}
         run: |
+          FILES=("dist/CmdPalm-$VERSION.zip" "dist/CmdPalm-$VERSION.dmg" dist/CmdPalm.dmg dist/appcast.xml dist/SHA256SUMS)
           # Upload every file to a draft before making downloads discoverable.
-          gh release create "$GITHUB_REF_NAME" --verify-tag --draft \
-            --title "CmdPalm $VERSION" \
-            --notes-file "$RUNNER_TEMP/notes.md" \
-            "dist/CmdPalm-$VERSION.zip" \
-            "dist/CmdPalm-$VERSION.dmg" \
-            dist/CmdPalm.dmg \
-            dist/appcast.xml \
-            dist/SHA256SUMS
+          # A re-run after a failed publish fills its own draft again, but a
+          # published release is never replaced.
+          if DRAFT="$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft 2>/dev/null)"; then
+            if [[ "$DRAFT" != true ]]; then
+              echo "::error::$GITHUB_REF_NAME is already published. Release a new version instead."
+              exit 1
+            fi
+            gh release edit "$GITHUB_REF_NAME" --title "CmdPalm $VERSION" --notes-file "$RUNNER_TEMP/notes.md"
+            gh release upload "$GITHUB_REF_NAME" --clobber "${FILES[@]}"
+          else
+            gh release create "$GITHUB_REF_NAME" --verify-tag --draft \
+              --title "CmdPalm $VERSION" \
+              --notes-file "$RUNNER_TEMP/notes.md" \
+              "${FILES[@]}"
+          fi
           gh release edit "$GITHUB_REF_NAME" --draft=false --latest
 
       - name: Update Homebrew tap
