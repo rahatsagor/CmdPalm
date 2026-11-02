@@ -14,6 +14,10 @@ final class AppCatalog: Sendable {
         var apps: [String: Installed] = [:]
         var scannedAt = Date.distantPast
         var customFolders: [URL] = []
+        /// Bumped when apps or folders may have changed, so a scan that was
+        /// already running then doesn't count as fresh.
+        var generation = 0
+        var scans = 0
     }
 
     /// How deep to look inside a folder the person added, and how many items
@@ -32,11 +36,18 @@ final class AppCatalog: Sendable {
     private static let maxAge: TimeInterval = 30
 
     private let cache = Mutex(Cache())
+    /// One scan at a time. The app list and many icons are asked for at once
+    /// after every app launch; they wait for one scan instead of each running
+    /// their own on a core thread.
+    private let scanning = NSLock()
     private let ownID = Bundle.main.bundleIdentifier ?? ""
 
     /// Forget the scan so the next request picks up new or removed apps.
     func invalidate() {
-        cache.withLock { $0.scannedAt = .distantPast }
+        cache.withLock {
+            $0.scannedAt = .distantPast
+            $0.generation += 1
+        }
     }
 
     /// Extra folders to scan besides the standard Applications folders.
@@ -45,6 +56,7 @@ final class AppCatalog: Sendable {
         cache.withLock {
             $0.customFolders = urls
             $0.scannedAt = .distantPast
+            $0.generation += 1
         }
     }
 
@@ -130,18 +142,28 @@ final class AppCatalog: Sendable {
     }
 
     private func installed() -> [String: Installed] {
-        let (fresh, custom) = cache.withLock { cache in
-            (Date().timeIntervalSince(cache.scannedAt) < Self.maxAge ? cache.apps : nil, cache.customFolders)
+        let before = cache.withLock { cache in
+            (fresh: Date().timeIntervalSince(cache.scannedAt) < Self.maxAge ? cache.apps : nil, scans: cache.scans)
         }
-        if let fresh { return fresh }
-        let apps = Self.scan(custom: custom)
+        if let fresh = before.fresh { return fresh }
+        scanning.lock()
+        defer { scanning.unlock() }
+        let now = cache.withLock { cache in
+            (
+                fresh: Date().timeIntervalSince(cache.scannedAt) < Self.maxAge ? cache.apps : nil,
+                latest: cache.apps, scans: cache.scans, custom: cache.customFolders, generation: cache.generation
+            )
+        }
+        if let fresh = now.fresh { return fresh }
+        // A scan finished while this request waited; it is recent enough even
+        // if something changed during it.
+        if now.scans != before.scans { return now.latest }
+        let apps = Self.scan(custom: now.custom)
         cache.withLock { cache in
-            // Keep the folders if they changed during the scan; the next
-            // request rescans.
-            if cache.customFolders == custom {
-                cache.apps = apps
-                cache.scannedAt = Date()
-            }
+            cache.apps = apps
+            cache.scans += 1
+            // Apps or folders changed during the scan; the next request rescans.
+            if cache.generation == now.generation { cache.scannedAt = Date() }
         }
         return apps
     }

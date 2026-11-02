@@ -30,7 +30,8 @@ enum SystemActions {
     static func runShortcut(_ name: String) -> Bool {
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { return false }
-        return launch("/usr/bin/shortcuts", ["run", name])
+        // "--" so a name starting with "-" isn't read as an option.
+        return launch("/usr/bin/shortcuts", ["run", "--", name])
     }
 
     private static func openApp(at path: String) -> Bool {
