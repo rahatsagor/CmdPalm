@@ -272,6 +272,13 @@ export function disconnect(forget: boolean) {
   }
   state.status = 'idle'
   teardown()
+  pendingAuth = null
+  state.attempts = 0
+  // The next Mac has its own apps.
+  if (forget) {
+    state.apps = []
+    state.appsLoaded = false
+  }
 }
 
 function handle(message: ServerMessage) {

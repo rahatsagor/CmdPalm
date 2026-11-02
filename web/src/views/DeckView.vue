@@ -274,10 +274,15 @@ function removeTile() {
   editTile((tiles, at) => at >= 0 && tiles.splice(at, 1))
 }
 
-function duplicateTile() {
+function duplicateTile(tile: Tile) {
+  let full = false
   editTile((tiles, at) => {
-    if (at >= 0 && tiles.length < LIMITS.tiles) tiles.splice(at + 1, 0, { ...clone(tiles[at]!), id: newId() })
+    const i = at < 0 ? tiles.push(tile) - 1 : at
+    tiles[i] = tile
+    full = tiles.length >= LIMITS.tiles
+    if (!full) tiles.splice(i + 1, 0, { ...clone(tile), id: newId() })
   })
+  if (full) notify('This page is full, so the button was saved but not duplicated.', 'warning')
 }
 
 function addPage() {

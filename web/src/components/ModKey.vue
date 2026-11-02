@@ -23,6 +23,21 @@ function up(event: PointerEvent, cancelled: boolean) {
   if (cancelled) modifiers.cancel(event.pointerId)
   else modifiers.release(event.pointerId)
 }
+
+/** Not a real pointer id, so it never meets a finger's. */
+const KEYBOARD_POINTER = -1
+
+/** From a keyboard or screen reader: a quick tap, which latches the modifier. */
+function activate() {
+  modifiers.press(KEYBOARD_POINTER, props.mod, props.code)
+  modifiers.release(KEYBOARD_POINTER)
+}
+
+// As for other keys, only a click with no press before it (a detail of 0)
+// comes from a screen reader; the hidden switch's copy is ignored.
+function onClick(event: MouseEvent) {
+  if (event.detail === 0 && !(event.target instanceof HTMLInputElement)) activate()
+}
 </script>
 
 <template>
@@ -38,11 +53,15 @@ function up(event: PointerEvent, cancelled: boolean) {
       'items-end': align === 'right',
       'items-center justify-center': !align || align === 'center',
     }"
+    tabindex="0"
     :aria-label="label ?? symbol"
     :aria-pressed="status !== 'off'"
     @pointerdown="down"
     @pointerup="up($event, false)"
     @pointercancel="up($event, true)"
+    @click="onClick"
+    @keydown.enter.prevent="activate"
+    @keydown.space.prevent="activate"
     @contextmenu.prevent
   >
     <span class="text-[15px] leading-none">{{ symbol }}</span>

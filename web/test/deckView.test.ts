@@ -203,6 +203,26 @@ describe('DeckView', () => {
     view.unmount()
   })
 
+  it('keeps edits made before Duplicate, for the button and its copy', async () => {
+    const { socket, view } = await deckView('apps')
+    const target = tile('My Button')
+    pointer(target, 'pointerdown')
+    vi.advanceTimersByTime(600)
+    pointer(target, 'pointerup')
+    await nextTick()
+    const field = document.querySelector<HTMLInputElement>('[role="dialog"] input')!
+    field.value = 'Safari'
+    field.dispatchEvent(new Event('input'))
+    await nextTick()
+    dialogButton('Duplicate').click()
+    await nextTick()
+    const saved = socket.sent.filter((m) => m.t === 'deckSave').at(-1) as { deck: typeof deck } | undefined
+    const tiles = saved?.deck.pages[1]?.tiles ?? []
+    expect(tiles.map((t) => t.label)).toEqual(['Finder', 'Safari', 'Safari'])
+    expect(new Set(tiles.map((t) => t.id)).size).toBe(3)
+    view.unmount()
+  })
+
   it('saves a reorder when Done is tapped before the dragging finger lifts', async () => {
     const { socket, view } = await deckView('essentials')
     await view.findAll('button').find((b) => b.text() === 'Edit')!.trigger('click')

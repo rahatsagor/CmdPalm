@@ -160,6 +160,12 @@ function up(event: PointerEvent) {
   keyUp(event.pointerId)
 }
 
+// A screen reader's click has no press before it (a detail of 0), so it taps
+// the key here. The hidden switch's own copy of the click is ignored.
+function onClick(code: number, event: MouseEvent) {
+  if (event.detail === 0 && !(event.target instanceof HTMLInputElement)) tap(code)
+}
+
 defineExpose({ focus: () => field.value?.focus() })
 </script>
 
@@ -172,10 +178,14 @@ defineExpose({ focus: () => field.value?.focus() })
         :key="key.code"
         role="button"
         class="key relative grid min-w-0 flex-1 touch-none place-items-center rounded-[9px] bg-key text-muted active:bg-key-down"
+        tabindex="0"
         :aria-label="key.label"
         @pointerdown="down(key.code, $event)"
         @pointerup="up"
         @pointercancel="up"
+        @click="onClick(key.code, $event)"
+        @keydown.enter.prevent="tap(key.code)"
+        @keydown.space.prevent="tap(key.code)"
         @contextmenu.prevent
       >
         <component :is="key.icon" :size="18" />

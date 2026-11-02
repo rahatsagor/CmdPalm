@@ -13,7 +13,7 @@ import Sheet from './Sheet.vue'
 import TileFace from './TileFace.vue'
 
 const props = defineProps<{ tile: Tile; isNew: boolean }>()
-const emit = defineEmits<{ save: [tile: Tile]; remove: []; duplicate: []; close: [] }>()
+const emit = defineEmits<{ save: [tile: Tile]; remove: []; duplicate: [tile: Tile]; close: [] }>()
 
 const draft = ref<Tile>(clone(props.tile))
 const problem = computed(() => actionProblem(draft.value.action))
@@ -43,13 +43,21 @@ function onEmoji(event: Event) {
 const placeholder = computed(() => describe(draft.value.action, labels.value, appNames.value))
 const symbolNames = Object.keys(SYMBOLS)
 
-function save() {
-  if (problem.value) return
+function edited(): Tile {
   const tile = clone(draft.value)
   tile.label = tile.label.trim().slice(0, LIMITS.label)
   if (!tile.color) delete tile.color
   if (!tile.icon) delete tile.icon
-  emit('save', tile)
+  return tile
+}
+
+function save() {
+  if (!problem.value) emit('save', edited())
+}
+
+// Duplicating keeps what was changed here, for this button and its copy.
+function duplicate() {
+  if (!problem.value) emit('duplicate', edited())
 }
 </script>
 
@@ -152,7 +160,12 @@ function save() {
     </section>
 
     <section v-if="!isNew" class="flex gap-2 border-t border-line pt-4">
-      <button type="button" class="flex h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-surface-2 text-[14px]" @click="emit('duplicate')">
+      <button
+        type="button"
+        class="flex h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-surface-2 text-[14px] disabled:opacity-40"
+        :disabled="!!problem"
+        @click="duplicate"
+      >
         <Copy :size="16" /> Duplicate
       </button>
       <button type="button" class="flex h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-surface-2 text-[14px] text-bad" @click="emit('remove')">

@@ -22,8 +22,9 @@ function codeFor(event: KeyboardEvent): number | undefined {
 }
 
 function onKeyDown(event: KeyboardEvent) {
-  // Sheets keep the keyboard for their own fields and Escape-to-close.
-  if (editable(event.target) || event.isComposing || document.querySelector('[role="dialog"]')) return
+  // Sheets keep the keyboard for their own fields and Escape-to-close, and a
+  // focused button that took Return or Space has used it.
+  if (editable(event.target) || event.isComposing || event.defaultPrevented || document.querySelector('[role="dialog"]')) return
   const code = codeFor(event)
   if (code === undefined) return
   event.preventDefault()

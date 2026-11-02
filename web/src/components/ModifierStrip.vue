@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { holdPointer, keyHaptic } from '@/lib/haptics'
 import { useHeldPointers } from '@/lib/heldPointers'
-import { keyDown, keyUp } from '@/lib/input'
+import { keyDown, keyUp, tap } from '@/lib/input'
 import { Key, MOD_ORDER } from '@/lib/keys'
 import HapticSwitch from './HapticSwitch.vue'
 import ModKey from './ModKey.vue'
@@ -27,6 +27,13 @@ function up(event: PointerEvent) {
   fingers.lift(event.pointerId)
   keyUp(event.pointerId)
 }
+
+// Fingers press on pointerdown, and their click has a detail of 1 or more. A
+// screen reader's click has none, so it taps the key here. The hidden
+// switch's own copy of the click is ignored.
+function onClick(code: number, event: MouseEvent) {
+  if (event.detail === 0 && !(event.target instanceof HTMLInputElement)) tap(code)
+}
 </script>
 
 <template>
@@ -38,10 +45,14 @@ function up(event: PointerEvent) {
         role="button"
         class="key-btn relative grid touch-none place-items-center rounded-[9px] bg-key text-[14px] text-muted active:bg-key-down"
         :class="vertical ? 'min-h-0 flex-1' : 'w-12 shrink-0'"
+        tabindex="0"
         :aria-label="key.name"
         @pointerdown="down(key.code, $event)"
         @pointerup="up"
         @pointercancel="up"
+        @click="onClick(key.code, $event)"
+        @keydown.enter.prevent="tap(key.code)"
+        @keydown.space.prevent="tap(key.code)"
         @contextmenu.prevent
       >
         <span>{{ key.label }}</span>
