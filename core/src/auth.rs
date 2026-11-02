@@ -82,16 +82,27 @@ pub struct TrustSave {
 
 impl TrustSave {
     /// Writes the copy unless a newer one was written first; `written` holds
-    /// the revision written last and keeps writers one at a time.
-    pub fn write(self, written: &Mutex<u64>) {
+    /// the revision written last and keeps writers one at a time. Returns
+    /// false when the write failed.
+    pub fn write(self, written: &Mutex<u64>) -> bool {
         let mut last = written.lock().unwrap_or_else(|p| p.into_inner());
         if self.revision <= *last {
-            return;
+            return true;
         }
         match store::save(&self.path, &self.file) {
-            Ok(()) => *last = self.revision,
-            Err(err) => tracing::error!(%err, "could not save trusted devices"),
+            Ok(()) => {
+                *last = self.revision;
+                true
+            }
+            Err(err) => {
+                tracing::error!(%err, "could not save trusted devices");
+                false
+            }
         }
+    }
+
+    pub fn revision(&self) -> u64 {
+        self.revision
     }
 }
 
@@ -157,6 +168,18 @@ impl TrustStore {
         self.taken = self.revision;
         let path = self.path.clone()?;
         Some(TrustSave { path, revision: self.revision, file: TrustFile { version: 1, devices: self.devices.clone() } })
+    }
+
+    /// The write of `revision` failed: offer the changes again.
+    pub fn save_failed(&mut self, revision: u64) {
+        if self.taken == revision {
+            self.taken = revision.saturating_sub(1);
+        }
+    }
+
+    /// Whether some change hasn't been handed out to be written yet.
+    pub fn unsaved(&self) -> bool {
+        self.taken != self.revision
     }
 
     pub fn contains(&self, id: &str) -> bool {
@@ -545,6 +568,22 @@ mod tests {
         older.write(&written);
         let saved = TrustStore::load(Some(path));
         assert!(saved.contains("a") && saved.contains("b"));
+    }
+
+    #[test]
+    fn a_failed_write_is_offered_again() {
+        let dir = tempfile::tempdir().unwrap();
+        // A file where the folder should be, so nothing can be written there.
+        std::fs::write(dir.path().join("blocked"), b"").unwrap();
+        let mut trust = TrustStore::load(Some(dir.path().join("blocked/devices.json")));
+        trust.issue(&device("a"), PHONE);
+        let save = trust.pending_save().unwrap();
+        let revision = save.revision();
+        assert!(!save.write(&Mutex::new(0)));
+        assert!(!trust.unsaved(), "handed out, so not offered twice at once");
+        trust.save_failed(revision);
+        assert!(trust.unsaved());
+        assert_eq!(trust.pending_save().map(|s| s.revision()), Some(revision));
     }
 
     #[test]

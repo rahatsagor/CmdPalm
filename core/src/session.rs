@@ -307,6 +307,26 @@ async fn authenticate<S>(
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
+    let result = authorize(shared, device, request, remember, peer, sink, stream).await;
+    // Pairing and reconnecting change the trusted devices. Saving them syncs
+    // to disk, so it runs off the network threads.
+    let saving = shared.clone();
+    let _ = tokio::task::spawn_blocking(move || saving.save_trust()).await;
+    result
+}
+
+async fn authorize<S>(
+    shared: &Arc<Shared>,
+    device: &DeviceInfo,
+    request: AuthRequest,
+    remember: bool,
+    peer: IpAddr,
+    sink: &mut WsSink<S>,
+    stream: &mut WsStream<S>,
+) -> Result<Authorized, Option<Refusal>>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
     let config = shared.config();
     let now = Instant::now();
     let fallback_name = || {
@@ -316,13 +336,11 @@ where
     let accept = |shared: &Shared| {
         let name = fallback_name();
         let token = remember.then(|| shared.state().trust.issue(device, peer));
-        shared.save_trust();
         Ok(Authorized { token, remembered: remember, newly_paired: true, name })
     };
     match request {
         AuthRequest::Token { token } => {
             let found = shared.state().trust.verify(device, &token, peer);
-            shared.save_trust();
             match found {
                 Some(trusted) => Ok(Authorized {
                     token: None,
@@ -539,7 +557,7 @@ impl Connection {
         let Ok(message) = serde_json::from_str::<ClientMessage>(text) else {
             self.shared.engine(Command::Alive(self.id));
             tracing::debug!(session = self.id, "ignoring malformed message");
-            return None;
+            return unreadable_reply(text);
         };
         if self.shared.interrupts.paused()
             && let Some(reply) = paused_reply(&message)
@@ -789,6 +807,27 @@ impl Connection {
 }
 
 const PAUSED: &str = "Control is paused on the Mac.";
+
+/// A request the Mac can't read, say from a phone app cached from another
+/// version, still gets an answer where the phone waits for one: an action
+/// would otherwise count as done once the phone stops waiting, and a deck
+/// change would stay on screen without being saved.
+fn unreadable_reply(text: &str) -> Option<ServerMessage> {
+    let value: serde_json::Value = serde_json::from_str(text).ok()?;
+    match value.get("t")?.as_str()? {
+        "action" => Some(ServerMessage::ActionResult {
+            id: value.get("id").and_then(serde_json::Value::as_u64).and_then(|id| u32::try_from(id).ok()),
+            ok: false,
+            message: Some("The Mac couldn’t read that action. Reload CmdPalm on this device and try again.".into()),
+        }),
+        "deckSave" => Some(notice(
+            NoticeLevel::Error,
+            "deck",
+            "The Mac couldn’t read the changed deck, so it wasn’t saved. Reload CmdPalm on this device and try again.",
+        )),
+        _ => None,
+    }
+}
 
 /// While paused, everything that acts on the Mac is refused. `None` means the
 /// message is still allowed; `Some(reply)` means it was refused.

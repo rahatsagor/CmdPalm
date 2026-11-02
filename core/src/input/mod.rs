@@ -335,6 +335,8 @@ pub enum Input {
 pub struct Interrupts {
     paused: AtomicBool,
     ended: Mutex<HashSet<SessionId>>,
+    /// Bumped when shell commands are turned off.
+    shell_stops: std::sync::atomic::AtomicU64,
 }
 
 impl Interrupts {
@@ -357,6 +359,15 @@ impl Interrupts {
 
     pub fn should_stop(&self, session: SessionId) -> bool {
         self.paused() || self.ended.lock().unwrap_or_else(|p| p.into_inner()).contains(&session)
+    }
+
+    /// Stop the shell commands running now; ones started later carry on.
+    pub fn stop_shell_commands(&self) {
+        self.shell_stops.fetch_add(1, Ordering::SeqCst);
+    }
+
+    pub fn shell_stops(&self) -> u64 {
+        self.shell_stops.load(Ordering::SeqCst)
     }
 }
 

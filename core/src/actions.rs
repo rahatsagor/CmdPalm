@@ -147,17 +147,23 @@ pub(crate) fn paste(
     Ok(())
 }
 
-fn url_allowed(url: &str, allow_shell: bool) -> bool {
-    let Some((scheme, _)) = url.trim().split_once(':') else { return false };
+/// Why a link can't be opened, or `None` when it can.
+fn link_problem(url: &str, allow_shell: bool) -> Option<&'static str> {
+    const NOT_ALLOWED: &str = "That kind of link isn't allowed.";
+    let Some((scheme, _)) = url.trim().split_once(':') else { return Some(NOT_ALLOWED) };
     let scheme = scheme.to_ascii_lowercase();
     if scheme.is_empty() || !scheme.chars().all(|c| c.is_ascii_alphanumeric() || "+-.".contains(c)) {
-        return false;
+        return Some(NOT_ALLOWED);
     }
     match scheme.as_str() {
-        "javascript" | "data" => false,
-        // A file URL can launch scripts; treat it like a shell command.
-        "file" => allow_shell,
-        _ => true,
+        "javascript" | "data" => Some(NOT_ALLOWED),
+        // A file URL can launch scripts, and these open a terminal or connect
+        // to a file server, which can hand over the Mac's login. Treat them
+        // like shell commands.
+        "file" | "ssh" | "telnet" | "x-man-page" | "smb" | "cifs" | "afp" | "nfs" | "ftp" if !allow_shell => Some(
+            "Links to files, terminals and file servers need shell commands turned on in CmdPalm settings on the Mac.",
+        ),
+        _ => None,
     }
 }
 
@@ -201,8 +207,8 @@ pub(crate) fn execute(shared: &Shared, session: SessionId, action: &Action, dept
         }
         Action::Url { url } => {
             let url = url.trim();
-            if !url_allowed(url, shared.config().allow_shell) {
-                return Err("That kind of link isn't allowed.".into());
+            if let Some(problem) = link_problem(url, shared.config().allow_shell) {
+                return Err(problem.into());
             }
             settle(shared, session)?;
             if !shared.delegate.open_url(url.to_string()) {
@@ -290,12 +296,15 @@ fn run_shell(command: &str, interrupts: Arc<Interrupts>) -> Result<(), String> {
     let group = child.id() as libc::pid_t;
     let (done, finished) = std::sync::mpsc::channel();
     // Reap the process when it finishes so it never lingers as a zombie, and
-    // stop it if input is paused while it runs: the command inherits CmdPalm's
-    // Accessibility permission, so it must not outlive Pause. That includes
-    // what it left running in the background (`cmd &`, `nohup`), so the
-    // watch goes on until its whole process group is gone.
+    // stop it if input is paused or shell commands are turned off while it
+    // runs: the command inherits CmdPalm's Accessibility permission, so it
+    // must not outlive either. That includes what it left running in the
+    // background (`cmd &`, `nohup`), so the watch goes on until its whole
+    // process group is gone.
+    let stops = interrupts.shell_stops();
     std::thread::spawn(move || {
         let _running = running;
+        let stopped = || interrupts.paused() || interrupts.shell_stops() != stops;
         let mut signalled: Option<Instant> = None;
         let mut shell_done = false;
         loop {
@@ -307,7 +316,7 @@ fn run_shell(command: &str, interrupts: Arc<Interrupts>) -> Result<(), String> {
                 };
                 if let Some(status) = status {
                     shell_done = true;
-                    let _ = done.send((status, interrupts.paused()));
+                    let _ = done.send((status, stopped()));
                 }
             }
             // SAFETY: signal 0 only checks whether the group created above
@@ -315,7 +324,7 @@ fn run_shell(command: &str, interrupts: Arc<Interrupts>) -> Result<(), String> {
             if shell_done && unsafe { libc::killpg(group, 0) } != 0 {
                 break;
             }
-            if interrupts.paused() {
+            if stopped() {
                 match signalled {
                     None => {
                         // SAFETY: signals only the process group created above.
@@ -399,15 +408,20 @@ mod tests {
     }
 
     #[test]
-    fn file_links_need_shell_permission() {
-        assert!(url_allowed("https://example.com", false));
-        assert!(url_allowed(" https://example.com\n", false), "pasted links often carry spaces");
-        assert!(url_allowed("raycast://extensions", false));
-        assert!(!url_allowed("file:///tmp/x.command", false));
-        assert!(url_allowed("file:///tmp/x.command", true));
-        assert!(!url_allowed("no scheme", false));
-        assert!(!url_allowed("JavaScript:alert(1)", true));
-        assert!(!url_allowed("data:text/html,hi", true));
+    fn file_terminal_and_file_server_links_need_shell_permission() {
+        let allowed = |url: &str, shell: bool| link_problem(url, shell).is_none();
+        assert!(allowed("https://example.com", false));
+        assert!(allowed(" https://example.com\n", false), "pasted links often carry spaces");
+        assert!(allowed("raycast://extensions", false));
+        assert!(!allowed("file:///tmp/x.command", false));
+        assert!(allowed("file:///tmp/x.command", true));
+        for url in ["ssh://host", "SMB://server/share", "afp://server", "x-man-page://ls"] {
+            assert!(!allowed(url, false), "{url}");
+            assert!(allowed(url, true), "{url}");
+        }
+        assert!(!allowed("no scheme", false));
+        assert!(!allowed("JavaScript:alert(1)", true));
+        assert!(!allowed("data:text/html,hi", true));
     }
 
     #[test]
@@ -421,6 +435,21 @@ mod tests {
         interrupts.set_paused(true);
         std::thread::sleep(Duration::from_millis(2600));
         assert!(!marker.exists(), "the paused command never finished");
+    }
+
+    #[test]
+    fn turning_shell_commands_off_stops_the_running_ones() {
+        let dir = tempfile::tempdir().unwrap();
+        let marker = dir.path().join("done");
+        let interrupts = Arc::new(Interrupts::default());
+        run_shell(&format!("sleep 3; touch '{}'", marker.display()), interrupts.clone()).unwrap();
+        std::thread::sleep(Duration::from_millis(300));
+        interrupts.stop_shell_commands();
+        std::thread::sleep(Duration::from_millis(2600));
+        assert!(!marker.exists(), "the command was stopped");
+        let later = dir.path().join("later");
+        run_shell(&format!("touch '{}'", later.display()), interrupts).unwrap();
+        assert!(later.exists(), "commands started after turning them on again run");
     }
 
     #[test]

@@ -763,9 +763,16 @@ impl<S: EventSink> Engine<S> {
         // A new key press stops auto-repeat of the previous one, as on hardware.
         self.repeat = None;
         let temp = if keycodes::is_modifier(code) { Vec::new() } else { self.press_temp_mods(mods) };
-        self.press(code);
-        self.sink.post(Synth::Pause(hold));
-        self.release(code);
+        if !keycodes::is_modifier(code) && self.os_keys.contains_key(&code) {
+            // Another device holds this key. It can't go down again, or come
+            // up without letting go of theirs, so it types once more as a repeat.
+            let flags = self.flags() | keycodes::intrinsic_flags(code);
+            self.sink.post(Synth::Key { code, down: true, flags, repeat: true });
+        } else {
+            self.press(code);
+            self.sink.post(Synth::Pause(hold));
+            self.release(code);
+        }
         self.release_temp_mods(temp);
     }
 
@@ -773,7 +780,7 @@ impl<S: EventSink> Engine<S> {
     /// modifiers the character needs reach the app, not ones a device is
     /// holding, so a held ⌘ can't turn a correction's ⌫ into ⌘⌫.
     fn type_key(&mut self, code: KeyCode, mods: u16, hold: Duration) {
-        if self.os_keys.contains_key(&code) || keycodes::is_modifier(code) || code == KEY_CAPS_LOCK {
+        if keycodes::is_modifier(code) || code == KEY_CAPS_LOCK {
             return self.tap(code, mods, hold);
         }
         self.repeat = None;
@@ -784,9 +791,14 @@ impl<S: EventSink> Engine<S> {
             .filter_map(|code| keycodes::modifier(*code))
             .filter(|m| mods & m.wire != 0)
             .fold(keycodes::intrinsic_flags(code), |acc, m| acc | m.flags);
-        self.sink.post(Synth::Key { code, down: true, flags, repeat: false });
-        self.sink.post(Synth::Pause(hold));
-        self.sink.post(Synth::Key { code, down: false, flags, repeat: false });
+        if self.os_keys.contains_key(&code) {
+            // As in `tap`: a key another device holds types once more as a repeat.
+            self.sink.post(Synth::Key { code, down: true, flags, repeat: true });
+        } else {
+            self.sink.post(Synth::Key { code, down: true, flags, repeat: false });
+            self.sink.post(Synth::Pause(hold));
+            self.sink.post(Synth::Key { code, down: false, flags, repeat: false });
+        }
         self.release_temp_mods(temp);
     }
 
@@ -984,9 +996,10 @@ impl<S: EventSink> Engine<S> {
         self.stop_momentum();
         match phase {
             scroll_phase::BEGAN | scroll_phase::CHANGED => {
-                // A gesture that never ended, such as another device's, is
-                // closed before a new one begins.
-                if phase == scroll_phase::BEGAN && self.scroll.take().is_some() {
+                // A gesture that never ended, or another device's, is closed
+                // before this one begins.
+                let owned = self.scroll.as_ref().is_some_and(|s| s.session == session);
+                if (phase == scroll_phase::BEGAN || !owned) && self.scroll.take().is_some() {
                     self.post_scroll(0.0, 0.0, scroll_phase::ENDED, momentum_phase::NONE);
                 }
                 let phase = if self.scroll.is_some() && phase == scroll_phase::CHANGED {
@@ -997,8 +1010,11 @@ impl<S: EventSink> Engine<S> {
                 self.scroll = Some(ScrollGesture { session, last: now });
                 self.post_scroll(dx, dy, phase, momentum_phase::NONE);
             }
+            // Only the device scrolling ends it; a late end from another
+            // device would cut its gesture short.
             scroll_phase::ENDED | scroll_phase::CANCELLED => {
-                if self.scroll.take().is_some() {
+                if self.scroll.as_ref().is_some_and(|s| s.session == session) {
+                    self.scroll = None;
                     self.post_scroll(0.0, 0.0, phase, momentum_phase::NONE);
                 }
             }
@@ -1020,10 +1036,10 @@ impl<S: EventSink> Engine<S> {
         let active = self.gestures.iter().position(|g| g.kind == kind);
         match phase {
             scroll_phase::BEGAN | scroll_phase::CHANGED => {
-                // As with scrolling, a gesture that never ended (another
-                // device's, say) is closed before a new one begins.
+                // As with scrolling, a gesture that never ended, or another
+                // device's, is closed before this one begins.
                 let continues = match active {
-                    Some(i) if phase == scroll_phase::BEGAN => {
+                    Some(i) if phase == scroll_phase::BEGAN || self.gestures[i].session != session => {
                         self.gestures.remove(i);
                         self.sink.post(Synth::Gesture { kind, phase: scroll_phase::ENDED, value: 0.0 });
                         false
@@ -1041,7 +1057,9 @@ impl<S: EventSink> Engine<S> {
                 self.sink.post(Synth::Gesture { kind, phase, value });
             }
             scroll_phase::ENDED | scroll_phase::CANCELLED => {
-                if let Some(i) = active {
+                if let Some(i) = active
+                    && self.gestures[i].session == session
+                {
                     self.gestures.remove(i);
                     self.sink.post(Synth::Gesture { kind, phase, value: 0.0 });
                 }
@@ -1844,6 +1862,46 @@ mod tests {
             })
             .collect();
         assert_eq!(phases, [scroll_phase::BEGAN, scroll_phase::ENDED, scroll_phase::BEGAN, scroll_phase::ENDED]);
+    }
+
+    #[test]
+    fn only_the_device_scrolling_can_end_its_gesture_and_another_takes_over() {
+        let mut h = Harness::new();
+        let scroll = |phase| Input::Scroll { phase, dx: 0.0, dy: 1.0 };
+        h.input(A, scroll(scroll_phase::BEGAN));
+        h.input(B, scroll(scroll_phase::ENDED));
+        h.input(A, scroll(scroll_phase::CHANGED));
+        h.input(B, scroll(scroll_phase::CHANGED));
+        h.cmd(Command::EndSession(A));
+        let phases: Vec<u8> = h
+            .take()
+            .into_iter()
+            .filter_map(|e| match e {
+                Synth::Scroll { phase, .. } => Some(phase),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(phases, [scroll_phase::BEGAN, scroll_phase::CHANGED, scroll_phase::ENDED, scroll_phase::BEGAN]);
+
+        h.input(B, Input::Gesture { kind: GestureKind::Zoom, phase: scroll_phase::BEGAN, value: 0.1 });
+        h.input(A, Input::Gesture { kind: GestureKind::Zoom, phase: scroll_phase::ENDED, value: 0.0 });
+        assert!(h.engine.gestures.iter().any(|g| g.session == B), "another device's end leaves the zoom going");
+    }
+
+    #[test]
+    fn a_key_another_device_holds_still_types() {
+        let mut h = Harness::new();
+        h.key(A, KEY_DELETE, true);
+        h.take();
+        h.input(B, Input::Edit { delete: 2, insert: String::new() });
+        h.input(B, Input::Tap { code: KEY_DELETE, mods: 0 });
+        let events = h.take();
+        let repeats = events
+            .iter()
+            .filter(|e| matches!(e, Synth::Key { code: KEY_DELETE, down: true, repeat: true, .. }))
+            .count();
+        assert_eq!(repeats, 3, "{events:?}");
+        assert!(!events.iter().any(|e| matches!(e, Synth::Key { down: false, .. })), "A's hold carries on");
     }
 
     fn gestures(events: Vec<Synth>) -> Vec<(GestureKind, u8, f64)> {

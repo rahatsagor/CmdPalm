@@ -163,8 +163,8 @@ Little-endian. The first byte is the type.
 
 `{"t":"action","action":{…},"id":n}` runs an action. If `id` is given, the Mac
 answers with `actionResult` (`{id, ok, message?}`). A failed action without an
-`id` still gets an `actionResult`, with no `id`. Actions are the same objects
-deck buttons store, tagged by `kind`:
+`id` still gets an `actionResult`, with no `id`, and so does an action the Mac
+can't read. Actions are the same objects deck buttons store, tagged by `kind`:
 
 | `kind` | Fields |
 | --- | --- |
@@ -172,10 +172,10 @@ deck buttons store, tagged by `kind`:
 | `text` | `text`, `enter` |
 | `media` | `key` |
 | `app` | `id` (bundle identifier), `op`: `open`, `toggle`, `hide`, `quit` |
-| `url` | `url`, with surrounding spaces ignored. `javascript:` and `data:` are refused; `file:` only works while shell commands are allowed |
+| `url` | `url`, with surrounding spaces ignored. `javascript:` and `data:` are refused. `file:` and links that open a terminal or a file server (`ssh:`, `telnet:`, `x-man-page:`, `smb:`, `cifs:`, `afp:`, `nfs:`, `ftp:`) only work while shell commands are allowed |
 | `system` | `name`, e.g. `missionControl`, `launchpad`, `lockScreen`, `screenshotArea`; see `SystemAction` |
 | `shortcut` | `name` of a macOS Shortcuts automation |
-| `shell` | `command`; refused unless allowed on the Mac. Pausing input stops commands that are still running. |
+| `shell` | `command`; refused unless allowed on the Mac. Pausing input, or turning shell commands off, stops commands that are still running. |
 | `mouse` | `button`, `clicks` |
 | `delay` | `ms`, up to 10 000 |
 | `sequence` | `steps`: up to 64 actions, nested at most 3 deep |
@@ -186,7 +186,7 @@ deck buttons store, tagged by `kind`:
 | --- | --- | --- |
 | `apps` | | `apps` |
 | `appAction` | `id`, `op` | `appsChanged` once the app responds |
-| `deckSave` | `deck` | `deck` to every connected device, or a `notice` with code `deck` when the Mac rejected the deck, could not save it, or was too busy to try |
+| `deckSave` | `deck` | `deck` to every connected device, or a `notice` with code `deck` when the Mac rejected or couldn't read the deck, could not save it, or was too busy to try |
 | `volume` | `value?`, `muted?` | `volume` |
 | `clipboardSet` | `text`, up to 64 KiB | a `notice` with code `tooLong` if it is longer |
 | `clipboardGet` | | `clipboard`, cut to 64 KiB (UTF-8) |

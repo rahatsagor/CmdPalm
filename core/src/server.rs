@@ -39,6 +39,8 @@ const MAX_KEEP_ALIVE: Duration = Duration::from_secs(120);
 pub const MAX_MESSAGE: usize = 1 << 20;
 const IDENTITY_CHECK: Duration = Duration::from_secs(60 * 60);
 const IDENTITY_RETRY: Duration = Duration::from_secs(60);
+/// A failed write of the trusted devices is tried again about once a minute.
+const TRUST_RETRY_TICKS: u64 = 12;
 
 #[derive(Debug, thiserror::Error)]
 pub enum SaveError {
@@ -162,6 +164,7 @@ async fn housekeeping(
     mut shutdown: watch::Receiver<bool>,
 ) {
     let mut ticker = tokio::time::interval(Duration::from_secs(5));
+    let mut ticks = 0u64;
     loop {
         tokio::select! {
             _ = ticker.tick() => {}
@@ -182,6 +185,11 @@ async fn housekeeping(
         }
         if rotated || moved {
             shared.emit(HostEvent::PairingChanged);
+        }
+        ticks += 1;
+        if ticks.is_multiple_of(TRUST_RETRY_TICKS) && shared.trust_unsaved() {
+            let saving = shared.clone();
+            let _ = tokio::task::spawn_blocking(move || saving.save_trust()).await;
         }
     }
 }

@@ -251,6 +251,18 @@ fn pin_pairing_then_token_reconnect() {
 
         send(&mut ws, json!({"t": "action", "id": 4, "action": {"kind": "app", "id": "com.apple.Safari"}})).await;
         assert_eq!(recv_kind(&mut ws, "actionResult").await["ok"], true);
+
+        // Clicks are limited to 1–3, so the Mac can't read this one.
+        send(&mut ws, json!({"t": "action", "id": 5, "action": {"kind": "mouse", "button": "left", "clicks": 300}}))
+            .await;
+        let result = recv_kind(&mut ws, "actionResult").await;
+        assert_eq!(
+            (&result["id"], &result["ok"]),
+            (&json!(5), &json!(false)),
+            "an unreadable action is still answered"
+        );
+        send(&mut ws, json!({"t": "deckSave", "deck": {"version": 1, "pages": "none"}})).await;
+        assert_eq!(recv_kind(&mut ws, "notice").await["code"], "deck");
     });
     assert_eq!(f.delegate.opened.lock().unwrap().as_slice(), ["com.apple.Safari"]);
 

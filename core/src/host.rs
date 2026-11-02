@@ -194,8 +194,17 @@ impl Shared {
     pub fn save_trust(&self) {
         let pending = self.state().trust.pending_save();
         if let Some(save) = pending {
-            save.write(&self.trust_written);
+            let revision = save.revision();
+            if !save.write(&self.trust_written) {
+                // Housekeeping tries again, so a device paired while the disk
+                // was full isn't forgotten when CmdPalm next opens.
+                self.state().trust.save_failed(revision);
+            }
         }
+    }
+
+    pub fn trust_unsaved(&self) -> bool {
+        self.state().trust.unsaved()
     }
 
     pub fn device_settings(&self) -> MutexGuard<'_, DeviceSettings> {
@@ -489,6 +498,9 @@ impl CoreHost {
     pub fn update_config(&self, config: HostConfig) {
         let previous = self.shared.config();
         *self.shared.config.write().unwrap_or_else(|p| p.into_inner()) = config.clone();
+        if previous.allow_shell && !config.allow_shell {
+            self.shared.interrupts.stop_shell_commands();
+        }
         if previous.allow_shell != config.allow_shell || previous.voice_available != config.voice_available {
             let permission = (self.shared.permission)();
             let sessions: Vec<_> =
