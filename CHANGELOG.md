@@ -9,6 +9,93 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Mac app
+
+- If the list of paired devices can't be read when CmdPalm opens, the
+  settings each device kept on the Mac are no longer deleted with it.
+- A saved deck CmdPalm can't use, for example one from a newer version, is
+  set aside instead of being overwritten by the next change.
+- HTTPS keeps working on a Mac that stays on for months. CmdPalm renews its
+  certificate while it runs, tries again a minute after a failure instead of
+  waiting for a restart, and replaces certificate files that don't match.
+- Phone settings the Mac couldn't save, for example because the disk is
+  full, now show an error on the phone instead of being lost at the next
+  restart.
+- Renaming a device in Settings also shows the new name for a device that is
+  connected right now.
+- After an app launches or a drive is connected, the app list and its icons
+  share one look through your app folders instead of each starting its own.
+- Turning shell commands off also stops the ones still running.
+- A device paired while the disk was full is saved once there is room
+  again, instead of being forgotten when CmdPalm next opens.
+- Open at Login asks you to move CmdPalm to the Applications folder when it
+  was opened from the disk image, instead of adding a login item that opens
+  nothing after a restart.
+
+### Deck, apps and media
+
+- A deck change made while the Mac is busy is undone on the phone with a
+  message, instead of showing a change the Mac never saved.
+- Dragging a button to a new place is saved even when you tap Done or switch
+  tabs before lifting your finger.
+- Lock Screen, Sleep and Display Sleep buttons that were waiting for typing
+  to finish no longer run if you pause CmdPalm meanwhile.
+- Shortcuts whose names start with a hyphen run instead of failing.
+- Renaming a custom keyboard and then tapping Duplicate keeps the new name.
+- Duplicate in the button editor keeps the changes you just made, for the
+  button and its copy.
+- A button the Mac can't read, for example from a phone page left open
+  across an update, says so instead of seeming to work.
+
+### Keyboard and voice
+
+- The Caps Lock key on the Mac keyboard lights up while Caps Lock is on,
+  whether it was turned on from the phone or on the Mac itself, so capitals
+  never come as a surprise. Custom keys that send Caps Lock light up too.
+- Text typed as key presses comes out as written while Caps Lock is on,
+  instead of all in capitals.
+- A key another device is holding down, such as Delete, still works when
+  you tap it or dictation corrects a word.
+- In shortcut fields, Esc on a hardware keyboard picks the Escape key instead
+  of closing the editor, Tab moves on to the next control, and the Shift a
+  character like "?" needs no longer sticks to the next key you type.
+- A key held down on an iPad keyboard keeps working after the connection
+  drops and comes back.
+- Dictation stops with a message when a call, Siri or another app takes the
+  microphone, instead of looking active while nothing is heard. Stopping and
+  starting it quickly no longer leaves audio open in the background.
+- Long text copied from the Mac is cut to the size the phone can send back,
+  so it can be pasted on the Mac again in any language.
+
+### Trackpad
+
+- Scrolling momentum stops when the phone disconnects or lets go of
+  everything, instead of gliding on for up to four seconds.
+- Games and apps that read raw mouse movement keep getting it while the
+  pointer is pushed against the edge of the screen.
+- When two devices scroll or zoom at once, one can no longer end the
+  other's gesture early.
+
+### Phone and tablet
+
+- Keys on the Mac keyboard and custom keyboards no longer look pressed after
+  you lock the phone or switch apps mid-press.
+- The volume slider follows the Mac again after you switch tabs mid-drag.
+- The click buttons, the keys above the phone keyboard and the modifier keys
+  work with a keyboard and with VoiceOver and TalkBack. A hardware keyboard
+  no longer also sends Return or Space to the Mac when it presses a button
+  on the phone.
+- The screen stays on while you wait for the Mac to approve a new device,
+  and CmdPalm asks again to keep it on if the system lets go while it's open.
+- Forgetting a Mac also clears its app list.
+
+### Privacy and security
+
+- The Mac refuses requests with a repeated Host or Content-Length header,
+  which a proxy in front of it could read differently.
+- Links that open a terminal or connect to a file server, such as `ssh:`
+  and `smb:`, need shell commands turned on, like links to files.
+
 ## [0.5.2] - 2026-10-31
 
 A round of fixes that keep input in order and every device responsive.
