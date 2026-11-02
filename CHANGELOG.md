@@ -9,6 +9,14 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-02
+
+Caps Lock now lights up on the phone's Mac keyboard, and text typed as key
+presses comes out as written while it is on. Alongside, a round of fixes
+keeps saved settings, the deck and HTTPS safe from damaged files and long
+uptimes, makes more of the phone work with a keyboard and screen readers,
+and tightens what deck buttons can do while shell commands are off.
+
 ### Mac app
 
 - If the list of paired devices can't be read when CmdPalm opens, the
