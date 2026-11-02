@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::protocol::DeviceInfo;
-use crate::store;
+use crate::store::{self, Loaded};
 
 pub const CODE_LIFETIME: Duration = Duration::from_secs(10 * 60);
 const MAX_FAILURES_PER_ADDRESS: u32 = 5;
@@ -69,6 +69,8 @@ pub struct TrustStore {
     /// file is written later, by whoever made the change, once it is released.
     revision: u64,
     taken: u64,
+    /// False when the file was there but couldn't be read or parsed.
+    intact: bool,
 }
 
 /// A copy of the trusted devices, to write once the state lock is released.
@@ -129,8 +131,18 @@ pub(crate) fn clean(text: &str, max: usize) -> String {
 
 impl TrustStore {
     pub fn load(path: Option<PathBuf>) -> Self {
-        let devices = path.as_deref().and_then(store::load::<TrustFile>).map(|file| file.devices).unwrap_or_default();
-        Self { path, devices, revision: 0, taken: 0 }
+        let (devices, intact) = match path.as_deref().map(store::try_load::<TrustFile>) {
+            Some(Loaded::Found(file)) => (file.devices, true),
+            Some(Loaded::Unusable) => (Vec::new(), false),
+            Some(Loaded::Missing) | None => (Vec::new(), true),
+        };
+        Self { path, devices, revision: 0, taken: 0, intact }
+    }
+
+    /// Whether the saved list loaded, or there was none yet. An empty list
+    /// from an unreadable file says nothing about which devices are paired.
+    pub fn intact(&self) -> bool {
+        self.intact
     }
 
     fn save(&mut self) {
@@ -233,6 +245,11 @@ impl TrustStore {
     pub fn clear(&mut self) {
         self.devices.clear();
         self.save();
+    }
+
+    /// The stored name, including the mark of a name set on the Mac.
+    pub fn name(&self, id: &str) -> Option<String> {
+        self.devices.iter().find(|d| d.device.id == id).map(|d| d.device.name.clone())
     }
 }
 
@@ -528,6 +545,15 @@ mod tests {
         older.write(&written);
         let saved = TrustStore::load(Some(path));
         assert!(saved.contains("a") && saved.contains("b"));
+    }
+
+    #[test]
+    fn tells_an_unreadable_list_from_a_missing_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("devices.json");
+        assert!(TrustStore::load(Some(path.clone())).intact());
+        std::fs::write(&path, b"{not json").unwrap();
+        assert!(!TrustStore::load(Some(path)).intact());
     }
 
     #[test]

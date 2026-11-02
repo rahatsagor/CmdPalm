@@ -501,13 +501,20 @@ impl Connection {
     /// Run work that may block on macOS. A device can only keep a few such
     /// jobs in flight, so a flood of requests can't pile up threads.
     fn blocking<F: FnOnce(&Shared) -> Option<ServerMessage> + Send + 'static>(&self, work: F) {
-        if self.in_flight.fetch_add(1, AtomicOrdering::SeqCst) >= MAX_IN_FLIGHT {
-            self.in_flight.fetch_sub(1, AtomicOrdering::SeqCst);
+        if !self.try_blocking(work) {
             self.shared.send_to(
                 self.id,
                 notice(NoticeLevel::Warning, "busy", "The Mac is still busy. Try again in a moment."),
             );
-            return;
+        }
+    }
+
+    /// Like [`Self::blocking`], but returns false instead of answering when
+    /// too many jobs are in flight.
+    fn try_blocking<F: FnOnce(&Shared) -> Option<ServerMessage> + Send + 'static>(&self, work: F) -> bool {
+        if self.in_flight.fetch_add(1, AtomicOrdering::SeqCst) >= MAX_IN_FLIGHT {
+            self.in_flight.fetch_sub(1, AtomicOrdering::SeqCst);
+            return false;
         }
         let shared = self.shared.clone();
         let id = self.id;
@@ -524,6 +531,7 @@ impl Connection {
                 shared.send_to(id, reply);
             }
         });
+        true
     }
 
     fn text(&mut self, text: &str) -> Option<ServerMessage> {
@@ -626,12 +634,20 @@ impl Connection {
                 // ticket, taken in arrival order, keeps an older save from
                 // landing after a newer one.
                 let ticket = deck_ticket(&self.shared);
-                self.blocking(move |shared| {
+                let accepted = self.try_blocking(move |shared| {
                     save_deck_as(shared, deck, ticket)
                         .err()
                         .map(|err| notice(NoticeLevel::Error, "deck", &err.to_string()))
                 });
-                None
+                // The phone shows its change before the Mac confirms it, and
+                // takes it back when a notice about the deck arrives.
+                (!accepted).then(|| {
+                    notice(
+                        NoticeLevel::Warning,
+                        "deck",
+                        "The Mac is still busy, so the deck wasn’t changed. Try again in a moment.",
+                    )
+                })
             }
             ClientMessage::Volume { value, muted } => {
                 let value = value.filter(|v| v.is_finite()).map(|v| v.clamp(0.0, 1.0));
@@ -653,8 +669,13 @@ impl Connection {
             }
             ClientMessage::ClipboardGet => {
                 self.blocking(|shared| {
-                    let text: String =
-                        shared.delegate.clipboard_text().unwrap_or_default().chars().take(MAX_TEXT).collect();
+                    let mut text = shared.delegate.clipboard_text().unwrap_or_default();
+                    // Limited by size like text sent the other way, so the
+                    // phone can always send it back.
+                    if text.len() > MAX_TEXT {
+                        let end = (0..=MAX_TEXT).rev().find(|&i| text.is_char_boundary(i)).unwrap_or(0);
+                        text.truncate(end);
+                    }
                     Some(ServerMessage::Clipboard { text })
                 });
                 None

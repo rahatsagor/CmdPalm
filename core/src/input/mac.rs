@@ -310,8 +310,10 @@ impl MacSink {
             return;
         };
         // Raw deltas matter to games, 3D tools and pointer-locked web pages.
-        let rx = self.delta_remainder.0 + (target.x - start.x);
-        let ry = self.delta_remainder.1 + (target.y - start.y);
+        // Like a real mouse's, they keep coming when the pointer is held at
+        // the edge of the screen.
+        let rx = self.delta_remainder.0 + dx;
+        let ry = self.delta_remainder.1 + dy;
         let (ix, iy) = (rx.trunc(), ry.trunc());
         self.delta_remainder = (rx - ix, ry - iy);
         CGEvent::set_integer_value_field(Some(&event), CGEventField::MouseEventDeltaX, ix as i64);

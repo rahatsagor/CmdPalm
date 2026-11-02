@@ -85,7 +85,10 @@ impl Deck {
         if self.version != DECK_VERSION {
             return Err(DeckError::Version(self.version));
         }
-        if self.pages.is_empty() || self.pages.len() > MAX_PAGES {
+        if self.pages.is_empty() {
+            return Err(DeckError::Invalid("the deck needs at least one page".into()));
+        }
+        if self.pages.len() > MAX_PAGES {
             return Err(DeckError::TooLarge);
         }
         for page in &self.pages {
@@ -293,5 +296,8 @@ mod tests {
 
         let deck = Deck { version: 99, pages: vec![] };
         assert_eq!(deck.validate(), Err(DeckError::Version(99)));
+
+        let deck = Deck { version: DECK_VERSION, pages: vec![] };
+        assert_eq!(deck.validate(), Err(DeckError::Invalid("the deck needs at least one page".into())));
     }
 }

@@ -141,8 +141,8 @@ actions use the plain bits only. The Mac ignores a message with any other bit.
 | `tap` | `code`, `mods` | Press and release as one combo. Use this for shortcuts so a lost packet can't leave a modifier stuck. |
 | `button` | `button`, `op`, `mods` | Mouse button `left`, `right`, `middle`, `back` or `forward`; `op` is `down`, `up` or `click`. |
 | `media` | `key`, `op` | `volumeUp`, `volumeDown`, `mute`, `brightnessUp`, `brightnessDown`, `playPause`, `next`, `previous`, `fastForward`, `rewind`, `illuminationUp`, `illuminationDown`, `illuminationToggle`. |
-| `text` | `text`, `mode` | Type text, up to 64 KiB. `mode` is `unicode` (default), `keystrokes` (real key presses through the Mac's layout) or `paste`. |
-| `edit` | `delete`, `insert` | Delete characters before the caret (at most 4 096), then type `insert` (up to 64 KiB). Used for live typing and autocorrect. |
+| `text` | `text`, `mode` | Type text, up to 64 KiB; longer text gets a `notice` with code `tooLong`. `mode` is `unicode` (default), `keystrokes` (real key presses through the Mac's layout) or `paste`. |
+| `edit` | `delete`, `insert` | Delete characters before the caret (at most 4 096), then type `insert` (up to 64 KiB; longer gets a `notice` with code `tooLong`). Used for live typing and autocorrect. |
 | `release` | | Release everything this device holds. |
 
 ### Binary frames
@@ -185,10 +185,10 @@ deck buttons store, tagged by `kind`:
 | --- | --- | --- |
 | `apps` | | `apps` |
 | `appAction` | `id`, `op` | `appsChanged` once the app responds |
-| `deckSave` | `deck` | `deck` to every connected device |
+| `deckSave` | `deck` | `deck` to every connected device, or a `notice` with code `deck` when the Mac rejected the deck, could not save it, or was too busy to try |
 | `volume` | `value?`, `muted?` | `volume` |
 | `clipboardSet` | `text`, up to 64 KiB | a `notice` with code `tooLong` if it is longer |
-| `clipboardGet` | | `clipboard` |
+| `clipboardGet` | | `clipboard`, cut to 64 KiB (UTF-8) |
 | `voiceStart` | `locale?` | `voice` updates |
 | `voiceStop` | `cancel` | final `voice` update |
 | `settingsSave` | `settings`, `updatedAt` | none; a `notice` with code `settings` on failure |
@@ -205,7 +205,7 @@ deck buttons store, tagged by `kind`:
 | `layout` | `layout` | The Mac's input source changed. |
 | `volume` | `value`, `muted` | Output volume changed. |
 | `volumeUnavailable` | | The output device has no volume control (HDMI, for example). |
-| `paused` | `paused` | Input was paused or resumed on the Mac. While paused, the Mac ignores input and refuses actions, text, clipboard and voice: `action` gets a failed `actionResult`, `voiceStart` gets `voice` with `unavailable`, and the others get a `notice` with code `paused`. Saving the deck and phone settings still works. |
+| `paused` | `paused` | Input was paused or resumed on the Mac. While paused, the Mac ignores input and refuses actions, text, clipboard and voice: `action` gets a failed `actionResult`, `voiceStart` gets `voice` with `unavailable`, and the others get a `notice` with code `paused`. Live typing (`edit`) is ignored like other input. Saving the deck and phone settings still works. |
 | `features` | `features` | Permissions or settings changed. |
 | `notice` | `level`, `code`, `message` | Something the person should know, e.g. `secureInput` when a password field blocks typing. |
 | `clipboard` | `text` | Answer to `clipboardGet`. |
@@ -254,10 +254,13 @@ Mac never uses them to type a character.
 }
 ```
 
-Limits: 24 pages, 64 tiles per page, 80-character labels, IDs of up to 128
-bytes, and 4 096 bytes (UTF-8) of text, URL or shell command per action. The
-Mac rejects a deck that breaks these limits, and the sender gets a `notice`
-explaining why.
+Limits: 1 to 24 pages, 1 to 8 columns and up to 64 tiles per page,
+80-character labels, IDs of up to 128 bytes, and 4 096 bytes (UTF-8) of text,
+URL or shell command per action. App IDs and shortcut names are limited to
+512 bytes, a `keys` action's `char` to 16 bytes, an emoji icon to 64 bytes
+and a symbol name to 128. `color` is `#rgb`, `#rgba`, `#rrggbb` or
+`#rrggbbaa`. The Mac rejects a deck that breaks these limits, and the sender
+gets a `notice` explaining why.
 
 ## Phone settings
 

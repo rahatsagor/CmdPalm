@@ -8,29 +8,48 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
+/// What [`try_load`] found.
+pub enum Loaded<T> {
+    Missing,
+    Found(T),
+    /// The file is there but couldn't be read or parsed.
+    Unusable,
+}
+
 pub fn load<T: DeserializeOwned>(path: &Path) -> Option<T> {
+    match try_load(path) {
+        Loaded::Found(value) => Some(value),
+        Loaded::Missing | Loaded::Unusable => None,
+    }
+}
+
+/// Like [`load`], but tells a missing file from one that couldn't be used.
+pub fn try_load<T: DeserializeOwned>(path: &Path) -> Loaded<T> {
     let bytes = match fs::read(path) {
         Ok(bytes) => bytes,
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return None,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Loaded::Missing,
         Err(err) => {
             tracing::warn!(path = %path.display(), %err, "could not read file");
-            return None;
+            return Loaded::Unusable;
         }
     };
     match serde_json::from_slice(&bytes) {
-        Ok(value) => Some(value),
+        Ok(value) => Loaded::Found(value),
         Err(err) => {
-            // Keep the unreadable file for inspection instead of overwriting
-            // it. The name must not end in `.json`, or loaders that read a
-            // whole folder would load and rename it again on every launch.
-            let backup = path.with_extension("json.corrupt");
             // serde's message can quote file contents, such as a deck snippet.
             let kind = format!("{:?}", err.classify());
             tracing::error!(path = %path.display(), kind, line = err.line(), column = err.column(), "ignoring corrupt file");
-            let _ = fs::rename(path, backup);
-            None
+            quarantine(path);
+            Loaded::Unusable
         }
     }
+}
+
+/// Keep a file that can't be used for inspection instead of overwriting it.
+/// The name must not end in `.json`, or loaders that read a whole folder
+/// would load and rename it again on every launch.
+pub fn quarantine(path: &Path) {
+    let _ = fs::rename(path, path.with_extension("json.corrupt"));
 }
 
 /// Write via a temporary file and rename so a crash never leaves a truncated

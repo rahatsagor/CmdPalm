@@ -217,6 +217,7 @@ struct TouchGesture {
 }
 
 struct Momentum {
+    session: SessionId,
     vx: f64,
     vy: f64,
     last: Instant,
@@ -597,7 +598,7 @@ impl<S: EventSink> Engine<S> {
             Input::Click { button, clicks, mods } => self.click(button, clicks, mods, now),
             Input::Move { dx, dy } => self.pointer_move(dx, dy, now),
             Input::Scroll { phase, dx, dy } => self.scroll(session, phase, dx, dy, now),
-            Input::Fling { vx, vy } => self.fling(vx, vy, now),
+            Input::Fling { vx, vy } => self.fling(session, vx, vy, now),
             Input::Touch => self.stop_momentum(),
             Input::Gesture { kind, phase, value } => self.gesture(session, kind, phase, value, now),
             Input::Media { key, op } => self.media(session, key, op),
@@ -1019,7 +1020,7 @@ impl<S: EventSink> Engine<S> {
         }
     }
 
-    fn fling(&mut self, vx: f64, vy: f64, now: Instant) {
+    fn fling(&mut self, session: SessionId, vx: f64, vy: f64, now: Instant) {
         if !vx.is_finite() || !vy.is_finite() {
             return;
         }
@@ -1031,7 +1032,8 @@ impl<S: EventSink> Engine<S> {
             return;
         }
         let scale = (MOMENTUM_MAX_SPEED / speed).min(1.0);
-        self.momentum = Some(Momentum { vx: vx * scale, vy: vy * scale, last: now, started_at: now, began: false });
+        self.momentum =
+            Some(Momentum { session, vx: vx * scale, vy: vy * scale, last: now, started_at: now, began: false });
     }
 
     fn stop_momentum(&mut self) {
@@ -1099,6 +1101,9 @@ impl<S: EventSink> Engine<S> {
     fn release_session(&mut self, id: SessionId) {
         if self.repeat.as_ref().is_some_and(|r| r.session == id) {
             self.repeat = None;
+        }
+        if self.momentum.as_ref().is_some_and(|m| m.session == id) {
+            self.stop_momentum();
         }
         if self.scroll.as_ref().is_some_and(|s| s.session == id) {
             self.scroll = None;
@@ -1874,6 +1879,24 @@ mod tests {
         h.input(A, Input::Gesture { kind: GestureKind::SmartZoom, phase: scroll_phase::ENDED, value: f64::NAN });
         h.input(A, Input::Gesture { kind: GestureKind::SmartZoom, phase: scroll_phase::NONE, value: 0.0 });
         assert_eq!(gestures(h.take()), [(GestureKind::SmartZoom, scroll_phase::NONE, 0.0)]);
+    }
+
+    #[test]
+    fn momentum_stops_when_its_device_leaves() {
+        let mut h = Harness::new();
+        h.input(A, Input::Fling { vx: 0.0, vy: 1500.0 });
+        h.advance(8);
+        h.take();
+        h.input(B, Input::ReleaseAll);
+        h.advance(8);
+        assert!(!h.take().is_empty(), "another device letting go leaves it gliding");
+        h.cmd(Command::EndSession(A));
+        assert_eq!(
+            h.take(),
+            vec![Synth::Scroll { dx: 0.0, dy: 0.0, phase: 0, momentum: momentum_phase::END, flags: 0 }]
+        );
+        h.advance(8);
+        assert!(h.take().is_empty());
     }
 
     #[test]

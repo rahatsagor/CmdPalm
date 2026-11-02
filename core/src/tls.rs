@@ -143,17 +143,33 @@ pub fn server_names(host_name: &str, addresses: &[IpAddr]) -> Vec<String> {
 
 /// Load or create the CA and a server certificate covering `names`.
 pub fn load_identity(dir: &Path, names: &[String]) -> Result<Identity, TlsError> {
+    match build_identity(dir, names, false) {
+        // The saved key and certificate don't belong together, say after a
+        // crash between writing them. Issue a new certificate rather than
+        // failing the same way on every launch.
+        Err(TlsError::Rustls(err)) => {
+            tracing::warn!(%err, "reissuing the server certificate");
+            build_identity(dir, names, true)
+        }
+        result => result,
+    }
+}
+
+fn build_identity(dir: &Path, names: &[String], reissue: bool) -> Result<Identity, TlsError> {
     let paths = Paths::new(dir);
     let now = OffsetDateTime::now_utc();
     let renew_cutoff = (now + Duration::days(RENEW_BEFORE_DAYS)).unix_timestamp();
 
     let mut meta = store::load::<Meta>(&paths.meta);
+    // The server checks the certificate now and then; only write when it changed.
+    let mut changed = false;
     let ca_key = std::fs::read_to_string(&paths.ca_key).ok().and_then(|pem| KeyPair::from_pem(&pem).ok());
     let ca_der = std::fs::read(&paths.ca_cert).ok();
 
     let (ca_key, ca_der, mut current) = match (ca_key, ca_der, meta.take()) {
         (Some(key), Some(der), Some(meta)) if meta.ca_expires > renew_cutoff => (key, der, meta),
         _ => {
+            changed = true;
             let key = KeyPair::generate()?;
             let suffix = &crate::auth::random_token(4)[..4];
             let name = format!("CmdPalm Local Authority {suffix}");
@@ -170,8 +186,11 @@ pub fn load_identity(dir: &Path, names: &[String]) -> Result<Identity, TlsError>
     let leaf_key = std::fs::read_to_string(&paths.leaf_key).ok().and_then(|pem| KeyPair::from_pem(&pem).ok());
     let leaf_der = std::fs::read(&paths.leaf_cert).ok();
     let (leaf_key, leaf_der) = match (leaf_key, leaf_der) {
-        (Some(key), Some(der)) if current.leaf_names == names && current.leaf_expires > renew_cutoff => (key, der),
+        (Some(key), Some(der)) if !reissue && current.leaf_names == names && current.leaf_expires > renew_cutoff => {
+            (key, der)
+        }
         _ => {
+            changed = true;
             let key = KeyPair::generate()?;
             let mut params = CertificateParams::new(names.to_vec())?;
             let mut dn = DistinguishedName::new();
@@ -198,7 +217,9 @@ pub fn load_identity(dir: &Path, names: &[String]) -> Result<Identity, TlsError>
             (key, cert.der().to_vec())
         }
     };
-    store::save(&paths.meta, &current)?;
+    if changed {
+        store::save(&paths.meta, &current)?;
+    }
 
     let chain = vec![pki_types::CertificateDer::from(leaf_der), pki_types::CertificateDer::from(ca_der.clone())];
     let key = pki_types::PrivateKeyDer::Pkcs8(pki_types::PrivatePkcs8KeyDer::from(leaf_key.serialize_der()));
@@ -233,6 +254,19 @@ mod tests {
         let third = load_identity(dir.path(), &moved).unwrap();
         assert_eq!(first.ca_fingerprint, third.ca_fingerprint, "devices keep trusting the same CA");
         assert_ne!(leaf_before, std::fs::read(dir.path().join("server.der")).unwrap());
+    }
+
+    #[test]
+    fn recovers_from_a_key_that_doesnt_match_its_certificate() {
+        let dir = tempfile::tempdir().unwrap();
+        let names = server_names("Studio.local", &[IpAddr::V4(Ipv4Addr::new(192, 168, 1, 5))]);
+        let first = load_identity(dir.path(), &names).unwrap();
+        // As if the app stopped between writing the new key and its certificate.
+        let stray = KeyPair::generate().unwrap();
+        std::fs::write(dir.path().join("server-key.pem"), stray.serialize_pem()).unwrap();
+        let again = load_identity(dir.path(), &names).unwrap();
+        assert_eq!(first.ca_fingerprint, again.ca_fingerprint, "devices keep trusting the same CA");
+        load_identity(dir.path(), &names).expect("the reissued pair loads as is");
     }
 
     #[test]

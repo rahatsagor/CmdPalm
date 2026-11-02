@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 use std::net::IpAddr;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU16, AtomicU64, Ordering};
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock, RwLock, Weak};
@@ -20,6 +20,20 @@ use crate::input::{Command, InputEngine, Interrupts, LayoutMap, Notice, SessionI
 use crate::prefs::DeviceSettings;
 use crate::protocol::{Features, KeyboardLayout, NoticeLevel, ServerMessage, VolumeState};
 use crate::{server, store, tls};
+
+/// The saved deck, if it can be used. One that parses but isn't valid, say
+/// from a newer version, is kept aside so the next save can't overwrite it.
+fn load_deck(path: &Path) -> Option<Deck> {
+    let deck = store::load::<Deck>(path)?;
+    match deck.validate() {
+        Ok(()) => Some(deck),
+        Err(err) => {
+            tracing::error!(%err, "ignoring a saved deck that isn't valid");
+            store::quarantine(path);
+            None
+        }
+    }
+}
 
 #[allow(clippy::large_enum_variant)]
 pub(crate) enum Outgoing {
@@ -89,12 +103,12 @@ impl Shared {
         let dir = data_dir(&config);
         let trust = TrustStore::load(dir.as_ref().map(|d| d.join("devices.json")));
         let mut settings = DeviceSettings::load(dir.as_ref().map(|d| d.join("settings")));
-        settings.retain(&trust.devices().into_iter().map(|d| d.id).collect::<Vec<_>>());
-        let deck = dir
-            .as_ref()
-            .and_then(|d| store::load::<Deck>(&d.join("deck.json")))
-            .filter(|deck| deck.validate().is_ok())
-            .unwrap_or_default();
+        // A device list that couldn't be read must not take every device's
+        // settings with it.
+        if trust.intact() {
+            settings.retain(&trust.devices().into_iter().map(|d| d.id).collect::<Vec<_>>());
+        }
+        let deck = dir.as_ref().and_then(|d| load_deck(&d.join("deck.json"))).unwrap_or_default();
         Self {
             config: RwLock::new(config),
             delegate,
@@ -575,10 +589,21 @@ impl CoreHost {
     }
 
     pub fn rename_device(&self, id: String, name: String) {
-        let renamed = self.shared.state().trust.rename(&id, &name);
+        let renamed = {
+            let mut state = self.shared.state();
+            let renamed = state.trust.rename(&id, &name);
+            if renamed {
+                let shown = auth::visible_name(&state.trust.name(&id).unwrap_or_default());
+                for session in state.sessions.values_mut().filter(|s| s.info.device_id == id) {
+                    session.info.name = shown.clone();
+                }
+            }
+            renamed
+        };
         self.shared.save_trust();
         if renamed {
             self.shared.emit(HostEvent::DevicesChanged);
+            self.shared.emit(HostEvent::SessionsChanged);
         }
     }
 

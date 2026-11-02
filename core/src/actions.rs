@@ -213,8 +213,9 @@ pub(crate) fn execute(shared: &Shared, session: SessionId, action: &Action, dept
             Plan::Code(code, mods) => input(shared, session, Input::Tap { code, mods }),
             Plan::Letter(ch, fallback, mods) => input(shared, session, Input::CharTap { ch, fallback, mods }),
             Plan::Native(command) => {
-                // Let pending keystrokes land before the screen locks or sleeps.
-                shared.flush_engine();
+                // Let pending keystrokes land before the screen locks or sleeps,
+                // and don't lock or sleep if Pause was pressed meanwhile.
+                settle(shared, session)?;
                 if !shared.delegate.native(command) {
                     return Err("The Mac couldn't do that.".into());
                 }

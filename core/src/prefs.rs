@@ -36,6 +36,8 @@ pub enum SettingsError {
     NotAnObject,
     #[error("These settings are too large to keep on the Mac.")]
     TooLarge,
+    #[error("The Mac couldn’t save these settings.")]
+    Io,
 }
 
 #[derive(Default)]
@@ -83,6 +85,7 @@ impl DeviceSettings {
             let file = SettingsFile { version: 1, id: id.to_string(), saved: saved.clone() };
             if let Err(err) = store::save(&file_path(dir, id), &file) {
                 tracing::error!(%err, "could not save device settings");
+                return Err(SettingsError::Io);
             }
         }
         self.devices.insert(id.to_string(), saved);
@@ -143,6 +146,17 @@ mod tests {
         assert!(store.get("tablet").is_none());
         store.remove("phone");
         assert_eq!(fs::read_dir(&path).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn reports_settings_it_could_not_save() {
+        let dir = tempfile::tempdir().unwrap();
+        // A file where the folder should be, so nothing can be written there.
+        let path = dir.path().join("settings");
+        fs::write(&path, b"").unwrap();
+        let mut store = DeviceSettings::load(Some(path));
+        assert_eq!(store.set("phone", saved(json!({"theme": "dark"}), 1)), Err(SettingsError::Io));
+        assert!(store.get("phone").is_none(), "settings that would be gone after a restart aren't offered for copying");
     }
 
     #[test]

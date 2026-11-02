@@ -37,6 +37,8 @@ const MAX_CONNECTIONS_PER_PREFIX: usize = MAX_CONNECTIONS / 2;
 const MAX_REQUESTS_PER_CONNECTION: usize = 200;
 const MAX_KEEP_ALIVE: Duration = Duration::from_secs(120);
 pub const MAX_MESSAGE: usize = 1 << 20;
+const IDENTITY_CHECK: Duration = Duration::from_secs(60 * 60);
+const IDENTITY_RETRY: Duration = Duration::from_secs(60);
 
 #[derive(Debug, thiserror::Error)]
 pub enum SaveError {
@@ -116,12 +118,12 @@ pub(crate) async fn start(shared: Arc<Shared>, shutdown: watch::Receiver<bool>) 
 
     let addresses = lan_addresses();
     let names = identity_names(&shared, &addresses);
-    refresh_identity(&shared, names.clone()).await;
+    let identity_due = next_identity_check(refresh_identity(&shared, names.clone()).await);
 
     for listener in std::iter::once(v4).chain(v6) {
         tokio::spawn(accept_loop(shared.clone(), listener, shutdown.clone()));
     }
-    tokio::spawn(housekeeping(shared.clone(), addresses, names, shutdown));
+    tokio::spawn(housekeeping(shared.clone(), addresses, names, identity_due, shutdown));
     Ok((port, preferred != 0 && port != preferred))
 }
 
@@ -130,21 +132,33 @@ fn identity_names(shared: &Shared, addresses: &[IpAddr]) -> Vec<String> {
     tls::server_names(&shared.config().host_name, addresses)
 }
 
-/// Create or reissue the TLS certificate for `names`.
-async fn refresh_identity(shared: &Arc<Shared>, names: Vec<String>) {
-    let Some(dir) = shared.data_dir() else { return };
+/// Create or reissue the TLS certificate for `names`. Returns whether HTTPS
+/// is set up as well as it can be.
+async fn refresh_identity(shared: &Arc<Shared>, names: Vec<String>) -> bool {
+    let Some(dir) = shared.data_dir() else { return true };
     let result = tokio::task::spawn_blocking(move || tls::load_identity(&dir.join("tls"), &names)).await;
     match result {
-        Ok(Ok(identity)) => *shared.tls.write().unwrap_or_else(|p| p.into_inner()) = Some(Arc::new(identity)),
+        Ok(Ok(identity)) => {
+            *shared.tls.write().unwrap_or_else(|p| p.into_inner()) = Some(Arc::new(identity));
+            return true;
+        }
         Ok(Err(err)) => tracing::error!(%err, "HTTPS is unavailable"),
         Err(err) => tracing::error!(%err, "certificate task failed"),
     }
+    false
+}
+
+/// When to look at the certificate again: soon after a failure, and every so
+/// often anyway, so a Mac that runs for months renews it before it expires.
+fn next_identity_check(refreshed: bool) -> Instant {
+    Instant::now() + if refreshed { IDENTITY_CHECK } else { IDENTITY_RETRY }
 }
 
 async fn housekeeping(
     shared: Arc<Shared>,
     mut addresses: Vec<IpAddr>,
     mut names: Vec<String>,
+    mut identity_due: Instant,
     mut shutdown: watch::Receiver<bool>,
 ) {
     let mut ticker = tokio::time::interval(Duration::from_secs(5));
@@ -162,9 +176,9 @@ async fn housekeeping(
         // A new address, or the Mac renamed in System Settings, needs a
         // certificate that names it.
         let wanted = identity_names(&shared, &addresses);
-        if wanted != names {
+        if wanted != names || Instant::now() >= identity_due {
             names = wanted;
-            refresh_identity(&shared, names.clone()).await;
+            identity_due = next_identity_check(refresh_identity(&shared, names.clone()).await);
         }
         if rotated || moved {
             shared.emit(HostEvent::PairingChanged);
@@ -355,6 +369,13 @@ pub(crate) fn parse_head(head: &[u8]) -> Option<Request> {
         }
         let (name, value) = line.split_once(':')?;
         headers.push((name.trim().to_ascii_lowercase(), value.trim().to_string()));
+    }
+    // A proxy in front could read a different copy of these than this server
+    // does, which is how requests get smuggled past it.
+    for name in ["host", "content-length", "transfer-encoding"] {
+        if headers.iter().filter(|(k, _)| k == name).count() > 1 {
+            return None;
+        }
     }
     Some(Request { method, path, query, headers, http10: version == "HTTP/1.0" })
 }
@@ -788,6 +809,10 @@ mod tests {
         assert!(request.header_has_token("connection", "upgrade"));
         assert!(request.keep_alive());
         assert!(parse_head(b"GET / SPDY/3\r\n").is_none());
+        assert!(parse_head(b"GET / HTTP/1.1\r\nHost: mac.local\r\nHost: evil.example\r\n").is_none());
+        assert!(
+            parse_head(b"GET / HTTP/1.1\r\nHost: mac.local\r\nContent-Length: 0\r\ncontent-length: 40\r\n").is_none()
+        );
         assert_eq!(percent_decode("%41%2b"), Some("A+".into()));
         assert_eq!(percent_decode("%+1"), None, "a sign is not a hex digit");
     }
