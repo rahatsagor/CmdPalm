@@ -44,7 +44,7 @@ struct DeckPane: View {
             Section("Shell Commands") {
                 DescribedToggle(
                     "Allow buttons to run shell commands",
-                    detail: "Buttons can run any command as your user account. Only turn this on if you trust every paired device.",
+                    detail: "Buttons can run any command as your user account, and open links to files, terminals and file servers. Only turn this on if you trust every paired device.",
                     isOn: Binding(
                         get: { preferences.allowShell },
                         set: { newValue in

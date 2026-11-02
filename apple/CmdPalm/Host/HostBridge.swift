@@ -42,7 +42,7 @@ final class HostBridge: HostDelegate, Sendable {
 
     func appAction(id: String, op: AppOp) -> Bool { apps.perform(id: id, op: op) }
 
-    func openUrl(url: String) -> Bool { SystemActions.open(url, allowFiles: allowsShell.withLock { $0 }) }
+    func openUrl(url: String) -> Bool { SystemActions.open(url, allowShellLike: allowsShell.withLock { $0 }) }
 
     func native(command: NativeCommand) -> Bool { SystemActions.run(command) }
 

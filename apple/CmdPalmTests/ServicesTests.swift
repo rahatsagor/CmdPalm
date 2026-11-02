@@ -173,11 +173,25 @@ import Testing
 @Suite struct SystemActionsTests {
     @Test func refusesLocalAndScriptURLs() {
         #expect(SystemActions.open("file:///etc/passwd") == false)
+        #expect(SystemActions.open("ssh://example.com") == false)
+        #expect(SystemActions.open("SMB://example.com/share") == false)
+        #expect(SystemActions.open("x-man-page://ls") == false)
         #expect(SystemActions.open("javascript:alert(1)") == false)
-        #expect(SystemActions.open("javascript:alert(1)", allowFiles: true) == false)
-        #expect(SystemActions.open("data:text/html,hi", allowFiles: true) == false)
+        #expect(SystemActions.open("javascript:alert(1)", allowShellLike: true) == false)
+        #expect(SystemActions.open("data:text/html,hi", allowShellLike: true) == false)
         #expect(SystemActions.open("not a url") == false)
         #expect(SystemActions.runShortcut("   ") == false)
+    }
+}
+
+@Suite struct LoginItemTests {
+    @Test func refusesCopiesThatAreGoneAfterARestart() {
+        // A mounted disk image is a read-only volume.
+        #expect(LoginItem.locationProblem(path: "/Volumes/CmdPalm 0.5.2/CmdPalm.app", onReadOnlyVolume: true) != nil)
+        let translocated = "/private/var/folders/ab/T/AppTranslocation/1234/d/CmdPalm.app"
+        #expect(LoginItem.locationProblem(path: translocated, onReadOnlyVolume: false) != nil)
+        #expect(LoginItem.locationProblem(path: "/Applications/CmdPalm.app", onReadOnlyVolume: false) == nil)
+        #expect(LoginItem.locationProblem(FileManager.default.temporaryDirectory) == nil)
     }
 }
 

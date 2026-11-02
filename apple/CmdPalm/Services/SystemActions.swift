@@ -18,11 +18,16 @@ enum SystemActions {
         }
     }
 
-    /// Opens a deck button's link. File URLs can launch scripts, so they are
+    /// File URLs can launch scripts, and these others open a terminal or
+    /// connect to a file server, which can hand over the Mac's login. Matches
+    /// `link_problem` in the core.
+    static let shellLikeSchemes: Set<String> = ["file", "ssh", "telnet", "x-man-page", "smb", "cifs", "afp", "nfs", "ftp"]
+
+    /// Opens a deck button's link. Links that act like shell commands are
     /// only allowed when shell commands are.
-    static func open(_ string: String, allowFiles: Bool = false) -> Bool {
+    static func open(_ string: String, allowShellLike: Bool = false) -> Bool {
         guard let url = URL(string: string), let scheme = url.scheme?.lowercased(), !scheme.isEmpty else { return false }
-        guard !["javascript", "data"].contains(scheme), allowFiles || scheme != "file" else { return false }
+        guard !["javascript", "data"].contains(scheme), allowShellLike || !shellLikeSchemes.contains(scheme) else { return false }
         DispatchQueue.main.async { NSWorkspace.shared.open(url) }
         return true
     }
