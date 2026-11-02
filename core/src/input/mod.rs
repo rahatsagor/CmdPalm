@@ -118,6 +118,7 @@ pub enum Synth {
         value: f64,
     },
     ToggleCapsLock,
+    SetCapsLock(bool),
     Pause(Duration),
 }
 
@@ -133,6 +134,10 @@ pub trait EventSink: 'static {
     /// macOS drop synthetic keystrokes.
     fn secure_input(&mut self) -> bool {
         false
+    }
+    /// Whether Caps Lock is on, or `None` where that can't be known.
+    fn caps_lock(&mut self) -> Option<bool> {
+        None
     }
 }
 

@@ -2,7 +2,7 @@
 import { Mouse, Plus } from '@lucide/vue'
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { MEDIA } from '@/lib/actions'
-import { labels } from '@/lib/connection'
+import { labels, state } from '@/lib/connection'
 import { actionLabel, actionName, emptyCells, fits, newId, type CustomKey, type CustomKeyboard } from '@/lib/customKeyboards'
 import { haptic, keyHaptic } from '@/lib/haptics'
 import { buttonDown, buttonUp, keyDown, keyUp, modifiers, pressMedia } from '@/lib/input'
@@ -60,7 +60,10 @@ function face(key: CustomKey): { text: string; icon?: unknown; caption?: string 
   return { text: [...text].length === 1 ? text.toUpperCase() : text }
 }
 
+const isCapsLock = (key: CustomKey) => key.action.kind === 'key' && key.action.code === Key.CapsLock
+
 function modClass(key: CustomKey) {
+  if (isCapsLock(key) && state.capsLock) return 'is-caps'
   if (key.action.kind !== 'mod') return ''
   const status = modifiers.status(key.action.mod)
   return status === 'locked' ? 'is-locked' : status === 'latched' ? 'is-latched' : status === 'held' ? 'is-down' : ''
@@ -265,6 +268,7 @@ function removeKey() {
       <span v-if="face(key).text" class="text">{{ face(key).text }}</span>
       <span v-if="face(key).caption" class="caption">{{ face(key).caption }}</span>
       <span v-if="key.action.kind === 'mod' && modifiers.status(key.action.mod) === 'locked'" class="lock-dot" />
+      <span v-if="isCapsLock(key) && state.capsLock" class="caps-light" />
     </div>
 
     <div
@@ -362,6 +366,21 @@ function removeKey() {
 
 .drop {
   z-index: 1;
+}
+
+/* Like the light on a Mac's Caps Lock key. */
+.key.is-caps {
+  color: var(--good);
+}
+.caps-light {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--good);
+  box-shadow: 0 0 6px var(--good);
 }
 
 .lock-dot {

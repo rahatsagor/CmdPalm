@@ -452,6 +452,7 @@ pub enum ServerMessage {
         #[serde(skip_serializing_if = "Option::is_none")]
         volume: Option<VolumeState>,
         paused: bool,
+        caps_lock: bool,
         /// The settings this device saved on the Mac earlier.
         #[serde(skip_serializing_if = "Option::is_none")]
         settings: Option<SavedSettings>,
@@ -480,6 +481,9 @@ pub enum ServerMessage {
     VolumeUnavailable,
     Paused {
         paused: bool,
+    },
+    CapsLock {
+        on: bool,
     },
     Features {
         features: Features,
@@ -571,6 +575,10 @@ mod tests {
         let json = serde_json::to_string(&ServerMessage::Volume(VolumeState { value: 0.5, muted: false })).unwrap();
         assert_eq!(json, r#"{"t":"volume","value":0.5,"muted":false}"#);
         assert_eq!(serde_json::to_string(&ServerMessage::VolumeUnavailable).unwrap(), r#"{"t":"volumeUnavailable"}"#);
+        assert_eq!(
+            serde_json::to_string(&ServerMessage::CapsLock { on: true }).unwrap(),
+            r#"{"t":"capsLock","on":true}"#
+        );
 
         let json = serde_json::to_string(&ServerMessage::Voice {
             state: VoiceState::Listening,

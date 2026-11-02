@@ -170,6 +170,11 @@ impl<T: Copy> Cached<T> {
     fn invalidate(&mut self) {
         self.at = None;
     }
+
+    fn set(&mut self, value: T) {
+        self.value = value;
+        self.at = Some(Instant::now());
+    }
 }
 
 pub struct MacSink {
@@ -483,12 +488,29 @@ impl MacSink {
         };
         let connect = hid.connect;
         let mut state = false;
-        unsafe {
-            if IOHIDGetModifierLockState(connect, IO_HID_CAPS_LOCK_STATE, &mut state) == KERN_SUCCESS {
-                IOHIDSetModifierLockState(connect, IO_HID_CAPS_LOCK_STATE, !state);
-            }
+        let toggled = unsafe {
+            IOHIDGetModifierLockState(connect, IO_HID_CAPS_LOCK_STATE, &mut state) == KERN_SUCCESS
+                && IOHIDSetModifierLockState(connect, IO_HID_CAPS_LOCK_STATE, !state) == KERN_SUCCESS
+        };
+        self.remember_caps_lock(toggled.then_some(!state));
+    }
+
+    fn set_caps_lock(&mut self, on: bool) {
+        let Some(hid) = self.hid() else {
+            return;
+        };
+        let connect = hid.connect;
+        let set = unsafe { IOHIDSetModifierLockState(connect, IO_HID_CAPS_LOCK_STATE, on) == KERN_SUCCESS };
+        self.remember_caps_lock(set.then_some(on));
+    }
+
+    /// Keys posted straight after a change must not pick up the old state
+    /// from the cache, so a known new state is kept rather than read again.
+    fn remember_caps_lock(&mut self, on: Option<bool>) {
+        match on {
+            Some(on) => self.caps.set(on),
+            None => self.caps.invalidate(),
         }
-        self.caps.invalidate();
     }
 }
 
@@ -514,6 +536,7 @@ impl EventSink for MacSink {
             Synth::Media { key, down } => self.media(key, down),
             Synth::Gesture { kind, phase, value } => self.gesture(kind, phase, value),
             Synth::ToggleCapsLock => self.toggle_caps_lock(),
+            Synth::SetCapsLock(on) => self.set_caps_lock(on),
             Synth::Pause(duration) => std::thread::sleep(duration),
         }
     }
@@ -529,6 +552,10 @@ impl EventSink for MacSink {
 
     fn secure_input(&mut self) -> bool {
         self.secure.get(CACHE_TTL, || unsafe { IsSecureEventInputEnabled() != 0 })
+    }
+
+    fn caps_lock(&mut self) -> Option<bool> {
+        Some(self.caps_flag() != 0)
     }
 }
 

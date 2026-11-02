@@ -242,6 +242,8 @@ export type ServerMessage =
       layout?: KeyboardLayout
       volume?: VolumeState
       paused: boolean
+      /** Missing from Macs that don't report Caps Lock. */
+      capsLock?: boolean
       /** This device's settings saved on the Mac earlier, if any. */
       settings?: SavedSettings
     }
@@ -255,6 +257,7 @@ export type ServerMessage =
   | ({ t: 'volume' } & VolumeState)
   | { t: 'volumeUnavailable' }
   | { t: 'paused'; paused: boolean }
+  | { t: 'capsLock'; on: boolean }
   | { t: 'features'; features: Features }
   | { t: 'notice'; level: 'info' | 'warning' | 'error'; code: string; message: string }
   | { t: 'clipboard'; text: string }

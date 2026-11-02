@@ -56,6 +56,8 @@ export const state = reactive({
   deck: null as Deck | null,
   volume: null as VolumeState | null,
   paused: false,
+  /** Caps Lock on the Mac, so the keyboard can show it like the key's light. */
+  capsLock: false,
   sessionKey: '',
   denied: null as { reason: DenyReason; retryAfter?: number } | null,
   byeReason: '',
@@ -285,6 +287,7 @@ function handle(message: ServerMessage) {
       state.deck = message.deck
       state.volume = message.volume ?? null
       state.paused = message.paused
+      state.capsLock = message.capsLock ?? false
       state.sessionKey = message.sessionKey
       labels.value = new LabelMap(message.layout)
       pendingAuth = null
@@ -327,6 +330,9 @@ function handle(message: ServerMessage) {
       break
     case 'paused':
       state.paused = message.paused
+      break
+    case 'capsLock':
+      state.capsLock = message.on
       break
     case 'features':
       state.features = message.features

@@ -198,6 +198,7 @@ pub(crate) async fn run<S>(
             layout: state.layout.clone(),
             volume: state.volume,
             paused: state.paused,
+            caps_lock: state.caps_lock,
             settings: saved_settings,
         })
     };

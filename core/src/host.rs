@@ -62,6 +62,7 @@ pub(crate) struct State {
     pub layout: Option<KeyboardLayout>,
     pub volume: Option<VolumeState>,
     pub paused: bool,
+    pub caps_lock: bool,
     pub sessions: HashMap<SessionId, LiveSession>,
     pub approvals: HashMap<u64, PendingApproval>,
 }
@@ -127,6 +128,7 @@ impl Shared {
                 layout: None,
                 volume: None,
                 paused: false,
+                caps_lock: false,
                 sessions: HashMap::new(),
                 approvals: HashMap::new(),
             }),
@@ -222,6 +224,11 @@ impl Shared {
 
     fn notice(&self, notice: Notice) {
         let (session, code, message) = match notice {
+            Notice::CapsLock(on) => {
+                self.state().caps_lock = on;
+                self.broadcast(ServerMessage::CapsLock { on });
+                return;
+            }
             Notice::SecureInput(session) => (
                 session,
                 "secureInput",

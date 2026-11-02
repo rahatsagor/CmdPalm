@@ -89,6 +89,7 @@ On success the Mac sends `welcome`:
 | `deck` | The current deck (see below). |
 | `layout` | The Mac's keyboard layout, if known. |
 | `volume` | `{value: 0–1, muted}`, if the output device has a volume control. |
+| `capsLock` | Whether Caps Lock is on. Missing from Macs that don't report it. |
 | `paused` | Input is paused on the Mac. |
 | `settings` | `{settings, updatedAt}`: the settings this device saved with `settingsSave`, if the Mac has any (see [Phone settings](#phone-settings)). |
 
@@ -206,6 +207,7 @@ deck buttons store, tagged by `kind`:
 | `volume` | `value`, `muted` | Output volume changed. |
 | `volumeUnavailable` | | The output device has no volume control (HDMI, for example). |
 | `paused` | `paused` | Input was paused or resumed on the Mac. While paused, the Mac ignores input and refuses actions, text, clipboard and voice: `action` gets a failed `actionResult`, `voiceStart` gets `voice` with `unavailable`, and the others get a `notice` with code `paused`. Live typing (`edit`) is ignored like other input. Saving the deck and phone settings still works. |
+| `capsLock` | `on` | Caps Lock turned on or off, from the Mac's own keyboard or a phone. Text typed as key presses turns it off for its letters and back on afterwards, without this message. |
 | `features` | `features` | Permissions or settings changed. |
 | `notice` | `level`, `code`, `message` | Something the person should know, e.g. `secureInput` when a password field blocks typing. |
 | `clipboard` | `text` | Answer to `clipboardGet`. |

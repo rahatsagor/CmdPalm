@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Globe } from '@lucide/vue'
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { labels, runAction } from '@/lib/connection'
+import { labels, runAction, state } from '@/lib/connection'
 import { MEDIA, SYSTEM } from '@/lib/actions'
 import { keyHaptic } from '@/lib/haptics'
 import { keyDown, keyUp, modifiers, pressMedia } from '@/lib/input'
@@ -225,10 +225,16 @@ const rowStyle = (r: number) => ({ flex: r === 0 ? '0.72 1 0%' : '1 1 0%' })
             :data-key="spec.code"
             role="button"
             class="key"
-            :class="[down.has(spec.code) && 'is-down', !metrics.compact && spec.align ? `wide align-${spec.align}` : '']"
+            :class="[
+              down.has(spec.code) && 'is-down',
+              !metrics.compact && spec.align ? `wide align-${spec.align}` : '',
+              spec.code === Key.CapsLock && state.capsLock && 'is-caps',
+            ]"
             :style="flex(spec.width)"
             :aria-label="spec.label || (spec.code === Key.Space ? 'space' : '')"
+            :aria-pressed="spec.code === Key.CapsLock ? state.capsLock : undefined"
           >
+            <span v-if="spec.code === Key.CapsLock && state.capsLock" class="caps-light" />
             <template v-if="spec.code === Key.Space" />
             <template v-else-if="metrics.compact || !spec.align">
               <span v-if="spec.symbol" class="sym">{{ spec.symbol }}</span>
@@ -383,6 +389,21 @@ const rowStyle = (r: number) => ({ flex: r === 0 ? '0.72 1 0%' : '1 1 0%' })
 }
 .arrows > div:nth-child(2) .arrow {
   min-height: 0;
+}
+
+/* Like the light on a Mac's Caps Lock key, so capitals never come as a surprise. */
+.key.is-caps {
+  color: var(--good);
+}
+.caps-light {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--good);
+  box-shadow: 0 0 6px var(--good);
 }
 
 .lock-dot {

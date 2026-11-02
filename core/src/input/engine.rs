@@ -80,6 +80,8 @@ pub enum Notice {
     SecureInput(SessionId),
     /// CmdPalm lacks Accessibility permission, so events are discarded.
     NoPermission(SessionId),
+    /// Caps Lock turned on or off, from the Mac's keyboard or a device.
+    CapsLock(bool),
 }
 
 /// Handle to the engine thread. Dropping it releases all input and joins.
@@ -332,6 +334,8 @@ pub(crate) struct Engine<S: EventSink> {
     motion: MotionPacer,
     last_watchdog: Instant,
     last_notice: HashMap<Notice, Instant>,
+    /// Caps Lock as devices were last told.
+    caps_lock: Option<bool>,
     ended: VecDeque<SessionId>,
     pub(crate) interrupts: Arc<Interrupts>,
     /// Set while running, so typing can serve other devices between characters.
@@ -360,6 +364,7 @@ impl<S: EventSink> Engine<S> {
             motion: MotionPacer::new(Instant::now()),
             last_watchdog: Instant::now(),
             last_notice: HashMap::new(),
+            caps_lock: None,
             ended: VecDeque::new(),
             rx: None,
             backlog: VecDeque::new(),
@@ -495,6 +500,7 @@ impl<S: EventSink> Engine<S> {
                 self.interrupts.forget(session);
                 self.last_notice.retain(|notice, _| match notice {
                     Notice::SecureInput(id) | Notice::NoPermission(id) => *id != session,
+                    Notice::CapsLock(_) => true,
                 });
             }
             Command::SetPaused(paused) => {
@@ -554,6 +560,14 @@ impl<S: EventSink> Engine<S> {
                 tracing::warn!(session, "device went silent while holding input; releasing it");
                 self.release_session(session);
             }
+        }
+        // Checked at least once a second, so a phone shows Caps Lock turned
+        // on from the Mac's own keyboard too.
+        if let Some(on) = self.sink.caps_lock()
+            && self.caps_lock != Some(on)
+        {
+            self.caps_lock = Some(on);
+            (self.notify)(Notice::CapsLock(on));
         }
     }
 
@@ -804,9 +818,25 @@ impl<S: EventSink> Engine<S> {
         self.sink.post(Synth::Key { code, down: true, flags, repeat: true });
     }
 
+    /// Caps Lock would turn letters typed as key presses into capitals, so
+    /// it is off while they are typed and comes back on afterwards.
+    fn type_text(&mut self, session: SessionId, text: &str, mode: TypeMode) {
+        let caps = mode == TypeMode::Keystrokes
+            && text.chars().any(char::is_alphabetic)
+            && self.sink.caps_lock() == Some(true);
+        if caps {
+            self.sink.post(Synth::SetCapsLock(false));
+            self.sink.post(Synth::Pause(MOD_SETTLE));
+        }
+        self.type_segments(session, text, mode);
+        if caps {
+            self.sink.post(Synth::SetCapsLock(true));
+        }
+    }
+
     /// Long text can take minutes to type, so stop between pieces when the
     /// session ends or input is paused.
-    fn type_text(&mut self, session: SessionId, text: &str, mode: TypeMode) {
+    fn type_segments(&mut self, session: SessionId, text: &str, mode: TypeMode) {
         self.repeat = None;
         let mut first = true;
         for segment in segments(text) {
@@ -2087,6 +2117,67 @@ mod tests {
         h.input(A, Input::Button { button: MouseButton::Left, op: PressOp::Down, mods: 0 });
         h.input(B, Input::Button { button: MouseButton::Left, op: PressOp::Click, mods: 0 });
         assert_eq!(h.take().len(), 1, "a click must not release a held drag");
+    }
+
+    /// A Mac whose Caps Lock state the test controls.
+    struct Caps {
+        events: Vec<Synth>,
+        on: bool,
+    }
+
+    impl EventSink for Caps {
+        fn post(&mut self, event: Synth) {
+            match event {
+                Synth::ToggleCapsLock => self.on = !self.on,
+                Synth::SetCapsLock(on) => self.on = on,
+                _ => {}
+            }
+            self.events.push(event);
+        }
+        fn cursor(&mut self) -> (f64, f64) {
+            (0.0, 0.0)
+        }
+        fn caps_lock(&mut self) -> Option<bool> {
+            Some(self.on)
+        }
+    }
+
+    #[test]
+    fn keystroke_typing_turns_caps_lock_off_for_the_letters() {
+        let mut engine = Engine::new(Caps { events: Vec::new(), on: true }, Box::new(|_| {}));
+        engine.layout.chars.insert('h', (KEY_A, 0));
+        let now = Instant::now();
+        let text = |text: &str, mode| Command::Input { session: A, input: Input::Text { text: text.into(), mode } };
+        engine.handle(text("h", TypeMode::Keystrokes), now);
+        let events = std::mem::take(&mut engine.sink.events);
+        assert_eq!(events.first(), Some(&Synth::SetCapsLock(false)), "{events:?}");
+        assert_eq!(events.last(), Some(&Synth::SetCapsLock(true)), "{events:?}");
+        assert!(events.iter().any(|e| matches!(e, Synth::Key { code: KEY_A, down: true, flags: 0, .. })));
+        assert!(engine.sink.on, "Caps Lock is back on");
+
+        // Unicode text and text without letters are typed as they are.
+        engine.handle(text("h", TypeMode::Unicode), now);
+        engine.handle(text("42", TypeMode::Keystrokes), now);
+        assert!(!engine.sink.events.iter().any(|e| matches!(e, Synth::SetCapsLock(_))));
+    }
+
+    #[test]
+    fn devices_hear_when_caps_lock_changes() {
+        let notices = Arc::new(Mutex::new(Vec::new()));
+        let n2 = notices.clone();
+        let sink = Caps { events: Vec::new(), on: false };
+        let mut engine = Engine::new(sink, Box::new(move |n| n2.lock().unwrap().push(n)));
+        let now = Instant::now();
+        engine.tick(now);
+        engine.handle(
+            Command::Input {
+                session: A,
+                input: Input::Key { code: KEY_CAPS_LOCK, down: true, mods: 0, repeat: false },
+            },
+            now,
+        );
+        engine.tick(now);
+        assert_eq!(*notices.lock().unwrap(), vec![Notice::CapsLock(false), Notice::CapsLock(true)]);
     }
 
     #[test]
