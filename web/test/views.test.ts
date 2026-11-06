@@ -60,6 +60,36 @@ describe('ConnectView', () => {
   })
 })
 
+describe('custom keyboard group order', () => {
+  it('persists reordered tabs locally and in the Mac backup while keeping the active keyboard', async () => {
+    const { settings } = await import('../src/lib/settings')
+    const { keyboards } = await import('../src/lib/customKeyboards')
+    const sync = await import('../src/lib/settingsSync')
+    sync.installSettingsSync()
+    const socket = connected()
+    settings.keyboard = 'custom'
+    const selected = keyboards.active
+    await nextTick()
+    vi.advanceTimersByTime(2_000)
+    socket.sent.length = 0
+    const before = keyboards.boards.map((board) => board.id)
+    const { default: KeyboardView } = await import('../src/views/KeyboardView.vue')
+    const view = mount(KeyboardView, { attachTo: document.body })
+    await view.findAll('button').find((button) => button.text() === 'Edit')!.trigger('click')
+    await view.find(`[data-group-id="${selected}"]`).trigger('keydown', { key: 'ArrowRight', altKey: true })
+    await nextTick()
+    vi.advanceTimersByTime(2_000)
+    const expected = [before[1], before[0], ...before.slice(2)]
+    expect(keyboards.boards.map((board) => board.id)).toEqual(expected)
+    expect(keyboards.active).toBe(selected)
+    expect(JSON.parse(localStorage.getItem('cmdpalm.keyboards')!).boards.map((board: { id: string }) => board.id)).toEqual(expected)
+    const saved = socket.sent.filter((message) => message.t === 'settingsSave') as { settings: { keyboards: { id: string }[] } }[]
+    expect(saved).toHaveLength(1)
+    expect(saved[0]!.settings.keyboards.map((board) => board.id)).toEqual(expected)
+    view.unmount()
+  })
+})
+
 describe('Composer live typing', () => {
   async function composer() {
     const { settings } = await import('../src/lib/settings')

@@ -2,6 +2,7 @@
 import { Check, LoaderCircle, Pencil, Plus } from '@lucide/vue'
 import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, reactive, ref, watch } from 'vue'
 import PageEditor from '@/components/PageEditor.vue'
+import GroupTabs from '@/components/GroupTabs.vue'
 import TileEditor from '@/components/TileEditor.vue'
 import HapticSwitch from '@/components/HapticSwitch.vue'
 import TileFace from '@/components/TileFace.vue'
@@ -82,18 +83,20 @@ watch(
   { immediate: true },
 )
 
-const tabs = ref<HTMLElement>()
-async function showSelectedTab() {
-  await nextTick()
-  tabs.value?.querySelector('[aria-selected="true"]')?.scrollIntoView({ inline: 'nearest', block: 'nearest', behavior: 'smooth' })
-}
-watch(index, showSelectedTab)
-
 // The page strip loses its scroll position while another tab is open.
 onActivated(() => {
   selectPage(index.value, false)
-  void showSelectedTab()
 })
+
+function selectGroup(id: string) {
+  if (id === page.value?.id && editing.value) pageEdit.value = id
+  else selectPage(pages.value.findIndex((p) => p.id === id))
+}
+
+function reorderPages(ids: string[]) {
+  const order = new Map(ids.map((id, i) => [id, i]))
+  mutate((d) => d.pages.sort((a, b) => (order.get(a.id) ?? ids.length) - (order.get(b.id) ?? ids.length)))
+}
 
 const status = reactive(new Map<string, 'running' | 'failed'>())
 
@@ -337,20 +340,7 @@ const dragged = computed(() => (press.value?.moved && editing.value ? pageById(p
 <template>
   <div class="flex h-full flex-col">
     <div class="flex items-center gap-2 px-3 pt-1 pb-2">
-      <div ref="tabs" class="no-scrollbar flex min-w-0 flex-1 gap-1 overflow-x-auto" role="tablist">
-        <button
-          v-for="(p, i) in pages"
-          :key="p.id"
-          type="button"
-          role="tab"
-          :aria-selected="i === index"
-          class="h-8 shrink-0 rounded-full px-3.5 text-[13px] font-medium whitespace-nowrap transition-colors"
-          :class="i === index ? 'bg-text text-bg' : 'text-muted'"
-          @click="i === index && editing ? (pageEdit = p.id) : selectPage(i)"
-        >
-          {{ p.name || 'Page' }}
-          <Pencil v-if="editing && i === index" :size="11" class="ml-1 inline align-[-1px]" />
-        </button>
+      <GroupTabs :items="pages" :active="page?.id ?? ''" :editing="editing" label="Deck pages" @select="selectGroup" @reorder="reorderPages">
         <button
           v-if="editing && pages.length < LIMITS.pages"
           type="button"
@@ -360,7 +350,7 @@ const dragged = computed(() => (press.value?.moved && editing.value ? pageById(p
         >
           <Plus :size="17" />
         </button>
-      </div>
+      </GroupTabs>
       <button
         type="button"
         class="flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-[13px] font-semibold transition-colors"
@@ -439,7 +429,7 @@ const dragged = computed(() => (press.value?.moved && editing.value ? pageById(p
             Add a button
           </button>
         </div>
-        <p v-if="editing" class="pt-4 text-center text-[12px] text-faint">Tap a button to edit it. Drag to reorder.</p>
+        <p v-if="editing" class="pt-4 text-center text-[12px] text-faint">Drag tabs or buttons to reorder. Tap the selected tab to edit the page.</p>
       </section>
     </div>
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Copy, Minus, Plus, Trash2 } from '@lucide/vue'
+import { ArrowLeft, ArrowRight, Copy, Minus, Plus, Trash2 } from '@lucide/vue'
 import { computed, ref } from 'vue'
 import { canResize, keyboards, LIMITS, type CustomKeyboard } from '@/lib/customKeyboards'
 import Sheet from './Sheet.vue'
@@ -11,6 +11,15 @@ const emit = defineEmits<{ duplicate: []; remove: []; close: [] }>()
 const name = ref(props.board.name)
 const confirming = ref(false)
 const blocked = ref<'cols' | 'rows' | null>(null)
+const index = computed(() => keyboards.boards.findIndex((board) => board.id === props.board.id))
+
+function move(by: number) {
+  const from = index.value
+  const to = from + by
+  if (from < 0 || to < 0 || to >= keyboards.boards.length) return
+  const [board] = keyboards.boards.splice(from, 1)
+  keyboards.boards.splice(to, 0, board!)
+}
 
 const steppers = computed(() => [
   { axis: 'cols' as const, label: 'Columns', value: props.board.cols, min: LIMITS.minCols, max: LIMITS.maxCols },
@@ -87,6 +96,15 @@ function duplicate() {
     </p>
 
     <Toggle v-model="board.trackpad" label="Trackpad" hint="Show a trackpad beside the keys, for moving the pointer while you hold them." />
+
+    <div v-if="keyboards.boards.length > 1" class="flex gap-2 py-3">
+      <button type="button" class="flex h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-surface-2 text-[14px] disabled:opacity-40" :disabled="index <= 0" @click="move(-1)">
+        <ArrowLeft :size="16" /> Move left
+      </button>
+      <button type="button" class="flex h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-surface-2 text-[14px] disabled:opacity-40" :disabled="index < 0 || index >= keyboards.boards.length - 1" @click="move(1)">
+        Move right <ArrowRight :size="16" />
+      </button>
+    </div>
 
     <div class="flex gap-2 py-3">
       <button

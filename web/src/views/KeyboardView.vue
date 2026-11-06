@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { Check, Pencil, Plus, RotateCcwSquare, RotateCwSquare } from '@lucide/vue'
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import BoardEditor from '@/components/BoardEditor.vue'
 import Composer from '@/components/Composer.vue'
 import CustomKeyboard from '@/components/CustomKeyboard.vue'
+import GroupTabs from '@/components/GroupTabs.vue'
 import ScrollRail from '@/components/ScrollRail.vue'
 import Segmented from '@/components/Segmented.vue'
 import Sheet from '@/components/Sheet.vue'
@@ -70,15 +71,6 @@ const choosing = ref(false)
 
 watch(mode, () => (editing.value = false))
 
-const chips = ref<HTMLElement>()
-watch(
-  () => keyboards.active,
-  async () => {
-    await nextTick()
-    chips.value?.querySelector('[aria-selected="true"]')?.scrollIntoView({ inline: 'nearest', block: 'nearest', behavior: 'smooth' })
-  },
-)
-
 function select(b: Board) {
   if (b.id === keyboards.active) {
     if (editing.value) editingBoard.value = true
@@ -86,6 +78,16 @@ function select(b: Board) {
   }
   keyboards.active = b.id
   haptic('select')
+}
+
+function selectBoard(id: string) {
+  const target = keyboards.boards.find((b) => b.id === id)
+  if (target) select(target)
+}
+
+function reorderBoards(ids: string[]) {
+  const order = new Map(ids.map((id, i) => [id, i]))
+  keyboards.boards.sort((a, b) => (order.get(a.id) ?? ids.length) - (order.get(b.id) ?? ids.length))
 }
 
 function create(template: Board) {
@@ -146,20 +148,7 @@ const customLayout = computed(() => {
         </button>
       </div>
       <div v-if="mode === 'custom'" class="flex min-w-0 flex-1 basis-60 items-center gap-2">
-        <div ref="chips" class="no-scrollbar flex min-w-0 flex-1 gap-1 overflow-x-auto" role="tablist" aria-label="Custom keyboards">
-          <button
-            v-for="b in keyboards.boards"
-            :key="b.id"
-            type="button"
-            role="tab"
-            :aria-selected="b.id === board.id"
-            class="h-8 shrink-0 rounded-full px-3.5 text-[13px] font-medium whitespace-nowrap transition-colors"
-            :class="b.id === board.id ? 'bg-text text-bg' : 'text-muted'"
-            @click="select(b)"
-          >
-            {{ b.name }}
-            <Pencil v-if="editing && b.id === board.id" :size="11" class="ml-1 inline align-[-1px]" />
-          </button>
+        <GroupTabs :items="keyboards.boards" :active="board.id" :editing="editing" label="Custom keyboards" @select="selectBoard" @reorder="reorderBoards">
           <button
             v-if="editing && keyboards.boards.length < LIMITS.boards"
             type="button"
@@ -169,7 +158,7 @@ const customLayout = computed(() => {
           >
             <Plus :size="17" />
           </button>
-        </div>
+        </GroupTabs>
         <button
           type="button"
           class="flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-[13px] font-semibold transition-colors"
@@ -212,7 +201,7 @@ const customLayout = computed(() => {
           </div>
         </div>
         <p v-if="editing" class="shrink-0 text-center text-[12px] text-faint">
-          Tap a key to change it, or an empty square to add one. Drag keys to move them.
+          Drag tabs to reorder keyboards. Tap the selected tab to edit it. Tap a key to change it, or drag keys to move them.
         </p>
       </template>
 

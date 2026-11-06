@@ -168,6 +168,18 @@ describe('DeckView', () => {
     view.unmount()
   })
 
+  it('saves page-tab order to the Mac while keeping the selected page', async () => {
+    const { socket, settings, view } = await deckView('apps')
+    await view.findAll('button').find((b) => b.text() === 'Edit')!.trigger('click')
+    await view.find('[data-group-id="apps"]').trigger('keydown', { key: 'ArrowLeft', altKey: true })
+    const saved = socket.sent.filter((m) => m.t === 'deckSave') as { deck: typeof deck }[]
+    expect(saved).toHaveLength(1)
+    expect(saved[0]!.deck.pages.map((page) => page.id)).toEqual(['apps', 'essentials'])
+    expect(settings.deckPage).toBe('apps')
+    expect(view.find('[role="tab"][aria-selected="true"]').text()).toBe('Apps')
+    view.unmount()
+  })
+
   it('saves the edited button by id after another device reorders its page', async () => {
     const { socket, view } = await deckView('apps')
     const target = tile('My Button')
