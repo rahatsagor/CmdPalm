@@ -9,6 +9,27 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-07
+
+Put custom keyboards and Deck pages in the order you want, and copy just
+the parts of another device's setup you need without replacing your own.
+
+### Phone client
+
+- Reorder custom keyboards and Deck pages by tapping Edit and dragging their
+  tabs. Move left and Move right in each group's editor work too, along with
+  Alt + Left or Right on a connected keyboard. The selected group stays open.
+- Copy just the settings you need from another paired device: trackpad,
+  gestures, keyboard settings, Deck button size, or appearance and feedback.
+  Choose individual custom keyboards to add or update without removing the
+  others in your setup. Nothing changes until you tap Copy selected.
+- The copy picker explains that Deck pages and buttons are already shared
+  across devices paired with the same Mac.
+
+### Maintenance
+
+- Updated the phone client's icons, styling, lint and test dependencies.
+
 ## [0.6.0] - 2026-11-02
 
 Caps Lock now lights up on the phone's Mac keyboard, and text typed as key
@@ -627,7 +648,9 @@ The first release.
   device, so they survive a cleared browser, and you can copy them from
   another device.
 
-[Unreleased]: https://github.com/rahatsagor/CmdPalm/compare/v0.5.2...HEAD
+[Unreleased]: https://github.com/rahatsagor/CmdPalm/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/rahatsagor/CmdPalm/compare/v0.6.0...v0.7.0
+[0.6.0]: https://github.com/rahatsagor/CmdPalm/compare/v0.5.2...v0.6.0
 [0.5.2]: https://github.com/rahatsagor/CmdPalm/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/rahatsagor/CmdPalm/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/rahatsagor/CmdPalm/compare/v0.4.0...v0.5.0

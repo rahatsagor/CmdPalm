@@ -93,6 +93,7 @@ keyboard.
 Only the keys you need, laid out how you like: arrows for slides, WASD for
 games, or your editing shortcuts. Each key stays pressed for as long as you
 touch it.
+Tap Edit and drag the keyboard tabs to put your groups in the order you want.
 
 </td>
 <td valign="top">
@@ -104,6 +105,7 @@ A button grid like a Stream Deck: shortcuts, text snippets, apps, websites,
 system actions, Shortcuts automations, mouse clicks and multi-step
 sequences that run in order, shared by all your devices. Shell commands work
 too, once you allow them.
+Tap Edit and drag the page tabs to reorder them across your devices.
 
 </td>
 </tr>
@@ -132,8 +134,10 @@ on the Mac itself and never sent to a server.
 
 Pair as many phones and tablets as you like. Each one's settings, custom
 keyboards and gestures are kept on your Mac too, so they survive a cleared
-browser. Set up a new phone in one tap with **Copy settings from another
-device**.
+browser. Use **Copy settings from another device** to choose individual
+settings sections and custom keyboards. Only your selection is added or
+updated; the rest of your setup stays as it is. Deck pages and buttons are
+already shared by all devices paired with the same Mac.
 
 <div align="center">
 
