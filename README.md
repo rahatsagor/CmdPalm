@@ -44,7 +44,7 @@ deck for your Mac.<br />
 <td width="33%" align="center" valign="top">
 
 **2. Scan the QR code**<br />
-<sub>With your phone's camera. That's the whole setup.</sub>
+<sub>Open your phone's camera and scan the QR code.</sub>
 
 </td>
 <td width="33%" align="center" valign="top">
