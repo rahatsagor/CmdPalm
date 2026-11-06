@@ -716,7 +716,13 @@ fn phone_settings_are_kept_per_device_and_can_be_copied() {
         let list = recv_kind(&mut tablet, "settingsList").await;
         assert_eq!(list["devices"], json!([{"id": "phone", "name": "Test Phone", "model": "iPhone", "updatedAt": 20}]));
         send(&mut tablet, json!({"t": "settingsCopy", "from": "phone"})).await;
-        assert_eq!(recv_kind(&mut tablet, "settings").await["settings"]["theme"], "light");
+        let copied = recv_kind(&mut tablet, "settings").await;
+        assert_eq!(copied["settings"]["theme"], "light");
+        assert!(copied.get("id").is_none(), "older clients can omit a request id");
+        send(&mut tablet, json!({"t": "settingsCopy", "from": "phone", "id": 42})).await;
+        let copied = recv_kind(&mut tablet, "settings").await;
+        assert_eq!(copied["id"], 42, "echo the request id so previews cannot use a delayed response");
+        assert_eq!(copied["settings"]["theme"], "light");
     });
     f.host.forget_device("phone".into());
     f.rt.block_on(async {

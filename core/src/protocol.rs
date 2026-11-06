@@ -333,6 +333,8 @@ pub enum ClientMessage {
     SettingsList,
     SettingsCopy {
         from: String,
+        #[serde(default)]
+        id: Option<u64>,
     },
 }
 
@@ -515,7 +517,12 @@ pub enum ServerMessage {
     SettingsList {
         devices: Vec<SettingsSource>,
     },
-    Settings(SavedSettings),
+    Settings {
+        #[serde(flatten)]
+        saved: SavedSettings,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        id: Option<u64>,
+    },
     Bye {
         reason: String,
         /// The Mac is only restarting its server, so the device should come

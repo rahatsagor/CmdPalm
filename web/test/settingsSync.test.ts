@@ -237,32 +237,136 @@ describe('untrusted settings', () => {
 })
 
 describe('copying from another device', () => {
-  it('lists devices, applies the copy and saves it as this device’s own', async () => {
+  const source = { id: 'd2', name: 'Studio iPad', model: 'iPad', updatedAt: NOW - 3_600_000 }
+  async function preview(socket: FakeSocket, settings: object = { theme: 'light' }, keyboards: object[] = []) {
+    const done = sync.requestCopy(source)
+    const request = socket.sent.at(-1)!
+    socket.receive({ t: 'settings', id: request.id, settings: { version: 1, settings, keyboards }, updatedAt: source.updatedAt })
+    return (await done)!
+  }
+
+  it('lists devices and previews a copy without changing this device', async () => {
     const socket = connect()
     sync.listDevices()
     expect(socket.sent.at(-1)).toEqual({ t: 'settingsList' })
     socket.receive({
       t: 'settingsList',
-      devices: [{ id: 'd2', name: 'Studio iPad', model: 'iPad', updatedAt: NOW - 3_600_000 }, { id: 3 }],
+      devices: [source, { id: 3 }],
     })
     expect(sync.copier.devices).toHaveLength(1)
 
-    const done = sync.copyFrom(sync.copier.devices![0]!)
-    expect(socket.sent.at(-1)).toEqual({ t: 'settingsCopy', from: 'd2' })
-    socket.receive({ t: 'settings', settings: { version: 1, settings: { theme: 'light' }, keyboards: [] }, updatedAt: NOW - 3_600_000 })
-    expect(await done).toBe(true)
+    const before = JSON.stringify(sync.buildPayload())
+    const result = await preview(socket)
+    expect(socket.sent.at(-1)).toMatchObject({ t: 'settingsCopy', from: 'd2', id: expect.any(Number) })
+    expect(result.settings).toEqual({ theme: 'light' })
+    expect(result.keyboards).toEqual([])
+    expect(JSON.stringify(sync.buildPayload())).toBe(before)
+    expect(saves(socket)).toHaveLength(0)
+  })
+
+  it('copies only checked settings, keeps newer missing preferences and saves as this device’s own', async () => {
+    const socket = connect()
+    prefs.settings.keepAwake = false
+    prefs.settings.pointerSpeed = 3
+    prefs.settings.deviceName = 'My Phone'
+    prefs.settings.tab = 'keyboard'
+    const result = await preview(socket, { theme: 'light', pointerSpeed: 1, deviceName: 'Remote', tab: 'deck' })
+    expect(sync.copyFrom(result, { categories: ['appearance'], keyboards: [] })).toBe(true)
     expect(prefs.settings.theme).toBe('light')
+    expect(prefs.settings.keepAwake).toBe(false)
+    expect(prefs.settings.pointerSpeed).toBe(3)
+    expect(prefs.settings.deviceName).toBe('My Phone')
+    expect(prefs.settings.tab).toBe('keyboard')
     const sent = saves(socket)
     expect(sent).toHaveLength(1)
-    expect(sent[0]!.updatedAt).toBe(NOW)
+    expect(Number(sent[0]!.updatedAt)).toBeGreaterThanOrEqual(NOW)
+  })
+
+  it('adds or updates only selected keyboards without deleting, moving or selecting other ones', async () => {
+    const socket = connect()
+    const [first, second] = boards.keyboards.boards
+    boards.keyboards.active = second!.id
+    const originalIds = boards.keyboards.boards.map((board) => board.id)
+    const added = { ...boards.blankBoard(), id: 'new', name: 'New keyboard' }
+    const skipped = { ...boards.blankBoard(), id: 'skip', name: 'Not selected' }
+    const result = await preview(socket, { theme: 'light' }, [{ ...first!, name: 'Updated' }, added, skipped])
+    expect(sync.copyFrom(result, { categories: [], keyboards: [first!.id, added.id] })).toBe(true)
+    expect(boards.keyboards.boards.map((board) => board.id)).toEqual([...originalIds, added.id])
+    expect(boards.keyboards.boards[0]!.name).toBe('Updated')
+    expect(boards.keyboards.active).toBe(second!.id)
+    expect(prefs.settings.theme).toBe('system')
+    expect(sync.copyFrom(result, { categories: [], keyboards: [added.id] })).toBe(true)
+    expect(boards.keyboards.boards.filter((board) => board.id === added.id)).toHaveLength(1)
+  })
+
+  it('does nothing for an empty selection, and does not invent presets from an empty source', async () => {
+    const socket = connect()
+    const result = await preview(socket, {}, [{ bad: 'board' }])
+    const before = JSON.stringify(sync.buildPayload())
+    expect(result.keyboards).toEqual([])
+    expect(sync.copyFrom(result, { categories: [], keyboards: [] })).toBe(false)
+    expect(JSON.stringify(sync.buildPayload())).toBe(before)
+    expect(saves(socket)).toHaveLength(0)
+  })
+
+  it('rejects an over-capacity selection before changing any settings or keyboards', async () => {
+    const socket = connect()
+    boards.keyboards.boards = Array.from({ length: boards.LIMITS.boards }, () => boards.blankBoard())
+    const result = await preview(socket, { theme: 'light' }, [{ ...boards.blankBoard(), id: 'extra' }])
+    const before = JSON.stringify(sync.buildPayload())
+    expect(sync.copyFrom(result, { categories: ['appearance'], keyboards: ['extra'] })).toBe(false)
+    expect(JSON.stringify(sync.buildPayload())).toBe(before)
+    expect(saves(socket)).toHaveLength(0)
+    // Updating an existing keyboard still works at capacity.
+    const current = boards.keyboards.boards[0]!
+    const update = await preview(socket, {}, [{ ...current, name: 'Updated' }])
+    expect(sync.copyFrom(update, { categories: [], keyboards: [current.id] })).toBe(true)
+    expect(boards.keyboards.boards).toHaveLength(boards.LIMITS.boards)
+  })
+
+  it('rejects a selection too large for backup without partially applying preferences', async () => {
+    const socket = connect()
+    const result = await preview(socket, { theme: 'light' })
+    // The preview normally contains validated data; simulate a size limit
+    // exceeded by a newer payload before applying anything locally.
+    result.settings.threeFinger = { ...prefs.settings.threeFinger, tap: { kind: 'text', text: 'x'.repeat(sync.MAX_BYTES) } }
+    const before = JSON.stringify(sync.buildPayload())
+    expect(sync.copyFrom(result, { categories: ['appearance', 'gestures'], keyboards: [] })).toBe(false)
+    expect(JSON.stringify(sync.buildPayload())).toBe(before)
+  })
+
+  it('ignores delayed responses for a timed-out or cancelled request', async () => {
+    const socket = connect()
+    const old = sync.requestCopy(source)
+    const oldId = socket.sent.at(-1)!.id
+    vi.advanceTimersByTime(8_100)
+    expect(await old).toBeNull()
+    // Reconnect after the unanswered heartbeat in the fake connection.
+    const next = connect()
+    const current = sync.requestCopy({ ...source, id: 'other' })
+    const currentId = next.sent.at(-1)!.id
+    next.receive({ t: 'settings', id: oldId, settings: { version: 1, settings: { theme: 'light' } }, updatedAt: 1 })
+    expect(sync.copier.copying).toBe('other')
+    next.receive({ t: 'settings', id: currentId, settings: { version: 1, settings: { theme: 'dark' } }, updatedAt: 1 })
+    expect((await current)?.settings.theme).toBe('dark')
+    const cancelled = sync.requestCopy(source)
+    sync.cancelCopy()
+    expect(await cancelled).toBeNull()
+    expect(prefs.settings.theme).toBe('system')
   })
 
   it('gives up when the device is gone', async () => {
     const socket = connect()
-    const done = sync.copyFrom({ id: 'gone', name: 'Old phone', model: 'iPhone', updatedAt: 1 })
+    const done = sync.requestCopy({ id: 'gone', name: 'Old phone', model: 'iPhone', updatedAt: 1 })
     socket.receive({ t: 'notice', level: 'warning', code: 'settings', message: 'Those settings are no longer on this Mac.' })
-    expect(await done).toBe(false)
+    expect(await done).toBeNull()
     expect(sync.copier.copying).toBe('')
+  })
+
+  it('assigns every synced preference to exactly one copy section', () => {
+    const keys = sync.COPY_CATEGORIES.flatMap((category) => [...category.keys])
+    expect(new Set(keys).size).toBe(keys.length)
+    expect([...keys].sort()).toEqual(Object.keys(sync.buildPayload().settings).sort())
   })
 })
 

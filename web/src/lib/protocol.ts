@@ -188,7 +188,7 @@ export type ClientMessage =
   | { t: 'voiceStop'; cancel?: boolean }
   | ({ t: 'settingsSave' } & SavedSettings)
   | { t: 'settingsList' }
-  | { t: 'settingsCopy'; from: string }
+  | { t: 'settingsCopy'; from: string; id?: number }
 
 export interface Features {
   voice: boolean
@@ -264,7 +264,7 @@ export type ServerMessage =
   | { t: 'voice'; state: VoiceState; text?: string; final: boolean; message?: string }
   | { t: 'actionResult'; id?: number; ok: boolean; message?: string }
   | { t: 'settingsList'; devices: SettingsSource[] }
-  | ({ t: 'settings' } & SavedSettings)
+  | ({ t: 'settings'; id?: number } & SavedSettings)
   /** `reconnect`: the Mac stopped or restarted its server, so retry with the token. */
   | { t: 'bye'; reason: string; reconnect?: boolean }
 

@@ -765,8 +765,8 @@ impl Connection {
                 list.sort_by_key(|d| std::cmp::Reverse(d.updated_at));
                 Some(ServerMessage::SettingsList { devices: list })
             }
-            ClientMessage::SettingsCopy { from } => match self.shared.device_settings().get(&from) {
-                Some(saved) => Some(ServerMessage::Settings(saved.clone())),
+            ClientMessage::SettingsCopy { from, id } => match self.shared.device_settings().get(&from) {
+                Some(saved) => Some(ServerMessage::Settings { saved: saved.clone(), id }),
                 None => Some(notice(NoticeLevel::Warning, "settings", "Those settings are no longer on this Mac.")),
             },
             ClientMessage::VoiceStop { cancel } => {

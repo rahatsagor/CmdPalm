@@ -5,7 +5,7 @@
 import { reactive, watch } from 'vue'
 import { ACTION_KINDS } from './actions'
 import { notify, onMessage, send, state } from './connection'
-import { keyboards, migrateKeyboards, presets, type CustomKeyboard } from './customKeyboards'
+import { keyboards, LIMITS, migrateKeyboards, presets, sanitizeBoard, type CustomKeyboard } from './customKeyboards'
 import { actionProblem } from './deck'
 import { token } from './device'
 import type { Action, SavedSettings, ServerMessage, SettingsSource } from './protocol'
@@ -24,6 +24,38 @@ export type SyncedSettings = {
   version: 1
   settings: SyncedPrefs
   keyboards: CustomKeyboard[]
+}
+
+/** Each preference belongs to one independently copyable section. */
+export const COPY_CATEGORIES = [
+  {
+    id: 'trackpad', label: 'Trackpad', hint: 'Pointer, clicks and scrolling',
+    keys: ['pointerSpeed', 'pointerAcceleration', 'tapToClick', 'twoFingerTapRightClick', 'longPress', 'tapAndDrag', 'dragLock', 'clickButtons', 'scrollSpeed', 'naturalScroll', 'momentum', 'scrollStrip', 'scrollStripSide', 'scrollStripWidth', 'scrollStripEdge', 'scrollHold'],
+  },
+  {
+    id: 'gestures', label: 'Gestures', hint: 'Pinch, rotate and finger gestures',
+    keys: ['pinchToZoom', 'pinchStyle', 'rotateGesture', 'smartZoom', 'threeFingerDrag', 'threeFinger', 'fourFinger'],
+  },
+  {
+    id: 'keyboard', label: 'Keyboard settings', hint: 'Keyboard mode, typing and key repeat',
+    keys: ['keyboard', 'functionRow', 'sidewaysKeyboard', 'sidewaysTurn', 'keyRepeat', 'textMode', 'liveTyping'],
+  },
+  { id: 'deck', label: 'Deck button size', hint: 'Button size on this device', keys: ['deckButtonSize'] },
+  {
+    id: 'appearance', label: 'Appearance and feedback', hint: 'Theme, haptics, screen and advanced options',
+    keys: ['theme', 'haptics', 'keyHaptics', 'keepAwake', 'showTouches', 'showAdvanced'],
+  },
+] as const satisfies readonly { id: string; label: string; hint: string; keys: readonly (keyof SyncedPrefs)[] }[]
+
+export type CopyCategory = (typeof COPY_CATEGORIES)[number]['id']
+export interface CopyPreview {
+  device: SettingsSource
+  settings: Partial<SyncedPrefs>
+  keyboards: CustomKeyboard[]
+}
+export interface CopySelection {
+  categories: CopyCategory[]
+  keyboards: string[]
 }
 
 export const SAVE_DELAY_MS = 1500
@@ -179,7 +211,8 @@ export const copier = reactive({
 
 let listTimer: ReturnType<typeof setTimeout> | undefined
 let copyTimer: ReturnType<typeof setTimeout> | undefined
-let pendingCopy: { device: SettingsSource; resolve: (ok: boolean) => void } | null = null
+let nextCopyId = 0
+let pendingCopy: { id: number; device: SettingsSource; resolve: (preview: CopyPreview | null) => void } | null = null
 
 /** Ask the Mac which other devices have saved settings. */
 export function listDevices() {
@@ -197,47 +230,103 @@ export function listDevices() {
   }, REPLY_TIMEOUT_MS)
 }
 
-function finishCopy(ok: boolean) {
+function finishCopy(preview: CopyPreview | null) {
   clearTimeout(copyTimer)
   const pending = pendingCopy
   pendingCopy = null
   copier.copying = ''
-  pending?.resolve(ok)
+  pending?.resolve(preview)
 }
 
-/** Replace this device's settings with `device`'s and keep them as this device's own. */
-export function copyFrom(device: SettingsSource): Promise<boolean> {
-  finishCopy(false)
+/** Read a source for review. Nothing on this device changes until Copy selected. */
+export function requestCopy(device: SettingsSource): Promise<CopyPreview | null> {
+  finishCopy(null)
   return new Promise((resolve) => {
-    if (!send({ t: 'settingsCopy', from: device.id })) {
+    const id = ++nextCopyId
+    if (!send({ t: 'settingsCopy', from: device.id, id })) {
       notify('Not connected to the Mac.', 'error', 'settings')
-      resolve(false)
+      resolve(null)
       return
     }
-    pendingCopy = { device, resolve }
+    pendingCopy = { id, device, resolve }
     copier.copying = device.id
     copyTimer = setTimeout(() => {
       notify('The Mac didn’t answer. Try again.', 'error', 'settings')
-      finishCopy(false)
+      finishCopy(null)
     }, REPLY_TIMEOUT_MS)
   })
 }
 
-function copied(saved: SavedSettings | null) {
+export function cancelCopy() {
+  finishCopy(null)
+}
+
+function copied(saved: SavedSettings | null, id?: number) {
   const pending = pendingCopy
-  if (!pending) return
-  if (!saved) {
+  if (!pending || id !== pending.id) return
+  const raw = saved?.settings
+  if (!raw || raw.version !== 1 || !isRecord(raw.settings)) {
     notify('Those settings couldn’t be read.', 'error', 'settings')
-    finishCopy(false)
+    finishCopy(null)
     return
   }
+  const incoming = migrate(raw.settings)
+  const defaults = defaultSettings()
+  cleanGestures(incoming.threeFinger, defaults.threeFinger)
+  cleanGestures(incoming.fourFinger, defaults.fourFinger)
+  const prefs: Partial<SyncedPrefs> = {}
+  for (const key of SYNCED_KEYS) {
+    // A source saved by an older version must not reset newer preferences.
+    if (Object.hasOwn(raw.settings, key)) (prefs as Record<string, unknown>)[key] = incoming[key]
+  }
+  const seen = new Set<string>()
+  const boards = (Array.isArray(raw.keyboards) ? raw.keyboards : []).map(sanitizeBoard).filter((board): board is CustomKeyboard => {
+    if (!board || seen.has(board.id)) return false
+    seen.add(board.id)
+    return true
+  }).slice(0, LIMITS.boards)
+  finishCopy({ device: pending.device, settings: prefs, keyboards: boards })
+}
+
+/** Copy only checked sections and keyboards, keeping everything else here. */
+export function copyFrom(preview: CopyPreview, selection: CopySelection): boolean {
+  const prefs = { ...settings }
+  let selected = false
+  for (const category of COPY_CATEGORIES) {
+    if (!selection.categories.includes(category.id)) continue
+    for (const key of category.keys) {
+      if (!Object.hasOwn(preview.settings, key)) continue
+      ;(prefs as unknown as Record<string, unknown>)[key] = preview.settings[key]
+      selected = true
+    }
+  }
+  const boards = [...keyboards.boards]
+  for (const board of preview.keyboards) {
+    if (!selection.keyboards.includes(board.id)) continue
+    const at = boards.findIndex((b) => b.id === board.id)
+    if (at >= 0) boards[at] = board
+    else boards.push(board)
+    selected = true
+  }
+  if (!selected) return false
+  // Reject the whole operation before touching local state, rather than
+  // partially importing a setup or silently dropping keyboards past the limit.
+  if (boards.length > LIMITS.boards) {
+    notify(`You can keep up to ${LIMITS.boards} keyboards. Select fewer keyboards or delete one here first.`, 'warning', 'settings')
+    return false
+  }
+  const payload = buildPayload(prefs, boards)
+  if (new TextEncoder().encode(JSON.stringify(payload)).length > MAX_BYTES) {
+    notify('This selection is too large to back up on the Mac. Select fewer keyboards.', 'warning', 'settings')
+    return false
+  }
   commit()
-  applySynced(saved.settings)
+  applySynced(payload)
   meta = { updatedAt: Math.max(Date.now(), meta.updatedAt + 1), hash: signature(buildPayload()) }
   storeMeta()
   push()
-  notify(`Copied settings from ${pending.device.name}.`, 'info', 'settings')
-  finishCopy(true)
+  notify(`Copied your selection from ${preview.device.name}.`, 'info', 'settings')
+  return true
 }
 
 function parseDevices(raw: unknown): SettingsSource[] {
@@ -254,7 +343,7 @@ function handle(message: ServerMessage) {
       welcomed(parseSaved(message.settings))
       break
     case 'settings':
-      copied(parseSaved(message))
+      copied(parseSaved(message), message.id)
       break
     case 'settingsList':
       clearTimeout(listTimer)
@@ -265,7 +354,7 @@ function handle(message: ServerMessage) {
     case 'notice':
       if (message.code !== 'settings') break
       // The notice itself is already shown.
-      if (pendingCopy) finishCopy(false)
+      if (pendingCopy) finishCopy(null)
       if (copier.loading) {
         clearTimeout(listTimer)
         copier.loading = false

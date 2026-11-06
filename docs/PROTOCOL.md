@@ -194,7 +194,7 @@ can't read. Actions are the same objects deck buttons store, tagged by `kind`:
 | `voiceStop` | `cancel` | final `voice` update |
 | `settingsSave` | `settings`, `updatedAt` | none; a `notice` with code `settings` on failure |
 | `settingsList` | | `settingsList` |
-| `settingsCopy` | `from` (device ID) | `settings`, or a `notice` with code `settings` |
+| `settingsCopy` | `from` (device ID), optional `id` (request ID) | `settings` with the same `id` if supplied, or a `notice` with code `settings` |
 
 ## Mac → phone
 
@@ -214,7 +214,7 @@ can't read. Actions are the same objects deck buttons store, tagged by `kind`:
 | `voice` | `state`, `text?`, `final`, `message?` | Voice typing: `listening`, `stopped`, `unavailable` or `error`. |
 | `actionResult` | `id?`, `ok`, `message?` | Answer to an `action` with an `id`, or a failed action without one. |
 | `settingsList` | `devices: [{id, name, model, updatedAt}]` | Answer to `settingsList`: other paired devices with saved settings, newest first. |
-| `settings` | `settings`, `updatedAt` | Answer to `settingsCopy`: that device's saved settings. |
+| `settings` | `settings`, `updatedAt`, optional `id` | Answer to `settingsCopy`: that device's saved settings, with the request ID echoed if supplied. |
 | `bye` | `reason`, `reconnect?` | The Mac is closing the connection, with a message to show. `reconnect: true` means the Mac stopped or restarted its server and the phone may reconnect with its token on its own; otherwise (disconnected or removed on the Mac, protocol errors) it waits for the person to reconnect. |
 
 ### Keyboard layout
@@ -286,7 +286,17 @@ storage stays the source of truth; the Mac stores the object as it is.
   `settingsSave`.
 - `settingsList` lists the other paired devices that have saved settings.
   `settingsCopy` with one of their `id`s answers with
-  `{"t":"settings","settings":{…},"updatedAt":n}`. The phone applies it and
-  saves it as its own with a new `updatedAt`.
+  `{"t":"settings","settings":{…},"updatedAt":n}`. An optional numeric `id`
+  is echoed in the reply so the phone can ignore a delayed answer to an older
+  request. Reading this snapshot changes nothing on either device.
+- The phone previews the available settings sections and custom keyboards.
+  On confirmation it applies only checked sections, preserving preferences
+  missing from older snapshots. Selected keyboards update matching IDs in
+  place or are appended; other keyboards, their order, and the active keyboard
+  are preserved. The resulting setup is saved as this device's own with a new
+  `updatedAt`. Selections exceeding keyboard or backup-size limits are rejected
+  before any changes are applied.
+- Deck pages and buttons are shared by the Mac, rather than stored in each
+  device's settings. Only the device's Deck button size needs copying.
 
 These messages are allowed while input is paused.
