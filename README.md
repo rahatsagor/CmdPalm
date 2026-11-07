@@ -25,6 +25,9 @@ deck for your Mac.<br />
 [![Apple silicon](https://img.shields.io/badge/Apple%20silicon-native-1f1f1f?style=flat-square)](#requirements)
 [![AGPL-3.0 License](https://img.shields.io/badge/license-AGPL--3.0-1f1f1f?style=flat-square)](LICENSE)
 
+**Using Windows? Meet [WinPalm](https://winpalm.rsapplication.com), the Windows app from RS Application.**<br />
+[WinPalm on GitHub](https://github.com/rahatsagor/WinPalm)
+
 <br />
 
 <a href="https://cmdpalm.app"><img src="docs/media/hero.webp" width="800" alt="A phone moves the Mac's pointer as a trackpad, types as a keyboard, runs buttons from a deck and types what you say" /></a>
