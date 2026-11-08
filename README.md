@@ -35,27 +35,6 @@ deck for your Mac.<br />
 
 <br />
 
-## Using Windows? Meet WinPalm.
-
-<table>
-<tr>
-<td width="180" align="center" valign="middle">
-<a href="https://winpalm.rsapplication.com"><img src="docs/media/winpalm.svg" width="140" height="140" alt="WinPalm app icon" /></a>
-</td>
-<td valign="middle">
-
-<sub>ALSO FROM RS APPLICATION</sub>
-
-### Your PC, in your palm.
-
-**[WinPalm](https://winpalm.rsapplication.com)** brings the same phone-to-computer idea to Windows, with native Windows input and integrations. Turn your phone into a Windows trackpad, keyboard and shortcut deck.
-
-**[Explore WinPalm →](https://winpalm.rsapplication.com)** · [Windows documentation](https://winpalm.rsapplication.com/docs/) · [Source on GitHub](https://github.com/rahatsagor/WinPalm)
-
-</td>
-</tr>
-</table>
-
 <table>
 <tr>
 <td width="33%" align="center" valign="top">
@@ -74,6 +53,27 @@ deck for your Mac.<br />
 
 **3. You're in control**<br />
 <sub>Add it to your home screen and it opens like an app.</sub>
+
+</td>
+</tr>
+</table>
+
+## Using Windows? Meet WinPalm.
+
+<table>
+<tr>
+<td width="180" align="center" valign="middle">
+<a href="https://github.com/rahatsagor/WinPalm"><img src="docs/media/winpalm.svg" width="140" height="140" alt="WinPalm app icon" /></a>
+</td>
+<td valign="middle">
+
+<sub>ALSO FROM RS APPLICATION</sub>
+
+### Your PC, in your palm.
+
+**[WinPalm](https://github.com/rahatsagor/WinPalm)** brings the same phone-to-computer idea to Windows, with native Windows input and integrations. Turn your phone into a Windows trackpad, keyboard and shortcut deck.
+
+**[WinPalm on GitHub →](https://github.com/rahatsagor/WinPalm)** · [Website](https://winpalm.rsapplication.com) · [Windows documentation](https://winpalm.rsapplication.com/docs/)
 
 </td>
 </tr>
