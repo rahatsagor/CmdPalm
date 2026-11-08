@@ -25,8 +25,7 @@ deck for your Mac.<br />
 [![Apple silicon](https://img.shields.io/badge/Apple%20silicon-native-1f1f1f?style=flat-square)](#requirements)
 [![AGPL-3.0 License](https://img.shields.io/badge/license-AGPL--3.0-1f1f1f?style=flat-square)](LICENSE)
 
-**Using Windows? Meet [WinPalm](https://winpalm.rsapplication.com), the Windows app from RS Application.**<br />
-[WinPalm on GitHub](https://github.com/rahatsagor/WinPalm)
+[Using Windows? Meet WinPalm](#using-windows-meet-winpalm)
 
 <br />
 
@@ -35,6 +34,27 @@ deck for your Mac.<br />
 </div>
 
 <br />
+
+## Using Windows? Meet WinPalm.
+
+<table>
+<tr>
+<td width="180" align="center" valign="middle">
+<a href="https://winpalm.rsapplication.com"><img src="docs/media/winpalm.svg" width="140" height="140" alt="WinPalm app icon" /></a>
+</td>
+<td valign="middle">
+
+<sub>ALSO FROM RS APPLICATION</sub>
+
+### Your PC, in your palm.
+
+**[WinPalm](https://winpalm.rsapplication.com)** brings the same phone-to-computer idea to Windows, with native Windows input and integrations. Turn your phone into a Windows trackpad, keyboard and shortcut deck.
+
+**[Explore WinPalm →](https://winpalm.rsapplication.com)** · [Windows documentation](https://winpalm.rsapplication.com/docs/) · [Source on GitHub](https://github.com/rahatsagor/WinPalm)
+
+</td>
+</tr>
+</table>
 
 <table>
 <tr>
