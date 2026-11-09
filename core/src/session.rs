@@ -47,8 +47,8 @@ const MAX_VOICE_STARTS: usize = 4;
 const PASTE_QUEUE_TIMEOUT: Duration = Duration::from_secs(3);
 
 enum VoiceOp {
-    Start(Option<String>),
-    Stop { cancel: bool },
+    Start { locale: Option<String>, request_id: Option<u32>, epoch: u64 },
+    Stop { cancel: bool, request_id: Option<u32> },
 }
 
 /// Runs voice starts and stops one at a time, in the order they arrived, so
@@ -64,17 +64,53 @@ async fn voice_worker(
         let shared = shared.clone();
         let starts = starts.clone();
         let _ = tokio::task::spawn_blocking(move || match op {
-            VoiceOp::Start(locale) => {
-                let started = shared.delegate.voice_start(id, locale);
+            VoiceOp::Start { locale, request_id, epoch } => {
+                let mut voices = shared.voices();
                 starts.fetch_sub(1, AtomicOrdering::SeqCst);
+                if shared.voice_epoch.load(AtomicOrdering::SeqCst) != epoch
+                    || shared.should_stop(id)
+                    || !shared.config().voice_available
+                {
+                    return;
+                }
+                let started = shared.delegate.voice_start(id, locale, request_id);
+                if started {
+                    voices.active.insert(id, request_id);
+                    let accepted = voices.accepted.entry(id).or_default();
+                    if !accepted.contains(&request_id) {
+                        accepted.push(request_id);
+                    }
+                    if accepted.len() > 8 {
+                        accepted.remove(0);
+                    }
+                }
                 if !started {
                     shared.send_to(
                         id,
-                        voice(VoiceState::Unavailable, Some("Couldn't start speech recognition on the Mac.")),
+                        voice(
+                            request_id,
+                            VoiceState::Unavailable,
+                            Some("Couldn't start speech recognition on the Mac."),
+                        ),
                     );
                 }
             }
-            VoiceOp::Stop { cancel } => shared.delegate.voice_stop(id, cancel),
+            VoiceOp::Stop { cancel, request_id } => {
+                let mut voices = shared.voices();
+                if cancel {
+                    if request_id.is_none() {
+                        voices.accepted.remove(&id);
+                    } else if let Some(accepted) = voices.accepted.get_mut(&id) {
+                        accepted.retain(|value| *value != request_id);
+                    }
+                }
+                if voices.active.get(&id).is_some_and(|active| request_id.is_none() || *active == request_id) {
+                    shared.delegate.voice_stop(id, cancel);
+                    if cancel {
+                        voices.active.remove(&id);
+                    }
+                }
+            }
         })
         .await;
     }
@@ -227,7 +263,7 @@ pub(crate) async fn run<S>(
         jobs,
         voice_ops,
         voice_starts,
-        voice: false,
+        voice: None,
         last_heard: Instant::now(),
         in_flight: Arc::new(AtomicUsize::new(0)),
         apps_requested: 0,
@@ -285,9 +321,7 @@ pub(crate) async fn run<S>(
     shared.state().sessions.remove(&id);
     shared.engine(Command::EndSession(id));
     worker.abort();
-    if conn.voice {
-        let _ = conn.voice_ops.send(VoiceOp::Stop { cancel: true });
-    }
+    let _ = conn.voice_ops.send(VoiceOp::Stop { cancel: true, request_id: None });
     // Dropping the sender lets the voice worker finish what is queued, then exit.
     drop(conn);
     shared.emit(HostEvent::SessionsChanged);
@@ -467,7 +501,8 @@ struct Connection {
     jobs: mpsc::Sender<Job>,
     voice_ops: mpsc::UnboundedSender<VoiceOp>,
     voice_starts: Arc<AtomicUsize>,
-    voice: bool,
+    /// Some(None) is a dictation started by a client without request IDs.
+    voice: Option<Option<u32>>,
     last_heard: Instant,
     in_flight: Arc<AtomicUsize>,
     /// App lists asked for, and the newest one sent. Lists are made on
@@ -699,9 +734,10 @@ impl Connection {
                 });
                 None
             }
-            ClientMessage::VoiceStart { locale } => {
+            ClientMessage::VoiceStart { locale, id: request_id } => {
                 if !self.shared.config().voice_available {
                     return Some(voice(
+                        request_id,
                         VoiceState::Unavailable,
                         Some("Speech recognition isn't available on this Mac."),
                     ));
@@ -710,13 +746,18 @@ impl Connection {
                     .filter(|l| l.len() <= 32 && l.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'));
                 if self.voice_starts.fetch_add(1, AtomicOrdering::SeqCst) >= MAX_VOICE_STARTS {
                     self.voice_starts.fetch_sub(1, AtomicOrdering::SeqCst);
-                    return Some(voice(VoiceState::Unavailable, Some("The Mac is still busy. Try again in a moment.")));
+                    return Some(voice(
+                        request_id,
+                        VoiceState::Unavailable,
+                        Some("The Mac is still busy. Try again in a moment."),
+                    ));
                 }
-                if self.voice_ops.send(VoiceOp::Start(locale)).is_err() {
+                let epoch = self.shared.voice_epoch.load(AtomicOrdering::SeqCst);
+                if self.voice_ops.send(VoiceOp::Start { locale, request_id, epoch }).is_err() {
                     self.voice_starts.fetch_sub(1, AtomicOrdering::SeqCst);
                     return None;
                 }
-                self.voice = true;
+                self.voice = Some(request_id);
                 None
             }
             ClientMessage::SettingsSave { settings, updated_at } => {
@@ -769,9 +810,10 @@ impl Connection {
                 Some(saved) => Some(ServerMessage::Settings { saved: saved.clone(), id }),
                 None => Some(notice(NoticeLevel::Warning, "settings", "Those settings are no longer on this Mac.")),
             },
-            ClientMessage::VoiceStop { cancel } => {
-                if std::mem::take(&mut self.voice) {
-                    let _ = self.voice_ops.send(VoiceOp::Stop { cancel });
+            ClientMessage::VoiceStop { cancel, id: request_id } => {
+                if self.voice.is_some() && (request_id.is_none() || self.voice == Some(request_id)) {
+                    self.voice = None;
+                    let _ = self.voice_ops.send(VoiceOp::Stop { cancel, request_id });
                 }
                 None
             }
@@ -792,7 +834,11 @@ impl Connection {
                 .map(|(kind, value)| Input::Gesture { kind, phase: data[2], value }),
             (binary::AUDIO, len) if len > 1 && len % 2 == 1 => {
                 self.shared.engine(Command::Alive(self.id));
-                if self.voice && !self.shared.interrupts.paused() {
+                if self.voice.is_some() && !self.shared.interrupts.paused() && self.shared.config().voice_available {
+                    let voices = self.shared.voices();
+                    if !voices.active.contains_key(&self.id) {
+                        return;
+                    }
                     self.shared.delegate.voice_audio(self.id, data[1..].to_vec());
                 }
                 None
@@ -849,7 +895,7 @@ fn paused_reply(message: &ClientMessage) -> Option<Option<ServerMessage>> {
         | ClientMessage::Text { .. }
         | ClientMessage::ClipboardSet { .. }
         | ClientMessage::ClipboardGet => Some(Some(notice(NoticeLevel::Warning, "paused", PAUSED))),
-        ClientMessage::VoiceStart { .. } => Some(Some(voice(VoiceState::Unavailable, Some(PAUSED)))),
+        ClientMessage::VoiceStart { id, .. } => Some(Some(voice(*id, VoiceState::Unavailable, Some(PAUSED)))),
         ClientMessage::Key { .. }
         | ClientMessage::Tap { .. }
         | ClientMessage::Button { .. }
@@ -863,6 +909,6 @@ fn notice(level: NoticeLevel, code: &str, message: &str) -> ServerMessage {
     ServerMessage::Notice { level, code: code.into(), message: message.into() }
 }
 
-fn voice(state: VoiceState, message: Option<&str>) -> ServerMessage {
-    ServerMessage::Voice { state, text: None, is_final: false, message: message.map(Into::into) }
+fn voice(id: Option<u32>, state: VoiceState, message: Option<&str>) -> ServerMessage {
+    ServerMessage::Voice { id, state, text: None, is_final: false, message: message.map(Into::into) }
 }

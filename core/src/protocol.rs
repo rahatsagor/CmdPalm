@@ -319,10 +319,14 @@ pub enum ClientMessage {
     VoiceStart {
         #[serde(default)]
         locale: Option<String>,
+        #[serde(default)]
+        id: Option<u32>,
     },
     VoiceStop {
         #[serde(default)]
         cancel: bool,
+        #[serde(default)]
+        id: Option<u32>,
     },
     /// This device's own phone settings, to keep on the Mac.
     SettingsSave {
@@ -499,6 +503,8 @@ pub enum ServerMessage {
         text: String,
     },
     Voice {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        id: Option<u32>,
         state: VoiceState,
         #[serde(skip_serializing_if = "Option::is_none")]
         text: Option<String>,
@@ -588,6 +594,7 @@ mod tests {
         );
 
         let json = serde_json::to_string(&ServerMessage::Voice {
+            id: None,
             state: VoiceState::Listening,
             text: Some("hi".into()),
             is_final: false,

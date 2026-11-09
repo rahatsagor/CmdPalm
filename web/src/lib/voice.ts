@@ -17,13 +17,15 @@ export const voice = reactive({
 let context: AudioContext | null = null
 let stream: MediaStream | null = null
 let node: AudioWorkletNode | null = null
-let finals: ((text: string) => void) | null = null
+const dictations = new Map<number, (text: string) => void>()
+let nextId = 0
+let activeId: number | null = null
+let lastStoppedId: number | null = null
 let starting = false
 /** Bumped by every stop, so a start still awaiting the microphone knows it was cancelled. */
 let generation = 0
 /** Whether the Mac is dictating for this page. Its last update for a dictation
  * already stopped here can arrive after the next start, and must not end it. */
-let macListening = false
 
 export function voiceSupported(): boolean {
   return window.isSecureContext && !!navigator.mediaDevices?.getUserMedia && typeof AudioWorkletNode !== 'undefined'
@@ -31,28 +33,38 @@ export function voiceSupported(): boolean {
 
 onMessage((message) => {
   if (message.t !== 'voice') return
+  // Untagged replies keep older Macs usable. Updated Macs echo the id of
+  // the dictation that produced the reply, even after the next one starts.
+  const id = message.id ?? activeId ?? lastStoppedId
+  if (id === null || !dictations.has(id)) return
+  const current = id === activeId
   if (message.state === 'listening') {
-    if (message.text !== undefined) voice.partial = message.text
+    if (current && message.text !== undefined) voice.partial = message.text
     if (message.final && message.text) {
-      finals?.(message.text)
-      voice.partial = ''
+      dictations.get(id)?.(message.text)
+      if (current) voice.partial = ''
     }
   } else if (message.state === 'stopped') {
-    if (message.text) finals?.(message.text)
-    voice.partial = ''
-    if (macListening) void stopVoice(false, false)
-  } else if (macListening) {
+    if (message.text) dictations.get(id)?.(message.text)
+    dictations.delete(id)
+    if (current) {
+      voice.partial = ''
+      void stopVoice(false, false)
+    }
+  } else if (current) {
     voice.error = message.message ?? 'Speech recognition stopped.'
     void stopVoice(true, false)
+  } else {
+    dictations.delete(id)
   }
 })
 
 watch(
-  () => conn.status,
-  (status) => {
-    // The socket is gone, so there is no Mac to tell.
-    if (status !== 'connected') void stopVoice(true, false)
+  () => [conn.status, conn.paused, conn.features.voice] as const,
+  ([status, paused, allowed]) => {
+    if (status !== 'connected' || paused || !allowed) void stopVoice(true, status === 'connected')
   },
+  { flush: 'sync' },
 )
 
 if (typeof document !== 'undefined') {
@@ -73,6 +85,10 @@ export async function startVoice(onFinal: (text: string) => void, locale = navig
   }
   if (!conn.features.voice) {
     voice.error = 'Speech recognition is turned off on the Mac.'
+    return
+  }
+  if (conn.paused) {
+    voice.error = 'Control is paused on the Mac.'
     return
   }
   if (!voiceSupported()) {
@@ -103,8 +119,10 @@ export async function startVoice(onFinal: (text: string) => void, locale = navig
     const source = audio.createMediaStreamSource(media)
     const worklet = new AudioWorkletNode(audio, 'cmdpalm-downsampler', { processorOptions: { rate: RATE } })
     worklet.port.onmessage = (event: MessageEvent<{ pcm: Int16Array; peak: number }>) => {
-      voice.level = voice.level * 0.6 + event.data.peak * 0.4
-      sendBinary(encodeAudio(event.data.pcm))
+      if (run === generation && voice.active && !conn.paused && conn.features.voice) {
+        voice.level = voice.level * 0.6 + event.data.peak * 0.4
+        sendBinary(encodeAudio(event.data.pcm))
+      }
     }
     source.connect(worklet)
     // Safari only runs nodes that lead to the output; a silent gain keeps the
@@ -115,9 +133,13 @@ export async function startVoice(onFinal: (text: string) => void, locale = navig
     stream = media
     context = audio
     node = worklet
-    finals = onFinal
+    const id = ++nextId
+    // Recognition normally finishes within a few seconds. Bound callbacks
+    // retained for a Mac that never sends its final reply.
+    while (dictations.size >= 8) dictations.delete(dictations.keys().next().value!)
+    dictations.set(id, onFinal)
+    activeId = id
     voice.active = true
-    macListening = true
     // A phone call, Siri or another app can take the microphone mid-dictation.
     const live = audio
     const lost = () => {
@@ -129,7 +151,7 @@ export async function startVoice(onFinal: (text: string) => void, locale = navig
     live.onstatechange = () => {
       if (live.state !== 'running') lost()
     }
-    if (!send({ t: 'voiceStart', locale })) {
+    if (!send({ t: 'voiceStart', locale, id })) {
       voice.error = 'Not connected to the Mac.'
       await stopVoice(true, false)
     }
@@ -146,8 +168,15 @@ export async function startVoice(onFinal: (text: string) => void, locale = navig
 export async function stopVoice(cancel = false, notifyMac = true) {
   generation++
   starting = false
-  macListening = false
-  if (notifyMac && voice.active) send({ t: 'voiceStop', cancel })
+  const id = activeId
+  activeId = null
+  if (id !== null) lastStoppedId = id
+  if (notifyMac && voice.active) send({ t: 'voiceStop', cancel, ...(id !== null ? { id } : {}) })
+  if (cancel) {
+    dictations.clear()
+    lastStoppedId = null
+    voice.partial = ''
+  }
   voice.active = false
   voice.level = 0
   node?.disconnect()
@@ -158,5 +187,4 @@ export async function stopVoice(cancel = false, notifyMac = true) {
   const closing = context
   context = null
   await closing?.close().catch(() => {})
-  if (cancel) finals = null
 }

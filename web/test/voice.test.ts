@@ -54,6 +54,57 @@ afterEach(() => {
 })
 
 describe('voice typing', () => {
+  it('ignores an old dictation stop after the next microphone is fully running', async () => {
+    const socket = connected()
+    const previous: string[] = []
+    const current: string[] = []
+    const first = voiceLib.startVoice((text) => previous.push(text))
+    microphone.shift()!(fakeStream())
+    await first
+    const firstId = socket.sent.find((m) => m.t === 'voiceStart')!.id
+    await voiceLib.stopVoice()
+    const second = voiceLib.startVoice((text) => current.push(text))
+    microphone.shift()!(fakeStream())
+    await second
+    const secondId = socket.sent.filter((m) => m.t === 'voiceStart').at(-1)!.id
+    expect(secondId).not.toBe(firstId)
+    socket.receive({ t: 'voice', id: firstId, state: 'stopped', text: 'old phrase', final: false })
+    expect(voiceLib.voice.active).toBe(true)
+    expect(previous).toEqual(['old phrase'])
+    expect(current).toEqual([])
+    socket.receive({ t: 'voice', id: secondId, state: 'listening', text: 'new phrase', final: true })
+    expect(current).toEqual(['new phrase'])
+  })
+
+  it.each(['pause', 'disable'] as const)('releases the microphone on %s and ignores late recognition', async (reason) => {
+    const socket = connected()
+    const heard: string[] = []
+    const stop = vi.fn()
+    const start = voiceLib.startVoice((text) => heard.push(text))
+    microphone.shift()!({ getTracks: () => [{ stop, addEventListener: vi.fn() }] } as unknown as MediaStream)
+    await start
+    const id = socket.sent.find((m) => m.t === 'voiceStart')!.id
+    if (reason === 'pause') socket.receive({ t: 'paused', paused: true })
+    else socket.receive({ t: 'features', features: { ...welcome.features, voice: false } })
+    expect(voiceLib.voice.active).toBe(false)
+    expect(stop).toHaveBeenCalledOnce()
+    expect(socket.sent.at(-1)).toMatchObject({ t: 'voiceStop', cancel: true, id })
+    socket.receive({ t: 'voice', id, state: 'listening', text: 'discard me', final: true })
+    expect(heard).toEqual([])
+  })
+
+  it('cancels microphone permission requests when the Mac pauses', async () => {
+    const socket = connected()
+    const stop = vi.fn()
+    const start = voiceLib.startVoice(() => {})
+    socket.receive({ t: 'paused', paused: true })
+    microphone.shift()!({ getTracks: () => [{ stop }] } as unknown as MediaStream)
+    await start
+    expect(stop).toHaveBeenCalledOnce()
+    expect(voiceLib.voice.active).toBe(false)
+    expect(sentTypes(socket)).toEqual([])
+  })
+
   it("keeps a new dictation when the Mac's stop for the previous one arrives late", async () => {
     const socket = connected()
     const heard: string[] = []

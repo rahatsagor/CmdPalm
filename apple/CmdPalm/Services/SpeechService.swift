@@ -36,6 +36,7 @@ final class SpeechService: @unchecked Sendable {
 
     private final class Session: @unchecked Sendable {
         let recognizer: SFSpeechRecognizer
+        let requestId: UInt32?
         var current: Utterance?
         /// Utterances whose audio has ended but whose final text has not arrived.
         var closing: [Int: Utterance] = [:]
@@ -45,8 +46,9 @@ final class SpeechService: @unchecked Sendable {
         /// recognizer that fails immediately every time it restarts.
         var emptyRestarts = 0
 
-        init(recognizer: SFSpeechRecognizer) {
+        init(recognizer: SFSpeechRecognizer, requestId: UInt32?) {
             self.recognizer = recognizer
+            self.requestId = requestId
         }
     }
 
@@ -69,32 +71,35 @@ final class SpeechService: @unchecked Sendable {
         }
     }
 
-    func start(session id: UInt64, locale: String?) -> Bool {
+    func start(session id: UInt64, locale: String?, requestId: UInt32?) -> Bool {
         guard Self.mayBeAvailable, let recognizer = Self.recognizer(for: locale) else { return false }
         recognizer.queue = handlerQueue
         queue.async { [self] in
             if let old = sessions.removeValue(forKey: id) {
                 if old.stopping { deliverPending(id, old) }
                 discard(old)
+                send(id, old, .stopped)
             }
-            sessions[id] = Session(recognizer: recognizer)
+            let started = Session(recognizer: recognizer, requestId: requestId)
+            sessions[id] = started
             switch Self.authorization {
             case .authorized:
                 begin(id)
             case .notDetermined:
                 SFSpeechRecognizer.requestAuthorization { [self] status in
                     queue.async { [self] in
+                        guard sessions[id] === started else { return }
                         if status == .authorized {
                             begin(id)
                         } else if let session = sessions.removeValue(forKey: id) {
                             discard(session)
-                            send(id, .unavailable, message: "Speech recognition isn’t allowed on the Mac. Turn it on in System Settings → Privacy & Security → Speech Recognition.")
+                            send(id, session, .unavailable, message: "Speech recognition isn’t allowed on the Mac. Turn it on in System Settings → Privacy & Security → Speech Recognition.")
                         }
                     }
                 }
             default:
                 sessions[id] = nil
-                send(id, .unavailable, message: "Speech recognition isn’t allowed on the Mac.")
+                send(id, started, .unavailable, message: "Speech recognition isn’t allowed on the Mac.")
             }
         }
         return true
@@ -123,12 +128,14 @@ final class SpeechService: @unchecked Sendable {
             if let current = session.current {
                 current.request.endAudio()
             } else {
+                deliverPending(id, session)
                 finish(id, session)
             }
             queue.asyncAfter(deadline: .now() + Self.stopTimeout) { [self] in
                 // The recognizer never delivered a final result. The id is
                 // reused by the next dictation, which this must not end.
                 guard sessions[id] === session, session.stopping else { return }
+                deliverPending(id, session)
                 finish(id, session)
             }
         }
@@ -144,13 +151,13 @@ final class SpeechService: @unchecked Sendable {
         guard session.recognizer.supportsOnDeviceRecognition else {
             sessions[id] = nil
             discard(session)
-            send(id, .unavailable, message: "Speech is only transcribed on this Mac, and on-device recognition isn’t available for this language. Try another language, or turn on Dictation in System Settings → Keyboard so macOS can download it.")
+            send(id, session, .unavailable, message: "Speech is only transcribed on this Mac, and on-device recognition isn’t available for this language. Try another language, or turn on Dictation in System Settings → Keyboard so macOS can download it.")
             return
         }
         guard session.recognizer.isAvailable else {
             sessions[id] = nil
             discard(session)
-            send(id, .unavailable, message: "Speech recognition isn’t available on the Mac right now. Try again in a moment.")
+            send(id, session, .unavailable, message: "Speech recognition isn’t available on the Mac right now. Try again in a moment.")
             return
         }
         let request = SFSpeechAudioBufferRecognitionRequest()
@@ -179,7 +186,7 @@ final class SpeechService: @unchecked Sendable {
                 completed(id, session, utterance, text: text)
             } else if isCurrent, text != utterance.text {
                 utterance.text = text
-                send(id, .listening, text: text)
+                send(id, session, .listening, text: text)
                 schedulePause(id, session, generation)
             }
             return
@@ -193,7 +200,7 @@ final class SpeechService: @unchecked Sendable {
         } else {
             sessions[id] = nil
             discard(session)
-            send(id, .error, message: "Speech recognition stopped: \(error.localizedDescription)")
+            send(id, session, .error, message: "Speech recognition stopped: \(error.localizedDescription)")
         }
     }
 
@@ -206,13 +213,13 @@ final class SpeechService: @unchecked Sendable {
         let text = text.trimmingCharacters(in: .whitespaces)
 
         if session.stopping {
-            if !text.isEmpty { send(id, .listening, text: text, final: true) }
+            if !text.isEmpty { send(id, session, .listening, text: text, final: true) }
             if session.current == nil, session.closing.isEmpty { finish(id, session) }
             return
         }
         if !text.isEmpty {
             session.emptyRestarts = 0
-            send(id, .listening, text: text, final: true)
+            send(id, session, .listening, text: text, final: true)
         } else if wasCurrent {
             session.emptyRestarts += 1
         }
@@ -220,7 +227,7 @@ final class SpeechService: @unchecked Sendable {
         if session.emptyRestarts > 8 {
             sessions[id] = nil
             discard(session)
-            send(id, .stopped)
+            send(id, session, .stopped)
         } else {
             begin(id)
         }
@@ -246,7 +253,7 @@ final class SpeechService: @unchecked Sendable {
         guard sessions[id] === session else { return }
         sessions[id] = nil
         discard(session)
-        send(id, .stopped)
+        send(id, session, .stopped)
     }
 
     /// A new dictation replaces one still waiting for its final text; send
@@ -255,7 +262,7 @@ final class SpeechService: @unchecked Sendable {
         let pending = session.closing.values.sorted { $0.generation < $1.generation } + [session.current].compactMap { $0 }
         for utterance in pending {
             let text = utterance.text.trimmingCharacters(in: .whitespaces)
-            if !text.isEmpty { send(id, .listening, text: text, final: true) }
+            if !text.isEmpty { send(id, session, .listening, text: text, final: true) }
         }
     }
 
@@ -267,8 +274,8 @@ final class SpeechService: @unchecked Sendable {
         session.closing = [:]
     }
 
-    private func send(_ id: UInt64, _ state: VoiceState, text: String? = nil, final: Bool = false, message: String? = nil) {
-        update(id, VoiceUpdate(state: state, text: text, isFinal: final, message: message))
+    private func send(_ id: UInt64, _ session: Session, _ state: VoiceState, text: String? = nil, final: Bool = false, message: String? = nil) {
+        update(id, VoiceUpdate(requestId: session.requestId, state: state, text: text, isFinal: final, message: message))
     }
 
     // MARK: Helpers

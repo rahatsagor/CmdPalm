@@ -58,7 +58,7 @@ final class HostBridge: HostDelegate, Sendable {
 
     func endPaste() { pasteboard.endPaste() }
 
-    func voiceStart(session: UInt64, locale: String?) -> Bool { speech.start(session: session, locale: locale) }
+    func voiceStart(session: UInt64, locale: String?, requestId: UInt32?) -> Bool { speech.start(session: session, locale: locale, requestId: requestId) }
 
     func voiceAudio(session: UInt64, pcm: Data) { speech.append(session: session, pcm: pcm) }
 

@@ -138,7 +138,7 @@ pub trait HostDelegate: Send + Sync {
     fn begin_paste(&self, text: String) -> bool;
     /// Restore the clipboard saved by [`HostDelegate::begin_paste`].
     fn end_paste(&self);
-    fn voice_start(&self, session: u64, locale: Option<String>) -> bool;
+    fn voice_start(&self, session: u64, locale: Option<String>, request_id: Option<u32>) -> bool;
     /// 16 kHz mono signed 16-bit little-endian PCM.
     fn voice_audio(&self, session: u64, pcm: Vec<u8>);
     fn voice_stop(&self, session: u64, cancel: bool);
@@ -146,6 +146,7 @@ pub trait HostDelegate: Send + Sync {
 
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
 pub struct VoiceUpdate {
+    pub request_id: Option<u32>,
     pub state: VoiceState,
     pub text: Option<String>,
     pub is_final: bool,

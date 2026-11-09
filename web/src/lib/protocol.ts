@@ -184,8 +184,8 @@ export type ClientMessage =
   | { t: 'volume'; value?: number; muted?: boolean }
   | { t: 'clipboardSet'; text: string }
   | { t: 'clipboardGet' }
-  | { t: 'voiceStart'; locale?: string }
-  | { t: 'voiceStop'; cancel?: boolean }
+  | { t: 'voiceStart'; locale?: string; id?: number }
+  | { t: 'voiceStop'; cancel?: boolean; id?: number }
   | ({ t: 'settingsSave' } & SavedSettings)
   | { t: 'settingsList' }
   | { t: 'settingsCopy'; from: string; id?: number }
@@ -261,7 +261,7 @@ export type ServerMessage =
   | { t: 'features'; features: Features }
   | { t: 'notice'; level: 'info' | 'warning' | 'error'; code: string; message: string }
   | { t: 'clipboard'; text: string }
-  | { t: 'voice'; state: VoiceState; text?: string; final: boolean; message?: string }
+  | { t: 'voice'; id?: number; state: VoiceState; text?: string; final: boolean; message?: string }
   | { t: 'actionResult'; id?: number; ok: boolean; message?: string }
   | { t: 'settingsList'; devices: SettingsSource[] }
   | ({ t: 'settings'; id?: number } & SavedSettings)

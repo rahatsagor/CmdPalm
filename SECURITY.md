@@ -113,7 +113,10 @@ that:
 **Pause** in the menu bar panel stops all input immediately, including text
 still being typed, deck buttons that are still running and shell commands
 they started. While paused, a device can't run actions, read or set the
-clipboard, or start voice input. Apps and Shortcuts that a button already
+clipboard, or start voice input. Active dictation is cancelled, connected
+phones release their microphones, and late results from cancelled dictation
+are discarded. Turning off dictation also cancels every active stream.
+Apps and Shortcuts that a button already
 opened keep running, as if you had opened them yourself.
 
 ## Updates

@@ -81,7 +81,7 @@ impl HostDelegate for Delegate {
         true
     }
     fn end_paste(&self) {}
-    fn voice_start(&self, _session: u64, _locale: Option<String>) -> bool {
+    fn voice_start(&self, _session: u64, _locale: Option<String>, _request_id: Option<u32>) -> bool {
         false
     }
     fn voice_audio(&self, _session: u64, _pcm: Vec<u8>) {}

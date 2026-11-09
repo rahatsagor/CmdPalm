@@ -190,8 +190,8 @@ can't read. Actions are the same objects deck buttons store, tagged by `kind`:
 | `volume` | `value?`, `muted?` | `volume` |
 | `clipboardSet` | `text`, up to 64 KiB | a `notice` with code `tooLong` if it is longer |
 | `clipboardGet` | | `clipboard`, cut to 64 KiB (UTF-8) |
-| `voiceStart` | `locale?` | `voice` updates |
-| `voiceStop` | `cancel` | final `voice` update |
+| `voiceStart` | `locale?`, optional `id` unique to this dictation | `voice` updates with the same `id` |
+| `voiceStop` | `cancel`, optional `id` | final `voice` update when not cancelled; a stale ID cannot stop a newer dictation |
 | `settingsSave` | `settings`, `updatedAt` | none; a `notice` with code `settings` on failure |
 | `settingsList` | | `settingsList` |
 | `settingsCopy` | `from` (device ID), optional `id` (request ID) | `settings` with the same `id` if supplied, or a `notice` with code `settings` |
@@ -211,11 +211,19 @@ can't read. Actions are the same objects deck buttons store, tagged by `kind`:
 | `features` | `features` | Permissions or settings changed. |
 | `notice` | `level`, `code`, `message` | Something the person should know, e.g. `secureInput` when a password field blocks typing. |
 | `clipboard` | `text` | Answer to `clipboardGet`. |
-| `voice` | `state`, `text?`, `final`, `message?` | Voice typing: `listening`, `stopped`, `unavailable` or `error`. |
+| `voice` | `id?`, `state`, `text?`, `final`, `message?` | Voice typing: `listening`, `stopped`, `unavailable` or `error`. The ID identifies the dictation that produced this reply, including late final text. |
 | `actionResult` | `id?`, `ok`, `message?` | Answer to an `action` with an `id`, or a failed action without one. |
 | `settingsList` | `devices: [{id, name, model, updatedAt}]` | Answer to `settingsList`: other paired devices with saved settings, newest first. |
 | `settings` | `settings`, `updatedAt`, optional `id` | Answer to `settingsCopy`: that device's saved settings, with the request ID echoed if supplied. |
 | `bye` | `reason`, `reconnect?` | The Mac is closing the connection, with a message to show. `reconnect: true` means the Mac stopped or restarted its server and the phone may reconnect with its token on its own; otherwise (disconnected or removed on the Mac, protocol errors) it waits for the person to reconnect. |
+
+### Dictation lifetimes
+
+Pausing control or disabling voice cancels active recognition and invalidates
+queued starts and late recognition results. Audio from the cancelled stream
+is refused even after control resumes; the phone must send a new `voiceStart`.
+Clients must release microphone tracks when paused, disconnected or voice is
+disabled. Tagged replies from earlier dictations cannot end the active one.
 
 ### Keyboard layout
 

@@ -9,6 +9,13 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Voice
+
+- Pausing control or disabling dictation on the Mac cancels recognition
+  and releases the phone’s microphone. Resuming does not restart recording.
+- Late replies from a previous dictation no longer stop a new one or mix
+  its text into the new session.
+
 ## [0.7.0] - 2026-11-07
 
 Put custom keyboards and Deck pages in the order you want, and copy just
