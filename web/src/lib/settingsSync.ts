@@ -156,7 +156,7 @@ function schedule() {
   }, SAVE_DELAY_MS)
 }
 
-function validAction(raw: unknown): boolean {
+export function validAction(raw: unknown): boolean {
   if (!isRecord(raw) || typeof raw.kind !== 'string' || !KINDS.has(raw.kind)) return false
   try {
     return !actionProblem(raw as unknown as Action)
@@ -320,12 +320,22 @@ export function copyFrom(preview: CopyPreview, selection: CopySelection): boolea
     notify('This selection is too large to back up on the Mac. Select fewer keyboards.', 'warning', 'settings')
     return false
   }
+  if (!replaceSynced(payload)) return false
+  notify(`Copied your selection from ${preview.device.name}.`, 'info', 'settings')
+  return true
+}
+
+/** Install a validated setup atomically and make it newer than its Mac copy. */
+export function replaceSynced(payload: SyncedSettings): boolean {
+  if (new TextEncoder().encode(JSON.stringify(payload)).length > MAX_BYTES) {
+    notify('This setup is too large to back up on the Mac.', 'warning', 'settings')
+    return false
+  }
   commit()
   applySynced(payload)
-  meta = { updatedAt: Math.max(Date.now(), meta.updatedAt + 1), hash: signature(buildPayload()) }
+  meta = { updatedAt: Math.max(Date.now(), meta.updatedAt + 1, macAt + 1), hash: signature(buildPayload()) }
   storeMeta()
   push()
-  notify(`Copied your selection from ${preview.device.name}.`, 'info', 'settings')
   return true
 }
 

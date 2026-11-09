@@ -21,6 +21,15 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - Sequences that open an app wait for it to become active before sending
   their next keystrokes. An app that cannot activate stops the sequence.
 
+### Device backups
+
+- Export and restore this device’s settings and custom keyboards from
+  **Settings → Back up or restore this device** on the phone. Review the
+  backup before replacing your setup. Pairing tokens are never exported,
+  and restoring preserves this device’s name, pairing and remember choice.
+- Damaged, unsupported and oversized backup files are rejected before
+  changing anything. Shared Deck backups remain in Mac Settings → Deck.
+
 ### Voice
 
 - Pausing control or disabling dictation on the Mac cancels recognition

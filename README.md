@@ -164,6 +164,12 @@ settings sections and custom keyboards. Only your selection is added or
 updated; the rest of your setup stays as it is. Deck pages and buttons are
 already shared by all devices paired with the same Mac.
 
+Use **Settings → Back up or restore this device** on the phone to export
+your settings and custom keyboards as a file, or review and restore a saved
+setup. Device backups leave your name and pairing as they are and never
+contain pairing tokens. Export the shared Deck separately from **Settings →
+Deck** on the Mac.
+
 <div align="center">
 
 <a href="https://cmdpalm.app/#film"><img src="docs/media/film.jpg" width="640" alt="Watch the CmdPalm film" /></a>

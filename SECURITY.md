@@ -119,6 +119,10 @@ are discarded. Turning off dictation also cancels every active stream.
 Apps and Shortcuts that a button already
 opened keep running, as if you had opened them yourself.
 
+Device backup files contain the phone's settings and custom keyboard
+definitions. Pairing tokens and device identity are excluded; restoring a
+backup preserves the destination device's name and pairing choice.
+
 ## Updates
 
 Updates are delivered with [Sparkle](https://sparkle-project.org). Both the

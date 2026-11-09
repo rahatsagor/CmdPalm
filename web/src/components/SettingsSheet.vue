@@ -19,6 +19,7 @@ import Sheet from './Sheet.vue'
 import Toggle from './Toggle.vue'
 
 const CopySettingsSheet = lazy(() => import('./CopySettingsSheet.vue'))
+const BackupSheet = lazy(() => import('./BackupSheet.vue'))
 
 const emit = defineEmits<{ close: [] }>()
 
@@ -26,6 +27,7 @@ const secure = computed(() => location.protocol === 'https:')
 const confirmForget = ref(false)
 const confirmReset = ref(false)
 const showCopy = ref(false)
+const showBackup = ref(false)
 
 const SLOTS: { slot: GestureSlot; label: string }[] = [
   { slot: 'up', label: 'Swipe up' },
@@ -321,6 +323,7 @@ const times = (v: number) => `${v.toFixed(1)}×`
 
     <section class="mt-5 flex flex-col gap-2">
       <button type="button" class="action" @click="showCopy = true"><Copy :size="17" /> Copy settings from another device</button>
+      <button type="button" class="action" @click="showBackup = true"><Download :size="17" /> Back up or restore this device</button>
       <button type="button" class="action" @click="((confirmReset = !confirmReset), (confirmForget = false))">
         <RotateCcw :size="17" /> Reset settings on this device
       </button>
@@ -339,6 +342,7 @@ const times = (v: number) => `${v.toFixed(1)}×`
     </p>
 
     <CopySettingsSheet v-if="showCopy" @close="showCopy = false" />
+    <BackupSheet v-if="showBackup" @close="showBackup = false" />
 
     <Sheet v-if="gesture" :title="gesture.label" @close="gesture = null">
       <template #actions>
