@@ -9,6 +9,11 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Deck
+
+- Sequences that open an app wait for it to become active before sending
+  their next keystrokes. An app that cannot activate stops the sequence.
+
 ### Voice
 
 - Pausing control or disabling dictation on the Mac cancels recognition

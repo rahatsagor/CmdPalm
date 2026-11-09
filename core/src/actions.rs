@@ -202,7 +202,9 @@ pub(crate) fn execute(shared: &Shared, session: SessionId, action: &Action, dept
         Action::App { id, op } => {
             settle(shared, session)?;
             if !shared.delegate.app_action(id.clone(), *op) {
-                return Err(format!("Couldn't find the app “{id}” on the Mac."));
+                return Err(format!(
+                    "Couldn't finish the action for “{id}”. The app may still be starting or waiting for a dialog."
+                ));
             }
         }
         Action::Url { url } => {

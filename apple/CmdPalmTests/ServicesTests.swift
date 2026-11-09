@@ -54,6 +54,30 @@ import Testing
     }
 }
 
+@Suite struct AppActionCompletionTests {
+    @Test func waitsForCompletionBeforeReturningSuccess() {
+        let completion = AppActionCompletion()
+        DispatchQueue.global().asyncAfter(deadline: .now() + 0.05) { completion.finish(true) }
+        #expect(completion.isPending)
+        #expect(completion.wait(timeout: 1))
+        #expect(!completion.isPending)
+    }
+
+    @Test func timedOutActionsCannotCompleteLater() {
+        let completion = AppActionCompletion()
+        #expect(!completion.wait(timeout: 0.01))
+        completion.finish(true)
+        #expect(!completion.isPending)
+        #expect(!completion.wait(timeout: 0.01))
+    }
+
+    @Test func reportsAppKitFailures() {
+        let completion = AppActionCompletion()
+        completion.finish(false)
+        #expect(!completion.wait(timeout: 1))
+    }
+}
+
 @Suite @MainActor struct KeyboardLayoutTests {
     @Test func readsTheActiveLayout() throws {
         let layout = try #require(KeyboardLayouts.current())

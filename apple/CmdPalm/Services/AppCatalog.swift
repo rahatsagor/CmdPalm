@@ -1,6 +1,29 @@
 import AppKit
 import Synchronization
 
+/// Background callers wait for AppKit's result without blocking its main
+/// queue. A timeout also invalidates work still waiting on the main queue.
+final class AppActionCompletion: Sendable {
+    private let result = Mutex<Bool?>(nil)
+    private let done = DispatchSemaphore(value: 0)
+
+    var isPending: Bool { result.withLock { $0 == nil } }
+
+    func finish(_ success: Bool) {
+        let changed = result.withLock { result in
+            guard result == nil else { return false }
+            result = success
+            return true
+        }
+        if changed { done.signal() }
+    }
+
+    func wait(timeout: TimeInterval) -> Bool {
+        if done.wait(timeout: .now() + timeout) == .timedOut { finish(false) }
+        return result.withLock { $0 ?? false }
+    }
+}
+
 /// Installed and running apps, for the phone's app launcher. Called from the
 /// core's network threads.
 final class AppCatalog: Sendable {
@@ -99,40 +122,61 @@ final class AppCatalog: Sendable {
         let url = running?.bundleURL ?? location(of: id)
         guard running != nil || url != nil else { return false }
         if running == nil, op == .hide || op == .quit { return true }
+        // The core calls from a background worker. Waiting on the main
+        // thread would prevent AppKit from ever completing the operation.
+        guard !Thread.isMainThread else { return false }
+        let completion = AppActionCompletion()
         DispatchQueue.main.async {
-            Self.apply(op, running: NSRunningApplication.runningApplications(withBundleIdentifier: id).first, url: url)
+            guard completion.isPending else { return }
+            Self.apply(op, running: NSRunningApplication.runningApplications(withBundleIdentifier: id).first, url: url, completion: completion)
         }
-        return true
+        return completion.wait(timeout: 10)
     }
 
     @MainActor
-    private static func apply(_ op: AppOp, running: NSRunningApplication?, url: URL?) {
+    private static func apply(_ op: AppOp, running: NSRunningApplication?, url: URL?, completion: AppActionCompletion) {
         switch op {
         case .open:
-            open(running: running, url: url)
+            open(running: running, url: url, completion: completion)
         case .toggle:
             if let running, running.isActive, !running.isHidden {
-                running.hide()
+                completion.finish(running.hide())
             } else {
-                open(running: running, url: url)
+                open(running: running, url: url, completion: completion)
             }
         case .hide:
-            running?.hide()
+            completion.finish(running?.hide() ?? true)
         case .quit:
-            running?.terminate()
+            completion.finish(running?.terminate() ?? true)
         }
     }
 
     @MainActor
-    private static func open(running: NSRunningApplication?, url: URL?) {
+    private static func open(running: NSRunningApplication?, url: URL?, completion: AppActionCompletion) {
         if let running, running.isHidden { running.unhide() }
-        guard let url = url ?? running?.bundleURL else { return }
+        guard let url = url ?? running?.bundleURL else { completion.finish(false); return }
         // Opening (rather than activating) also works when CmdPalm itself is
         // in the background, and reopens a window if the app has none.
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.activates = true
-        NSWorkspace.shared.openApplication(at: url, configuration: configuration) { _, error in
-            if let error { NSLog("CmdPalm: could not open %@: %@", url.path, error.localizedDescription) }
+        NSWorkspace.shared.openApplication(at: url, configuration: configuration) { opened, error in
+            DispatchQueue.main.async {
+                guard error == nil, let opened else { completion.finish(false); return }
+                waitForActivation(of: opened, completion: completion)
+            }
+        }
+    }
+
+    @MainActor
+    private static func waitForActivation(of app: NSRunningApplication, completion: AppActionCompletion) {
+        guard completion.isPending else { return }
+        if app.isTerminated { completion.finish(false) }
+        else if NSWorkspace.shared.frontmostApplication?.processIdentifier == app.processIdentifier, !app.isHidden {
+            completion.finish(true)
+        } else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.025) {
+                waitForActivation(of: app, completion: completion)
+            }
         }
     }
 
