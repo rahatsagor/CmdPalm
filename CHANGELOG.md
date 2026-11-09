@@ -9,6 +9,12 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-09
+
+Undo Deck edits, back up your device’s setup, and keep unsaved changes ready
+to retry. Dictation stops cleanly when control is paused, and sequences wait
+for apps to become active before typing.
+
 ### Deck
 
 - Undo and redo accepted edits from the Deck’s Edit toolbar, including deleted
