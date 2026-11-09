@@ -26,7 +26,7 @@ use crate::protocol::{
     Action, AuthRequest, ClientMessage, DenyReason, DeviceInfo, HostInfo, NoticeLevel, PROTOCOL_VERSION, ServerMessage,
     SettingsSource, TextMode, VoiceState, binary,
 };
-use crate::server::{deck_ticket, save_deck_as};
+use crate::server::{deck_ticket, save_deck_version};
 
 const HELLO_TIMEOUT: Duration = Duration::from_secs(10);
 const APPROVAL_TIMEOUT: Duration = Duration::from_secs(120);
@@ -231,6 +231,7 @@ pub(crate) async fn run<S>(
             token: authorized.token,
             features,
             deck: state.deck.clone(),
+            deck_revision: state.deck_revision,
             layout: state.layout.clone(),
             volume: state.volume,
             paused: state.paused,
@@ -534,6 +535,13 @@ fn f32_at(data: &[u8], at: usize) -> Option<f64> {
 }
 
 impl Connection {
+    fn deck_result(&self, id: Option<u32>, ok: bool, message: Option<String>) -> ServerMessage {
+        match id {
+            Some(id) => ServerMessage::DeckSaved { id, ok, revision: self.shared.state().deck_revision, message },
+            None => notice(NoticeLevel::Error, "deck", message.as_deref().unwrap_or("The deck wasn't saved.")),
+        }
+    }
+
     fn input(&self, input: Input) {
         self.shared.engine(Command::Input { session: self.id, input });
     }
@@ -680,26 +688,33 @@ impl Connection {
                 });
                 None
             }
-            ClientMessage::DeckSave { deck } => {
+            ClientMessage::DeckSave { deck, id, revision } => {
                 if let Err(err) = deck.validate() {
-                    return Some(notice(NoticeLevel::Error, "deck", &err.to_string()));
+                    return Some(self.deck_result(id, false, Some(err.to_string())));
                 }
                 // Saving syncs to disk, so it runs off the network threads. The
                 // ticket, taken in arrival order, keeps an older save from
                 // landing after a newer one.
                 let ticket = deck_ticket(&self.shared);
                 let accepted = self.try_blocking(move |shared| {
-                    save_deck_as(shared, deck, ticket)
-                        .err()
-                        .map(|err| notice(NoticeLevel::Error, "deck", &err.to_string()))
+                    let result = save_deck_version(shared, deck, ticket, revision);
+                    match id {
+                        Some(id) => Some(ServerMessage::DeckSaved {
+                            id,
+                            ok: result.is_ok(),
+                            revision: result.as_ref().copied().unwrap_or_else(|_| shared.state().deck_revision),
+                            message: result.err().map(|e| e.to_string()),
+                        }),
+                        None => result.err().map(|err| notice(NoticeLevel::Error, "deck", &err.to_string())),
+                    }
                 });
-                // The phone shows its change before the Mac confirms it, and
-                // takes it back when a notice about the deck arrives.
+                // Reply even when no worker can be started, so the editor
+                // keeps its draft instead of waiting for a missing echo.
                 (!accepted).then(|| {
-                    notice(
-                        NoticeLevel::Warning,
-                        "deck",
-                        "The Mac is still busy, so the deck wasn’t changed. Try again in a moment.",
+                    self.deck_result(
+                        id,
+                        false,
+                        Some("The Mac is still busy, so the deck wasn’t changed. Try again in a moment.".into()),
                     )
                 })
             }

@@ -44,6 +44,8 @@ const TRUST_RETRY_TICKS: u64 = 12;
 
 #[derive(Debug, thiserror::Error)]
 pub enum SaveError {
+    #[error("The deck changed on another device. Review your edit and save again.")]
+    Conflict,
     #[error(transparent)]
     Deck(#[from] DeckError),
     #[error("could not save the deck: {0}")]
@@ -62,18 +64,36 @@ pub(crate) fn save_deck(shared: &Shared, deck: Deck) -> Result<(), SaveError> {
 /// Saves can run on separate threads and get here out of order. One older
 /// than the deck already saved is dropped, as if it had come first.
 pub(crate) fn save_deck_as(shared: &Shared, deck: Deck, ticket: u64) -> Result<(), SaveError> {
+    save_deck_version(shared, deck, ticket, None).map(|_| ())
+}
+
+pub(crate) fn save_deck_version(
+    shared: &Shared,
+    deck: Deck,
+    ticket: u64,
+    revision: Option<u64>,
+) -> Result<u64, SaveError> {
     deck.validate()?;
     let mut newest = shared.deck_lock.lock().unwrap_or_else(|p| p.into_inner());
+    let current = shared.state().deck_revision;
+    if revision.is_some_and(|base| base != current) {
+        return Err(SaveError::Conflict);
+    }
     if ticket < *newest {
-        return Ok(());
+        return if revision.is_some() { Err(SaveError::Conflict) } else { Ok(current) };
     }
     if let Some(dir) = shared.data_dir() {
         store::save(&dir.join("deck.json"), &deck)?;
     }
     *newest = ticket;
-    shared.state().deck = deck.clone();
-    shared.broadcast(ServerMessage::Deck { deck });
-    Ok(())
+    let revision = {
+        let mut state = shared.state();
+        state.deck = deck.clone();
+        state.deck_revision += 1;
+        state.deck_revision
+    };
+    shared.broadcast(ServerMessage::Deck { deck, revision });
+    Ok(revision)
 }
 
 fn bind(port: u16) -> std::io::Result<(TcpListener, Option<TcpListener>)> {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Check, LoaderCircle, Pencil, Plus } from '@lucide/vue'
+import { Check, LoaderCircle, Pencil, Plus, Redo2, Undo2 } from '@lucide/vue'
 import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, reactive, ref, watch } from 'vue'
 import PageEditor from '@/components/PageEditor.vue'
 import GroupTabs from '@/components/GroupTabs.vue'
@@ -7,7 +7,7 @@ import TileEditor from '@/components/TileEditor.vue'
 import HapticSwitch from '@/components/HapticSwitch.vue'
 import TileFace from '@/components/TileFace.vue'
 import { notify, runAction, state } from '@/lib/connection'
-import { LIMITS, clone, newId, newPage, newTile, saveDeck } from '@/lib/deck'
+import { LIMITS, clone, deckHistory, newId, newPage, newTile, redoDeck, saveDeck, undoDeck } from '@/lib/deck'
 import { REFERENCE_WIDTH, deckColumns, tileWidth } from '@/lib/deckGrid'
 import { haptic } from '@/lib/haptics'
 import type { Deck, DeckPage, Tile } from '@/lib/protocol'
@@ -42,8 +42,8 @@ onBeforeUnmount(() => resizer?.disconnect())
 const columns = (p: DeckPage) => deckColumns(p.columns, gridWidth.value, settings.deckButtonSize)
 const tileSize = (p: DeckPage) => tileWidth(columns(p), gridWidth.value || REFERENCE_WIDTH)
 
-function mutate(change: (deck: Deck) => void): boolean {
-  if (!deck.value) return false
+async function mutate(change: (deck: Deck) => void): Promise<boolean> {
+  if (!deck.value || deckHistory.saving) return false
   const next = clone(deck.value)
   change(next)
   return saveDeck(next)
@@ -119,6 +119,7 @@ interface Press {
   pointerId: number
   pageId: string
   index: number
+  tile: Tile
   x: number
   y: number
   offsetX: number
@@ -135,7 +136,9 @@ const ghost = ref({ x: 0, y: 0 })
 let longTimer: ReturnType<typeof setTimeout> | undefined
 
 function onTileDown(pageId: string, i: number, event: PointerEvent) {
-  if (press.value || (event.pointerType === 'mouse' && event.button !== 0)) return
+  if (press.value || (editing.value && deckHistory.saving) || (event.pointerType === 'mouse' && event.button !== 0)) return
+  const tile = pageById(pageId)?.tiles[i]
+  if (!tile) return
   const el = event.currentTarget as HTMLElement
   el.setPointerCapture(event.pointerId)
   const rect = el.getBoundingClientRect()
@@ -143,6 +146,7 @@ function onTileDown(pageId: string, i: number, event: PointerEvent) {
     pointerId: event.pointerId,
     pageId,
     index: i,
+    tile: clone(tile),
     x: event.clientX,
     y: event.clientY,
     offsetX: event.clientX - rect.left,
@@ -183,8 +187,10 @@ function onTileMove(event: PointerEvent) {
   const target = over ? Number(over.dataset.tileIndex) : -1
   const tiles = pageById(p.pageId)?.tiles
   if (target < 0 || !tiles) return
+  const from = tiles.findIndex((tile) => tile.id === p.tile.id)
+  if (from < 0) return
   // Reorder locally while dragging; save once on release.
-  const [moved] = tiles.splice(p.index, 1)
+  const [moved] = tiles.splice(from, 1)
   tiles.splice(target, 0, moved!)
   p.index = target
   p.reordered = true
@@ -195,8 +201,9 @@ function onTileUp(event: PointerEvent, cancelled = false) {
   const p = press.value
   if (!p || p.pointerId !== event.pointerId) return
   endPress()
-  const tile = pageById(p.pageId)?.tiles[p.index]
+  const tile = pageById(p.pageId)?.tiles.find((tile) => tile.id === p.tile.id)
   if (!tile || cancelled || p.moved) return
+  if (JSON.stringify(tile.action) !== JSON.stringify(p.tile.action)) return
   if (editing.value || p.longPressed) tileEdit.value = { tile, pageId: p.pageId, isNew: false }
   else void run(tile)
 }
@@ -227,14 +234,18 @@ function onStrayUp(event: PointerEvent) {
   if (press.value?.pointerId === event.pointerId) onTileUp(event, true)
 }
 
-function endPress() {
+function endPress(save = true) {
   clearTimeout(longTimer)
   const p = press.value
   press.value = null
   // Keep the new order even when the drag ends early (Done tapped or the tab
   // switched mid-drag): otherwise it shows here but never reaches the Mac.
-  if (p?.reordered && deck.value) saveDeck(deck.value)
+  if (save && p?.reordered && deck.value) void saveDeck(deck.value)
 }
+
+// A remote save replaces the draft being dragged. End that drag without
+// saving its earlier positions back over the newer deck.
+watch(deck, () => { if (press.value?.reordered) endPress(false) })
 
 onMounted(() => {
   document.addEventListener('pointerup', onStrayUp)
@@ -256,14 +267,15 @@ function addTile(target: DeckPage) {
 // Tiles are found by id, not position: another device can change the page
 // while the editor is open. The editor stays open when the change can't be
 // saved, so nothing typed into it is lost.
-function editTile(change: (tiles: Tile[], at: number) => void) {
+async function editTile(change: (tiles: Tile[], at: number) => void): Promise<boolean> {
   const edit = tileEdit.value
-  if (!edit) return
-  const saved = mutate((d) => {
+  if (!edit) return false
+  const saved = await mutate((d) => {
     const target = d.pages.find((p) => p.id === edit.pageId)
     if (target) change(target.tiles, target.tiles.findIndex((t) => t.id === edit.tile.id))
   })
-  if (saved) tileEdit.value = null
+  if (saved && tileEdit.value === edit) tileEdit.value = null
+  return saved
 }
 
 function saveTile(tile: Tile) {
@@ -277,36 +289,36 @@ function removeTile() {
   editTile((tiles, at) => at >= 0 && tiles.splice(at, 1))
 }
 
-function duplicateTile(tile: Tile) {
+async function duplicateTile(tile: Tile) {
   let full = false
-  editTile((tiles, at) => {
+  const saved = await editTile((tiles, at) => {
     const i = at < 0 ? tiles.push(tile) - 1 : at
     tiles[i] = tile
     full = tiles.length >= LIMITS.tiles
     if (!full) tiles.splice(i + 1, 0, { ...clone(tile), id: newId() })
   })
-  if (full) notify('This page is full, so the button was saved but not duplicated.', 'warning')
+  if (saved && full) notify('This page is full, so the button was saved but not duplicated.', 'warning')
 }
 
-function addPage() {
+async function addPage() {
   if (pages.value.length >= LIMITS.pages) return
   const created = newPage(`Page ${pages.value.length + 1}`)
-  if (!mutate((d) => d.pages.push(created))) return
+  if (!(await mutate((d) => d.pages.push(created)))) return
   settings.deckPage = created.id
   pageEdit.value = created.id
 }
 
 // Like tiles, the edited page is found by id, and the editor closes by
 // itself if another device removes the page.
-function savePage(values: { name: string; columns: number }) {
+async function savePage(values: { name: string; columns: number }) {
   const id = pageEdit.value
-  pageEdit.value = null
   const current = id ? pageById(id) : undefined
-  if (!current || (current.name === values.name && current.columns === values.columns)) return
-  mutate((d) => {
+  if (!current || (current.name === values.name && current.columns === values.columns)) { pageEdit.value = null; return }
+  const saved = await mutate((d) => {
     const target = d.pages.find((p) => p.id === id)
     if (target) Object.assign(target, values)
   })
+  if (saved && pageEdit.value === id) pageEdit.value = null
 }
 
 function movePage(by: number) {
@@ -319,47 +331,74 @@ function movePage(by: number) {
   })
 }
 
-function removePage() {
+async function removePage() {
   const id = pageEdit.value
-  pageEdit.value = null
   const i = pages.value.findIndex((p) => p.id === id)
   if (i < 0) return
-  const removed = mutate((d) => {
+  const removed = await mutate((d) => {
     if (d.pages.length > 1) d.pages.splice(i, 1)
   })
-  if (removed) settings.deckPage = pages.value[Math.max(0, i - 1)]?.id ?? ''
+  if (removed) {
+    pageEdit.value = null
+    settings.deckPage = pages.value[Math.max(0, i - 1)]?.id ?? ''
+  }
 }
 
 function tileStyle(tile: Tile) {
   return tile.color ? { background: `color-mix(in srgb, ${tile.color} 20%, var(--surface))`, color: tile.color } : {}
 }
 
-const dragged = computed(() => (press.value?.moved && editing.value ? pageById(press.value.pageId)?.tiles[press.value.index] : undefined))
+const dragged = computed(() => (press.value?.moved && editing.value ? pageById(press.value.pageId)?.tiles.find((tile) => tile.id === press.value!.tile.id) : undefined))
 </script>
 
 <template>
   <div class="flex h-full flex-col">
     <div class="flex items-center gap-2 px-3 pt-1 pb-2">
-      <GroupTabs :items="pages" :active="page?.id ?? ''" :editing="editing" label="Deck pages" @select="selectGroup" @reorder="reorderPages">
+      <GroupTabs :items="pages" :active="page?.id ?? ''" :editing="editing && !deckHistory.saving" label="Deck pages" @select="selectGroup" @reorder="reorderPages">
         <button
           v-if="editing && pages.length < LIMITS.pages"
           type="button"
           class="grid size-8 shrink-0 place-items-center rounded-full text-muted"
           aria-label="Add page"
+          :disabled="deckHistory.saving"
           @click="addPage"
         >
           <Plus :size="17" />
         </button>
       </GroupTabs>
+      <template v-if="editing">
+        <button
+          type="button"
+          class="grid size-8 shrink-0 place-items-center rounded-full text-muted disabled:opacity-30"
+          aria-label="Undo last Deck edit"
+          title="Undo"
+          :disabled="!deckHistory.undo || deckHistory.saving"
+          @click="undoDeck"
+          @keydown.enter.prevent="undoDeck"
+          @keydown.space.prevent="undoDeck"
+        ><Undo2 :size="17" /></button>
+        <button
+          type="button"
+          class="grid size-8 shrink-0 place-items-center rounded-full text-muted disabled:opacity-30"
+          aria-label="Redo Deck edit"
+          title="Redo"
+          :disabled="!deckHistory.redo || deckHistory.saving"
+          @click="redoDeck"
+          @keydown.enter.prevent="redoDeck"
+          @keydown.space.prevent="redoDeck"
+        ><Redo2 :size="17" /></button>
+      </template>
       <button
         type="button"
         class="flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-[13px] font-semibold transition-colors"
         :class="editing ? 'bg-accent text-accent-text' : 'bg-surface-3 text-muted'"
+        :disabled="deckHistory.saving"
         @click="editing = !editing"
       >
-        <Check v-if="editing" :size="15" />
+        <LoaderCircle v-if="deckHistory.saving" :size="15" class="animate-spin" />
+        <Check v-else-if="editing" :size="15" />
         <Pencil v-else :size="14" />
-        {{ editing ? 'Done' : 'Edit' }}
+        {{ deckHistory.saving ? 'Saving…' : editing ? 'Done' : 'Edit' }}
       </button>
     </div>
 
@@ -418,6 +457,7 @@ const dragged = computed(() => (press.value?.moved && editing.value ? pageById(p
             type="button"
             class="grid aspect-square place-items-center rounded-[22px] border border-dashed border-line-strong text-muted"
             aria-label="Add button"
+            :disabled="deckHistory.saving"
             @click="addTile(p)"
           >
             <Plus :size="26" />
@@ -446,6 +486,7 @@ const dragged = computed(() => (press.value?.moved && editing.value ? pageById(p
       v-if="tileEdit"
       :tile="tileEdit.tile"
       :is-new="tileEdit.isNew"
+      :busy="deckHistory.saving"
       @save="saveTile"
       @remove="removeTile"
       @duplicate="duplicateTile"
@@ -456,6 +497,7 @@ const dragged = computed(() => (press.value?.moved && editing.value ? pageById(p
       :page="editedPage"
       :index="pages.indexOf(editedPage)"
       :count="pages.length"
+      :busy="deckHistory.saving"
       @save="savePage"
       @move="movePage"
       @remove="removePage"

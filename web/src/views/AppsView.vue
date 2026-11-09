@@ -37,9 +37,9 @@ function act(app: AppEntry, op: AppOp) {
   haptic('light')
 }
 
-function addToDeck(app: AppEntry) {
+async function addToDeck(app: AppEntry) {
   menu.value = null
-  const page = addTileToCurrentPage(newTile({ kind: 'app', id: app.id, op: 'toggle' }, app.name), settings.deckPage)
+  const page = await addTileToCurrentPage(newTile({ kind: 'app', id: app.id, op: 'toggle' }, app.name), settings.deckPage)
   if (page === null) return
   notify(page ? `Added ${app.name} to “${page}”.` : 'That deck page is full.', page ? 'info' : 'warning')
 }

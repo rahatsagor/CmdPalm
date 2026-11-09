@@ -1,4 +1,4 @@
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { KeepAlive, defineComponent, h, nextTick, ref, type Component } from 'vue'
 import { FakeSocket, lastSocket, welcome } from './fakeSocket'
@@ -52,6 +52,7 @@ async function deckView(selected: string, wrap?: (deckView: Component) => Compon
   const socket = lastSocket()
   socket.open()
   socket.receive({ ...welcome, deck })
+  socket.acceptDeckSaves = true
   const { settings } = await import('../src/lib/settings')
   settings.deckPage = selected
   const { default: DeckView } = await import('../src/views/DeckView.vue')
@@ -77,6 +78,78 @@ function dialogButton(text: string): HTMLButtonElement {
 }
 
 describe('DeckView', () => {
+  it('runs the pressed tile by id when another device reorders before the finger lifts', async () => {
+    const { socket, view } = await deckView('essentials')
+    pointer(tile('Mute'), 'pointerdown')
+    socket.receive({ t: 'deck', revision: 1, deck: { ...deck, pages: [{ ...deck.pages[0], tiles: [...deck.pages[0]!.tiles].reverse() }, deck.pages[1]] } })
+    await nextTick()
+    pointer(tile('Mute'), 'pointerup')
+    expect(socket.sent.filter((m) => m.t === 'action')).toMatchObject([{ action: { key: 'mute' } }])
+    view.unmount()
+  })
+
+  it('never runs a neighbouring tile if the pressed tile was removed remotely', async () => {
+    const { socket, view } = await deckView('essentials')
+    const target = tile('Mute')
+    pointer(target, 'pointerdown')
+    socket.receive({ t: 'deck', revision: 1, deck: { ...deck, pages: [{ ...deck.pages[0], tiles: [deck.pages[0]!.tiles[1]] }, deck.pages[1]] } })
+    // The captured element can receive the lift before Vue removes it.
+    pointer(target, 'pointerup')
+    expect(socket.sent.filter((m) => m.t === 'action')).toEqual([])
+    view.unmount()
+  })
+
+  it('keeps a rejected draft and lets the person retry the same edit', async () => {
+    const { socket, view } = await deckView('essentials')
+    socket.acceptDeckSaves = false
+    pointer(tile('Mute'), 'pointerdown')
+    vi.advanceTimersByTime(600)
+    pointer(tile('Mute'), 'pointerup')
+    await nextTick()
+    const field = document.querySelector<HTMLInputElement>('[role="dialog"] input')!
+    field.value = 'My saved label'
+    field.dispatchEvent(new Event('input'))
+    await nextTick()
+    dialogButton('Save').click()
+    await nextTick()
+    expect(dialogButton('Saving…').disabled).toBe(true)
+    const id = socket.sent.filter((m) => m.t === 'deckSave').at(-1)!.id
+    socket.receive({ t: 'deckSaved', id, ok: false, revision: 0, message: 'The Mac could not save the deck.' })
+    await nextTick()
+    expect(document.querySelector<HTMLInputElement>('[role="dialog"] input')!.value).toBe('My saved label')
+    socket.acceptDeckSaves = true
+    dialogButton('Save').click()
+    await flushPromises()
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+    expect(conn.state.deck?.pages[0]?.tiles[0]?.label).toBe('My saved label')
+    expect(view.find('button[aria-label="Undo last Deck edit"]').attributes('disabled')).toBeUndefined()
+    const activation = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
+    view.find('button[aria-label="Undo last Deck edit"]').element.dispatchEvent(activation)
+    await flushPromises()
+    expect(activation.defaultPrevented).toBe(true)
+    expect(conn.state.deck?.pages[0]?.tiles[0]?.label).toBe('Mute')
+    view.unmount()
+  })
+
+  it('cancels a local drag when a newer deck arrives', async () => {
+    const { socket, view } = await deckView('essentials')
+    await view.findAll('button').find((b) => b.text() === 'Edit')!.trigger('click')
+    const mute = tile('Mute')
+    const play = tile('Play / Pause')
+    Object.defineProperty(document, 'elementsFromPoint', { configurable: true, value: () => [play] })
+    mute.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 1, pointerType: 'touch', bubbles: true }))
+    mute.dispatchEvent(new PointerEvent('pointermove', { pointerId: 1, pointerType: 'touch', clientX: 40, bubbles: true }))
+    await nextTick()
+    const remote = { ...deck, pages: [{ ...deck.pages[0], name: 'Remote page', tiles: deck.pages[0]!.tiles.slice(0, 1) }, deck.pages[1]] }
+    socket.receive({ t: 'deck', deck: remote, revision: 1 })
+    await nextTick()
+    pointer(tile('Mute'), 'pointerup')
+    Reflect.deleteProperty(document, 'elementsFromPoint')
+    expect(socket.sent.filter((m) => m.t === 'deckSave')).toEqual([])
+    expect(conn.state.deck?.pages[0]?.name).toBe('Remote page')
+    view.unmount()
+  })
+
   // The selected page and the page on screen can differ, for example after
   // the scroll position was lost while another tab was open.
   it('runs the button that was tapped, not the one at its spot on the selected page', async () => {

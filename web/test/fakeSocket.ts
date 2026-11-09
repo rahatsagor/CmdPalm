@@ -10,6 +10,8 @@ export class FakeSocket {
   bufferedAmount = 0
   sent: Record<string, unknown>[] = []
   binary: ArrayBuffer[] = []
+  acceptDeckSaves = false
+  deckRevision = 0
   onopen: (() => void) | null = null
   onclose: (() => void) | null = null
   onmessage: ((event: { data: unknown }) => void) | null = null
@@ -19,7 +21,15 @@ export class FakeSocket {
     FakeSocket.all.push(this)
   }
   send(data: unknown) {
-    if (typeof data === 'string') this.sent.push(JSON.parse(data))
+    if (typeof data === 'string') {
+      const message = JSON.parse(data)
+      this.sent.push(message)
+      if (this.acceptDeckSaves && message.t === 'deckSave') {
+        const revision = ++this.deckRevision
+        this.receive({ t: 'deck', deck: message.deck, revision })
+        this.receive({ t: 'deckSaved', id: message.id, ok: true, revision })
+      }
+    }
     else if (data instanceof ArrayBuffer) this.binary.push(data)
   }
   close() {

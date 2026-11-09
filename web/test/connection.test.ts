@@ -233,9 +233,10 @@ describe('while reconnecting', () => {
   it('doesn’t show deck changes the Mac never received', async () => {
     const deck = await import('../src/lib/deck')
     const first = connected()
-    expect(deck.saveDeck({ version: 1, pages: [deck.newPage('New')] })).toBe(true)
+    const saving = deck.saveDeck({ version: 1, pages: [deck.newPage('New')] })
     first.drop()
-    expect(deck.saveDeck({ version: 1, pages: [] })).toBe(false)
+    expect(await saving).toBe(false)
+    expect(await deck.saveDeck({ version: 1, pages: [] })).toBe(false)
     // The last deck the Mac confirmed, not either edit.
     expect(conn.state.deck?.pages).toEqual([])
     expect(conn.state.notices.at(-1)?.code).toBe('deck')

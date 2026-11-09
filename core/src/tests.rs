@@ -1008,6 +1008,60 @@ fn voice_updates_echo_their_dictation_id() {
 }
 
 #[test]
+fn deck_saves_acknowledge_persistence_and_reject_stale_revisions() {
+    let f = fixture();
+    f.rt.block_on(async {
+        let mut phone = connect(f.port).await;
+        let code = f.host.pairing_info().link.split("#pair=").nth(1).unwrap().to_string();
+        send(&mut phone, hello("phone", json!({"method": "pair", "code": code}))).await;
+        let initial = recv_kind(&mut phone, "welcome").await;
+        let mut tablet = connect(f.port).await;
+        let code = f.host.pairing_info().link.split("#pair=").nth(1).unwrap().to_string();
+        send(&mut tablet, hello("tablet", json!({"method": "pair", "code": code}))).await;
+        recv_kind(&mut tablet, "welcome").await;
+        let mut changed = initial["deck"].clone();
+        changed["pages"][0]["name"] = json!("Phone edit");
+        send(&mut phone, json!({"t": "deckSave", "deck": changed, "id": 7, "revision": initial["deckRevision"]})).await;
+        let accepted = recv_kind(&mut phone, "deckSaved").await;
+        assert_eq!(accepted["ok"], true);
+        assert_eq!(accepted["id"], 7);
+        assert_eq!(accepted["revision"], 1);
+        let disk: Value = serde_json::from_str(
+            &std::fs::read_to_string(std::path::Path::new(&f.config.data_dir).join("deck.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(disk["pages"][0]["name"], "Phone edit");
+        recv_kind(&mut tablet, "deck").await;
+        send(&mut tablet, json!({"t": "deckSave", "deck": initial["deck"], "id": 8, "revision": 0})).await;
+        let rejected = recv_kind(&mut tablet, "deckSaved").await;
+        assert_eq!(rejected["ok"], false);
+        assert_eq!(rejected["id"], 8);
+        assert_eq!(rejected["revision"], 1);
+        assert!(rejected["message"].as_str().unwrap().contains("another device"));
+        assert_eq!(serde_json::from_str::<Value>(&f.host.deck_json()).unwrap()["pages"][0]["name"], "Phone edit");
+    });
+}
+
+#[test]
+fn failed_deck_writes_are_acknowledged_without_changing_the_deck() {
+    let f = fixture();
+    std::fs::create_dir(std::path::Path::new(&f.config.data_dir).join("deck.json")).unwrap();
+    f.rt.block_on(async {
+        let mut ws = connect(f.port).await;
+        let code = f.host.pairing_info().link.split("#pair=").nth(1).unwrap().to_string();
+        send(&mut ws, hello("phone", json!({"method": "pair", "code": code}))).await;
+        let initial = recv_kind(&mut ws, "welcome").await;
+        let mut changed = initial["deck"].clone();
+        changed["pages"][0]["name"] = json!("Must not stick");
+        send(&mut ws, json!({"t": "deckSave", "deck": changed, "id": 9, "revision": 0})).await;
+        let rejected = recv_kind(&mut ws, "deckSaved").await;
+        assert_eq!(rejected["ok"], false);
+        assert_eq!(rejected["revision"], 0);
+        assert_eq!(serde_json::from_str::<Value>(&f.host.deck_json()).unwrap(), initial["deck"]);
+    });
+}
+
+#[test]
 fn queued_voice_starts_cannot_restart_recording_after_pause_and_resume() {
     let f = fixture();
     let (started, entering) = std::sync::mpsc::channel();

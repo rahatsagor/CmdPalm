@@ -180,7 +180,7 @@ export type ClientMessage =
   | { t: 'release' }
   | { t: 'apps' }
   | { t: 'appAction'; id: string; op: AppOp }
-  | { t: 'deckSave'; deck: Deck }
+  | { t: 'deckSave'; deck: Deck; id?: number; revision?: number }
   | { t: 'volume'; value?: number; muted?: boolean }
   | { t: 'clipboardSet'; text: string }
   | { t: 'clipboardGet' }
@@ -239,6 +239,7 @@ export type ServerMessage =
       token?: string
       features: Features
       deck: Deck
+      deckRevision?: number
       layout?: KeyboardLayout
       volume?: VolumeState
       paused: boolean
@@ -252,7 +253,8 @@ export type ServerMessage =
   | { t: 'pong'; id: number }
   | { t: 'apps'; apps: AppEntry[] }
   | { t: 'appsChanged' }
-  | { t: 'deck'; deck: Deck }
+  | { t: 'deck'; deck: Deck; revision?: number }
+  | { t: 'deckSaved'; id: number; ok: boolean; revision: number; message?: string }
   | { t: 'layout'; layout: KeyboardLayout }
   | ({ t: 'volume' } & VolumeState)
   | { t: 'volumeUnavailable' }

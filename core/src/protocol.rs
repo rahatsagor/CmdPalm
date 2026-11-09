@@ -305,6 +305,10 @@ pub enum ClientMessage {
     },
     DeckSave {
         deck: Deck,
+        #[serde(default)]
+        id: Option<u32>,
+        #[serde(default)]
+        revision: Option<u64>,
     },
     Volume {
         #[serde(default)]
@@ -453,6 +457,7 @@ pub enum ServerMessage {
         token: Option<String>,
         features: Features,
         deck: Deck,
+        deck_revision: u64,
         #[serde(skip_serializing_if = "Option::is_none")]
         layout: Option<KeyboardLayout>,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -478,6 +483,14 @@ pub enum ServerMessage {
     AppsChanged,
     Deck {
         deck: Deck,
+        revision: u64,
+    },
+    DeckSaved {
+        id: u32,
+        ok: bool,
+        revision: u64,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        message: Option<String>,
     },
     Layout {
         layout: KeyboardLayout,

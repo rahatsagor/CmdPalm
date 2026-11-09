@@ -11,6 +11,13 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ### Deck
 
+- Undo and redo accepted edits from the Deck’s Edit toolbar, including deleted
+  buttons and pages. Changes from another device clear the local history.
+- Editors keep your draft until the Mac confirms saving. A failed save,
+  dropped connection or conflicting change leaves it ready to review and retry.
+- Saves check for newer changes on the Mac before replacing the shared Deck.
+- A button held while another device reorders its page still runs the button
+  you pressed. A remote change also safely cancels an unfinished drag.
 - Sequences that open an app wait for it to become active before sending
   their next keystrokes. An app that cannot activate stops the sequence.
 

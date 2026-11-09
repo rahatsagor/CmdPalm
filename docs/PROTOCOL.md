@@ -87,6 +87,7 @@ On success the Mac sends `welcome`:
 | `token` | Present after a new pairing with `remember: true`. Store it and use it for `token` auth. |
 | `features` | `{voice, shell, secure, permission}`: voice typing available, shell commands allowed, connection is TLS, Mac has Accessibility permission. |
 | `deck` | The current deck (see below). |
+| `deckRevision` | The revision of the current deck during this host run. Missing on older hosts. Send it with `deckSave` to avoid overwriting newer changes. |
 | `layout` | The Mac's keyboard layout, if known. |
 | `volume` | `{value: 0–1, muted}`, if the output device has a volume control. |
 | `capsLock` | Whether Caps Lock is on. Missing from Macs that don't report it. |
@@ -186,7 +187,7 @@ can't read. Actions are the same objects deck buttons store, tagged by `kind`:
 | --- | --- | --- |
 | `apps` | | `apps` |
 | `appAction` | `id`, `op` | `appsChanged` once the app responds |
-| `deckSave` | `deck` | `deck` to every connected device, or a `notice` with code `deck` when the Mac rejected or couldn't read the deck, could not save it, or was too busy to try |
+| `deckSave` | `deck`, optional `id` and `revision` | `deck` to every device after persistence succeeds. With `id`, also returns `deckSaved` with that ID, success and revision. A stale `revision` is rejected. Without `id`, failures use a `notice` with code `deck`. |
 | `volume` | `value?`, `muted?` | `volume` |
 | `clipboardSet` | `text`, up to 64 KiB | a `notice` with code `tooLong` if it is longer |
 | `clipboardGet` | | `clipboard`, cut to 64 KiB (UTF-8) |
@@ -202,7 +203,8 @@ can't read. Actions are the same objects deck buttons store, tagged by `kind`:
 | --- | --- | --- |
 | `apps` | `apps: [{id, name, running, active, hidden}]` | Answer to `apps`. |
 | `appsChanged` | | Apps launched, quit, hid or changed focus. Request `apps` again if the list is visible. |
-| `deck` | `deck` | The deck changed. |
+| `deck` | `deck`, `revision` | The deck changed. Revisions are present on updated hosts. |
+| `deckSaved` | `id`, `ok`, `revision`, `message?` | Answer to a `deckSave` with an ID, after persistence succeeds or the save is refused. Keep the edit’s draft until this reply. |
 | `layout` | `layout` | The Mac's input source changed. |
 | `volume` | `value`, `muted` | Output volume changed. |
 | `volumeUnavailable` | | The output device has no volume control (HDMI, for example). |
@@ -217,7 +219,13 @@ can't read. Actions are the same objects deck buttons store, tagged by `kind`:
 | `settings` | `settings`, `updatedAt`, optional `id` | Answer to `settingsCopy`: that device's saved settings, with the request ID echoed if supplied. |
 | `bye` | `reason`, `reconnect?` | The Mac is closing the connection, with a message to show. `reconnect: true` means the Mac stopped or restarted its server and the phone may reconnect with its token on its own; otherwise (disconnected or removed on the Mac, protocol errors) it waits for the person to reconnect. |
 
-### Dictation lifetimes
+### Save and dictation lifetimes
+
+The optional Deck revisions, save IDs and voice IDs extend protocol 1 without
+changing older requests. Updated clients wait for `deckSaved`; for an older
+host without revisions, they accept an echo of the requested deck instead.
+Only revision-aware saves detect conflicts. Undo history belongs to this
+connection and is discarded after a remote edit or reconnect.
 
 Pausing control or disabling voice cancels active recognition and invalidates
 queued starts and late recognition results. Audio from the cancelled stream
