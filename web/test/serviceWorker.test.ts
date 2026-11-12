@@ -82,9 +82,18 @@ class MemoryCacheStorage {
   }
 }
 
-function bootWorker(precacheAssets: string[] = [], sharedCaches = new MemoryCacheStorage()) {
+function bootWorker(precacheAssets: string[] = [], sharedCaches = new MemoryCacheStorage(), withBroadcastChannel = true) {
   const caches = sharedCaches
   const listeners = new Map<string, (event: unknown) => void>()
+  const TrackedBroadcastChannel =
+    withBroadcastChannel && typeof BroadcastChannel === 'function'
+      ? class extends BroadcastChannel {
+          constructor(name: string) {
+            super(name)
+            openChannels.push(this)
+          }
+        }
+      : undefined
   const selfObj = {
     location: new URL('https://mac.local:8790/sw.js'),
     skipWaiting: vi.fn(),
@@ -94,12 +103,29 @@ function bootWorker(precacheAssets: string[] = [], sharedCaches = new MemoryCach
     },
   }
   const code = SW_SOURCE.replace('const PRECACHE_ASSETS = []', `const PRECACHE_ASSETS = ${JSON.stringify(precacheAssets)}`)
-  const runner = new Function('self', 'caches', 'location', 'fetch', 'URL', 'Response', 'Request', 'Promise', 'Set', 'Symbol', 'setTimeout', code)
+  const runner = new Function(
+    'self',
+    'caches',
+    'location',
+    'fetch',
+    'BroadcastChannel',
+    'performance',
+    'URL',
+    'Response',
+    'Request',
+    'Promise',
+    'Set',
+    'Symbol',
+    'setTimeout',
+    code,
+  )
   runner(
     selfObj,
     caches,
     selfObj.location,
     (...args: Parameters<typeof fetch>) => fetch(...args),
+    TrackedBroadcastChannel,
+    performance,
     URL,
     Response,
     Request,
@@ -142,12 +168,15 @@ function bootWorker(precacheAssets: string[] = [], sharedCaches = new MemoryCach
   return { caches, install, activate, dispatchFetch }
 }
 
+const openChannels: BroadcastChannel[] = []
+
 beforeEach(() => {
   vi.resetModules()
   sessionStorage.clear()
 })
 
 afterEach(() => {
+  while (openChannels.length > 0) openChannels.pop()?.close()
   vi.unstubAllGlobals()
 })
 
@@ -406,6 +435,66 @@ describe('service worker offline and update caching', () => {
     online = false
     const navigation = await worker.dispatchFetch('/', 'navigate')
     expect(await navigation.response.text()).toBe(html(2))
+  })
+
+  it('keeps request-start ordering when the older worker waits on cache storage, both with and without BroadcastChannel', async () => {
+    for (const withChannel of [true, false]) {
+      const html = (version: number) => `<!doctype html><script src="/assets/index-v${version}.js"></script>`
+      let version = 1
+      let online = true
+      vi.stubGlobal('fetch', async (input: RequestInfo | URL) => {
+        if (!online) throw new TypeError('offline')
+        const path = new URL(
+          typeof input === 'string' ? input : input instanceof URL ? input.href : input.url,
+          'https://mac.local:8790',
+        ).pathname
+        if (path === '/') return new Response(html(version))
+        if (path === '/offline.html') return new Response('OFFLINE FALLBACK')
+        return new Response('asset')
+      })
+      const caches = new MemoryCacheStorage()
+      const active = bootWorker(['/assets/index-v1.js'], caches, withChannel)
+      await active.install()
+      await active.activate()
+      const open = caches.open.bind(caches)
+      let blockNextShell = false
+      let entered!: () => void
+      const waitingOnStorage = new Promise<void>((resolve) => {
+        entered = resolve
+      })
+      let release!: () => void
+      const storageReady = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      caches.open = async (name) => {
+        if (name.startsWith('cmdpalm-shell-') && blockNextShell) {
+          blockNextShell = false
+          entered()
+          await storageReady
+        }
+        return open(name)
+      }
+
+      const fixedNow = Date.now()
+      const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(fixedNow)
+      try {
+        await (await active.dispatchFetch('/?warmup', 'navigate')).settled
+        blockNextShell = true
+        const olderNavigation = await active.dispatchFetch('/?old', 'navigate')
+        await waitingOnStorage
+        version = 2
+        const installing = bootWorker(['/assets/index-v2.js'], caches, withChannel)
+        await installing.install()
+        release()
+        await olderNavigation.settled
+        await installing.activate()
+        online = false
+        const offline = await installing.dispatchFetch('/', 'navigate')
+        expect(await offline.response.text()).toBe(html(2))
+      } finally {
+        nowSpy.mockRestore()
+      }
+    }
   })
 })
 
