@@ -123,6 +123,36 @@ describe('controls used without touch', () => {
     await field.setValue(huge)
     await view.find('[aria-label="Type on the Mac"]').trigger('click')
     expect((field.element as HTMLTextAreaElement).value).toBe(huge)
+
+    // Turning Live on when an unsent draft cannot be sent (e.g. >64 KiB) must
+    // preserve the draft instead of wiping it.
+    await view.findAll('button').find((b) => b.text() === 'Live')!.trigger('click')
+    expect((field.element as HTMLTextAreaElement).value).toBe(huge)
+  })
+
+  it('pastes a single character from the phone clipboard as text even when a modifier is latched', async () => {
+    const socket = connect()
+    const { modifiers } = await import('../src/lib/input')
+    const { Key } = await import('../src/lib/keys')
+    const { Mod } = await import('../src/lib/protocol')
+    vi.stubGlobal('navigator', {
+      ...navigator,
+      clipboard: { readText: () => Promise.resolve('q') },
+    })
+    const { default: Composer } = await import('../src/components/Composer.vue')
+    const view = mount(Composer, { attachTo: document.body })
+
+    // Latch Command (one-shot), then tap Paste with clipboard "q": it must paste
+    // "q", never turn it into ⌘Q!
+    modifiers.press(1, Mod.Command, Key.Command)
+    modifiers.release(1)
+    expect(modifiers.status(Mod.Command)).toBe('latched')
+
+    await view.find('[aria-label="Paste the phone clipboard on the Mac"]').trigger('click')
+    await Promise.resolve()
+
+    expect(socket.sent.filter((m) => m.t === 'tap')).toEqual([])
+    expect(socket.sent.filter((m) => m.t === 'text')).toEqual([{ t: 'text', text: 'q', mode: 'paste' }])
   })
 })
 

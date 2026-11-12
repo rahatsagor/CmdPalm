@@ -160,6 +160,14 @@ export function checkTextLimit(text: string): boolean {
   return false
 }
 
+/** Paste clipboard text directly onto the Mac without shortcut conversion. */
+export function pasteText(text: string): boolean {
+  if (!text) return true
+  if (!checkTextLimit(text)) return false
+  modifiers.clearLatched()
+  return send({ t: 'text', text, mode: 'paste' })
+}
+
 /** Returns whether the text went to the Mac. */
 export function typeText(text: string, mode: TextMode = settings.textMode): boolean {
   if (!text) return true

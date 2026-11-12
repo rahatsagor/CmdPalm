@@ -4,7 +4,7 @@ import { computed, onBeforeUnmount, onDeactivated, ref } from 'vue'
 import { onMessage, state } from '@/lib/connection'
 import { haptic, holdPointer, keyHaptic } from '@/lib/haptics'
 import { useHeldPointers } from '@/lib/heldPointers'
-import { edit, keyDown, keyUp, modifiers, tap, tapChar, typeText } from '@/lib/input'
+import { edit, keyDown, keyUp, modifiers, pasteText, tap, tapChar, typeText } from '@/lib/input'
 import { Key } from '@/lib/keys'
 import { settings } from '@/lib/settings'
 import { diff, graphemes } from '@/lib/text'
@@ -24,21 +24,22 @@ const live = computed(() => settings.liveTyping)
 // Long sessions would make every diff slower and Delete key bursts larger.
 const MAX_LIVE = 2000
 
-function syncLive() {
-  if (!live.value || composing) return
+function syncLive(): boolean {
+  if (!live.value || composing) return false
   const next = text.value
   const change = diff(sent, next)
-  if (change.delete === 0 && !change.insert) return
+  if (change.delete === 0 && !change.insert) return true
   // A waiting one-shot modifier turns a single typed character into a shortcut.
   if (modifiers.pending() && change.delete === 0 && graphemes(change.insert).length === 1 && tapChar(change.insert)) {
     text.value = sent
-    return
+    return true
   }
-  modifiers.clearLatched()
   // Unsent changes stay in the next diff instead of being counted as typed.
-  if (!edit(change.delete, change.insert)) return
+  if (!edit(change.delete, change.insert)) return false
+  modifiers.clearLatched()
   sent = next
   if (graphemes(sent).length > MAX_LIVE) reset()
+  return true
 }
 
 function reset() {
@@ -91,10 +92,11 @@ function submit(withReturn = false) {
 function toggleLive() {
   settings.liveTyping = !settings.liveTyping
   // Whatever is in the field goes to the Mac now; after that the field
-  // starts fresh in either mode.
+  // starts fresh in either mode. If it could not be sent, keep the draft.
   if (settings.liveTyping) {
     sent = ''
-    syncLive()
+    composing = false
+    if (!syncLive()) return
   }
   reset()
 }
@@ -138,7 +140,7 @@ function pasteFromPhone() {
   navigator.clipboard
     .readText()
     .then((value) => {
-      if (value && typeText(value, 'paste') && live.value) reset()
+      if (value && pasteText(value) && live.value) reset()
     })
     .catch(() => field.value?.focus())
 }
