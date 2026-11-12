@@ -45,19 +45,58 @@ function enqueueShell(work) {
   return next
 }
 
+async function allCacheNames() {
+  return typeof caches.keys === 'function' ? await caches.keys() : []
+}
+
 async function shellCaches() {
-  if (typeof caches.keys !== 'function') return []
-  return (await caches.keys()).filter((name) => name.startsWith(SHELL_PREFIX))
+  return (await allCacheNames()).filter((name) => name.startsWith(SHELL_PREFIX))
 }
 
-async function shellTimestamp(cache) {
+async function readMeta(cache) {
   const meta = await cache.match(SHELL_META)
-  if (!meta) return 0
-  const parsed = Number(await meta.text())
-  return Number.isFinite(parsed) ? parsed : 0
+  if (!meta) return { startedAt: 0, updatedAt: 0 }
+  try {
+    const parsed = JSON.parse(await meta.text())
+    if (parsed && typeof parsed === 'object') {
+      return {
+        startedAt: Number.isFinite(parsed.startedAt) ? parsed.startedAt : 0,
+        updatedAt: Number.isFinite(parsed.updatedAt) ? parsed.updatedAt : 0,
+      }
+    }
+  } catch {
+    // Older numeric metadata format.
+  }
+  const fallback = Number(await (await cache.match(SHELL_META)).text())
+  return Number.isFinite(fallback) ? { startedAt: fallback, updatedAt: fallback } : { startedAt: 0, updatedAt: 0 }
 }
 
-/** Check whether `page` has every entry asset inside its own isolated build cache. */
+async function writeMeta(cache, startedAt) {
+  const current = await readMeta(cache)
+  const next = {
+    startedAt: Math.max(startedAt, current.startedAt),
+    updatedAt: Math.max(Date.now(), startedAt, current.updatedAt),
+  }
+  await cache.put(SHELL_META, new Response(JSON.stringify(next)))
+}
+
+let localStartOrder = 0
+
+async function nextStartOrder() {
+  localStartOrder = Math.max(Date.now(), localStartOrder + 1)
+  let highest = localStartOrder
+  const staticCache = await caches.open(STATIC_CACHE)
+  highest = Math.max(highest, (await readMeta(staticCache)).startedAt + 1)
+  for (const name of await shellCaches()) {
+    const cache = await caches.open(name)
+    highest = Math.max(highest, (await readMeta(cache)).startedAt + 1)
+  }
+  localStartOrder = highest
+  await writeMeta(staticCache, highest)
+  return highest
+}
+
+/** Check whether `page` has every entry asset inside `cache`. */
 async function completeIn(cache, page) {
   for (const path of assetsOf(await page.clone().text())) {
     if (!(await cache.match(path))) return false
@@ -65,75 +104,93 @@ async function completeIn(cache, page) {
   return true
 }
 
-/** Return the newest complete shell across all per-build caches. */
+/** Return the newest complete shell across per-build caches, falling back to a complete legacy shell if present. */
 async function newestCompleteShell() {
   let bestPage = null
-  let bestStamp = -1
+  let bestOrder = -1
   for (const name of await shellCaches()) {
     const cache = await caches.open(name)
     const page = await cache.match(ROOT)
     if (!page || !(await completeIn(cache, page))) continue
-    const stamp = await shellTimestamp(cache)
-    if (stamp >= bestStamp) {
-      bestStamp = stamp
+    const { startedAt } = await readMeta(cache)
+    if (startedAt >= bestOrder) {
+      bestOrder = startedAt
       bestPage = page
     }
   }
-  return bestPage
+  if (bestPage) return bestPage
+  if ((await allCacheNames()).includes(LEGACY_CACHE)) {
+    const legacy = await caches.open(LEGACY_CACHE)
+    const page = await legacy.match(ROOT)
+    if (page && (await completeIn(legacy, page))) return page
+  }
+  return null
 }
 
-/** Keep at most MAX_SHELL_CACHES complete build caches so concurrent workers never delete each other's active build. */
+/** Keep at most MAX_SHELL_CACHES complete build caches, deleting LEGACY_CACHE only once a complete replacement exists. */
 async function pruneShellCaches(keepName) {
   if (typeof caches.delete !== 'function') return
-  await caches.delete(LEGACY_CACHE).catch(() => {})
   const names = await shellCaches()
-  if (names.length <= MAX_SHELL_CACHES) return
   const complete = []
   const staleIncomplete = []
   const now = Date.now()
   for (const name of names) {
     const cache = await caches.open(name)
-    const stamp = await shellTimestamp(cache)
+    const { startedAt, updatedAt } = await readMeta(cache)
     const page = await cache.match(ROOT)
     if (page && (await completeIn(cache, page))) {
-      complete.push({ name, stamp })
-    } else if (name !== keepName && now - stamp > 60_000) {
+      complete.push({ name, startedAt })
+    } else if (name !== keepName && updatedAt > 0 && now - updatedAt > 60_000) {
       staleIncomplete.push(name)
     }
+  }
+  // Never discard the pre-upgrade legacy shell until at least one complete per-build shell is ready.
+  if (complete.length > 0) {
+    await caches.delete(LEGACY_CACHE).catch(() => {})
   }
   for (const name of staleIncomplete) {
     await caches.delete(name).catch(() => {})
   }
-  complete.sort((a, b) => b.stamp - a.stamp)
+  complete.sort((a, b) => b.startedAt - a.startedAt)
   const keep = new Set(complete.slice(0, MAX_SHELL_CACHES).map((c) => c.name))
   if (keepName) keep.add(keepName)
   for (const entry of complete.slice(MAX_SHELL_CACHES)) {
     if (!keep.has(entry.name)) await caches.delete(entry.name).catch(() => {})
   }
-}
-
-async function maxShellTimestamp() {
-  let highest = 0
-  for (const name of await shellCaches()) {
-    const cache = await caches.open(name)
-    highest = Math.max(highest, await shellTimestamp(cache))
+  // Prune any loose /assets/* entries in STATIC_CACHE once a complete build owns PRECACHE_ASSETS.
+  const newestName = complete[0]?.name
+  if (newestName) {
+    const newestCache = await caches.open(newestName)
+    const newestPage = await newestCache.match(ROOT)
+    const newestHtml = newestPage ? await newestPage.text() : ''
+    const newestEntries = assetsOf(newestHtml)
+    if (PRECACHE_ASSETS.length && newestEntries.every((p) => PRECACHE_ASSETS.includes(p))) {
+      const keepStaticAssets = new Set([...newestEntries, ...PRECACHE_ASSETS])
+      const staticCache = await caches.open(STATIC_CACHE)
+      for (const req of await staticCache.keys()) {
+        const path = new URL(req.url).pathname
+        if (path.startsWith('/assets/') && !keepStaticAssets.has(path)) await staticCache.delete(req)
+      }
+    }
   }
-  return highest
 }
 
-async function publishShell(response, epoch, observedAt) {
-  if (epoch !== null && epoch !== shellEpoch) return
+async function publishShell(response, epoch, startedAt) {
+  if (epoch !== shellEpoch) return
   const html = await response.clone().text()
+  if (epoch !== shellEpoch) return
   const entryAssets = assetsOf(html)
   const name = shellCacheName(html, entryAssets)
   const cache = await caches.open(name)
+  // Mark this cache active for stale-incomplete protection only after verifying
+  // this navigation has not been superseded.
+  await writeMeta(cache, startedAt)
   // Populate all entry assets inside this build's own isolated cache before
   // publishing ROOT, so neither overlapping navigations nor another worker
   // instance can overwrite or delete a sibling build's files.
   await ensureCached(cache, entryAssets)
-  if (epoch !== null && epoch !== shellEpoch) return
-  const existing = await shellTimestamp(cache)
-  await cache.put(SHELL_META, new Response(String(Math.max(observedAt, existing))))
+  if (epoch !== shellEpoch) return
+  await writeMeta(cache, startedAt)
   await cache.put(ROOT, response)
   const matchesBuild = PRECACHE_ASSETS.length && entryAssets.every((p) => PRECACHE_ASSETS.includes(p))
   if (matchesBuild) await ensureCached(cache, PRECACHE_ASSETS).catch(() => {})
@@ -146,14 +203,11 @@ async function precache() {
   const staticCache = await caches.open(STATIC_CACHE)
   await staticCache.addAll([OFFLINE, '/icon.svg'])
   await ensureCached(staticCache, ['/manifest.webmanifest', '/voice-worklet.js', '/apple-touch-icon.png', '/icon-192.png', '/icon-512.png']).catch(() => {})
+  const epoch = shellEpoch
+  const startedAt = await nextStartOrder()
   const response = await fetch(ROOT, { cache: 'no-store' })
-  if (!response.ok) return
-  const html = await response.clone().text()
-  const observedAt = Math.max(Date.now(), (await maxShellTimestamp()) + 1)
-  const cache = await caches.open(shellCacheName(html, assetsOf(html)))
-  const existing = await shellTimestamp(cache)
-  await cache.put(SHELL_META, new Response(String(Math.max(observedAt, existing))))
-  await enqueueShell(() => publishShell(response, null, observedAt))
+  if (!response.ok || epoch !== shellEpoch) return
+  await enqueueShell(() => publishShell(response, epoch, startedAt))
 }
 
 self.addEventListener('install', (event) => {
@@ -166,21 +220,12 @@ self.addEventListener('activate', (event) =>
   ),
 )
 
-async function store(request, response, epoch, observedAt) {
+async function store(request, response, epoch, startedAtPromise) {
   if (request.mode === 'navigate') {
-    const html = await response.clone().text()
-    const stamp = Math.max(observedAt, (await maxShellTimestamp()) + 1)
-    const cache = await caches.open(shellCacheName(html, assetsOf(html)))
-    const existing = await shellTimestamp(cache)
-    await cache.put(SHELL_META, new Response(String(Math.max(stamp, existing))))
-    return enqueueShell(() => publishShell(response, epoch, stamp))
-  }
-  const path = new URL(request.url).pathname
-  if (path.startsWith('/assets/')) {
-    const names = await shellCaches()
-    const target = names.at(-1) ?? STATIC_CACHE
-    const cache = await caches.open(target)
-    return cache.put(request, response)
+    if (epoch !== shellEpoch) return
+    const startedAt = await startedAtPromise
+    if (epoch !== shellEpoch) return
+    return enqueueShell(() => publishShell(response, epoch, startedAt))
   }
   const staticCache = await caches.open(STATIC_CACHE)
   return staticCache.put(request, response)
@@ -206,8 +251,9 @@ async function respond(event) {
     if (cached) return cached
   }
   const epoch = request.mode === 'navigate' ? ++shellEpoch : shellEpoch
+  const startedAtPromise = request.mode === 'navigate' ? nextStartOrder() : null
   const network = fetch(request).then((response) => {
-    if (response.ok) event.waitUntil(store(request, response.clone(), epoch, Date.now()).catch(() => {}))
+    if (response.ok) event.waitUntil(store(request, response.clone(), epoch, startedAtPromise).catch(() => {}))
     return response
   })
   try {

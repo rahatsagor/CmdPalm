@@ -311,6 +311,102 @@ describe('service worker offline and update caching', () => {
     const offlineNavigation = await installing.dispatchFetch('/', 'navigate')
     expect(await offlineNavigation.response.text()).toBe(html(2))
   })
+
+  it('keeps the existing legacy shell usable when installation cannot finish caching the new build', async () => {
+    const oldHtml = '<!doctype html><script src="/assets/index-v1.js"></script>'
+    const newHtml = '<!doctype html><script src="/assets/index-v2.js"></script>'
+    const caches = new MemoryCacheStorage()
+    const legacy = await caches.open('cmdpalm-shell')
+    await legacy.put('/', new Response(oldHtml))
+    await legacy.put('/assets/index-v1.js', new Response('old entry'))
+    await legacy.put('/offline.html', new Response('OFFLINE FALLBACK'))
+    let online = true
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL) => {
+      if (!online) throw new TypeError('offline')
+      const path = new URL(
+        typeof input === 'string' ? input : input instanceof URL ? input.href : input.url,
+        'https://mac.local:8790',
+      ).pathname
+      if (path === '/') return new Response(newHtml)
+      if (path === '/offline.html') return new Response('OFFLINE FALLBACK')
+      // The worker downloads successfully, but connectivity drops before the new entry asset does.
+      if (path === '/assets/index-v2.js') throw new TypeError('offline')
+      return new Response('static file')
+    })
+    const worker = bootWorker(['/assets/index-v2.js'], caches)
+    await worker.install()
+    await worker.activate()
+    online = false
+    const navigation = await worker.dispatchFetch('/', 'navigate')
+    expect(await navigation.response.text()).toBe(oldHtml)
+
+    // Once connectivity returns and the new build finishes caching, the legacy
+    // cache is cleaned up and offline navigation serves the new shell.
+    online = true
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL) => {
+      if (!online) throw new TypeError('offline')
+      const path = new URL(
+        typeof input === 'string' ? input : input instanceof URL ? input.href : input.url,
+        'https://mac.local:8790',
+      ).pathname
+      if (path === '/') return new Response(newHtml)
+      if (path === '/offline.html') return new Response('OFFLINE FALLBACK')
+      return new Response('v2 asset')
+    })
+    const completed = await worker.dispatchFetch('/', 'navigate')
+    await completed.settled
+    expect(await caches.keys()).not.toContain('cmdpalm-shell')
+    online = false
+    const upgraded = await worker.dispatchFetch('/', 'navigate')
+    expect(await upgraded.response.text()).toBe(newHtml)
+  })
+
+  it('does not promote a superseded navigation above the newest complete build', async () => {
+    const html = (version: number) => `<!doctype html><script src="/assets/index-v${version}.js"></script>`
+    let version = 1
+    let online = true
+    let slowNextBody = false
+    let finishBody!: () => void
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL) => {
+      if (!online) throw new TypeError('offline')
+      const path = new URL(
+        typeof input === 'string' ? input : input instanceof URL ? input.href : input.url,
+        'https://mac.local:8790',
+      ).pathname
+      if (path === '/') {
+        const snapshot = version
+        if (slowNextBody) {
+          slowNextBody = false
+          return new Response(
+            new ReadableStream({
+              start(controller) {
+                finishBody = () => {
+                  controller.enqueue(new TextEncoder().encode(html(snapshot)))
+                  controller.close()
+                }
+              },
+            }),
+          )
+        }
+        return new Response(html(snapshot))
+      }
+      if (path === '/offline.html') return new Response('OFFLINE FALLBACK')
+      return new Response('asset')
+    })
+    const worker = bootWorker(['/assets/index-v1.js'])
+    await worker.install()
+    await worker.activate()
+    slowNextBody = true
+    const oldNavigation = await worker.dispatchFetch('/?slow-old', 'navigate')
+    version = 2
+    const latestNavigation = await worker.dispatchFetch('/?new', 'navigate')
+    await latestNavigation.settled
+    finishBody()
+    await oldNavigation.settled
+    online = false
+    const navigation = await worker.dispatchFetch('/', 'navigate')
+    expect(await navigation.response.text()).toBe(html(2))
+  })
 })
 
 describe('stale build reload guard', () => {
