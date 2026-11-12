@@ -293,12 +293,9 @@ fn run_shell(command: &str, interrupts: Arc<Interrupts>) -> Result<(), String> {
     }
     let running = Running(interrupts.clone());
     #[cfg(test)]
-    if let Some((entered, go)) = tests::ADMISSION_BARRIER.get() {
-        // SAFETY: pointers stay live across `handle.join()` in the test.
-        unsafe {
-            (*entered).send(()).unwrap();
-            (*go).recv_timeout(Duration::from_secs(2)).unwrap();
-        }
+    if let Some((entered, go)) = tests::ADMISSION_BARRIER.with(|cell| cell.borrow_mut().take()) {
+        let _ = entered.send(());
+        let _ = go.recv_timeout(Duration::from_secs(2));
     }
     if interrupts.paused() || interrupts.shell_stopped_since(stops) {
         return Err(STOPPED.into());
@@ -523,8 +520,9 @@ mod tests {
 
     #[cfg(test)]
     thread_local! {
-        pub(super) static ADMISSION_BARRIER: std::cell::Cell<Option<(*const std::sync::mpsc::Sender<()>, *const std::sync::mpsc::Receiver<()>)>> =
-            const { std::cell::Cell::new(None) };
+        pub(super) static ADMISSION_BARRIER: std::cell::RefCell<
+            Option<(std::sync::mpsc::Sender<()>, std::sync::mpsc::Receiver<()>)>,
+        > = const { std::cell::RefCell::new(None) };
     }
 
     #[test]
@@ -539,15 +537,10 @@ mod tests {
         let (resume, go) = std::sync::mpsc::channel::<()>();
         let worker_interrupts = interrupts.clone();
         let command = format!("sleep 0.4; touch '{}'", marker.display());
-        let entered_ptr = &entered as *const _ as usize;
-        let go_ptr = &go as *const _ as usize;
         let handle = std::thread::spawn(move || {
-            ADMISSION_BARRIER.set(Some((
-                entered_ptr as *const std::sync::mpsc::Sender<()>,
-                go_ptr as *const std::sync::mpsc::Receiver<()>,
-            )));
+            ADMISSION_BARRIER.with(|cell| *cell.borrow_mut() = Some((entered, go)));
             let result = run_shell(&command, worker_interrupts);
-            ADMISSION_BARRIER.set(None);
+            ADMISSION_BARRIER.with(|cell| *cell.borrow_mut() = None);
             result
         });
         ready.recv_timeout(Duration::from_secs(2)).unwrap();
