@@ -339,4 +339,49 @@ describe('DeckView', () => {
     expect(socket.sent.filter((m) => m.t === 'deckSave')).toEqual([])
     view.unmount()
   })
+
+  it('keeps a button draft when its page was deleted on another device and skips unchanged deck saves', async () => {
+    const { socket, view } = await deckView('apps')
+    const target = tile('My Button')
+    pointer(target, 'pointerdown')
+    vi.advanceTimersByTime(600)
+    pointer(target, 'pointerup')
+    await nextTick()
+
+    const field = document.querySelector<HTMLInputElement>('[role="dialog"] input')!
+    field.value = 'Important Button'
+    field.dispatchEvent(new Event('input'))
+    await nextTick()
+
+    // Another device deletes the Apps page while the button editor is open.
+    socket.receive({ t: 'deck', deck: { ...deck, pages: [deck.pages[0]] }, revision: 2 })
+    await nextTick()
+
+    // First Save keeps the draft open and warns that its page was removed;
+    // saving again puts the button on the active page so nothing is lost.
+    dialogButton('Save').click()
+    await flushPromises()
+    expect(document.querySelector('[role="dialog"]')?.getAttribute('aria-label')).toBe('Edit button')
+    expect(socket.sent.filter((m) => m.t === 'deckSave')).toEqual([])
+    expect(conn.state.notices.at(-1)?.message).toContain('page was deleted')
+
+    dialogButton('Save').click()
+    await flushPromises()
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+    const saved = socket.sent.filter((m) => m.t === 'deckSave') as { deck: typeof deck }[]
+    expect(saved).toHaveLength(1)
+    expect(saved[0]!.deck.pages[0]!.tiles.map((t) => t.label)).toContain('Important Button')
+
+    // Saving a button without changing anything closes the editor without sending deckSave.
+    const mute = tile('Mute')
+    pointer(mute, 'pointerdown')
+    vi.advanceTimersByTime(600)
+    pointer(mute, 'pointerup')
+    await nextTick()
+    dialogButton('Save').click()
+    await flushPromises()
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+    expect(socket.sent.filter((m) => m.t === 'deckSave')).toHaveLength(1)
+    view.unmount()
+  })
 })

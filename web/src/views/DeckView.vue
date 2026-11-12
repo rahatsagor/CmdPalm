@@ -12,6 +12,7 @@ import { REFERENCE_WIDTH, deckColumns, tileWidth } from '@/lib/deckGrid'
 import { haptic } from '@/lib/haptics'
 import type { Deck, DeckPage, Tile } from '@/lib/protocol'
 import { settings } from '@/lib/settings'
+import { equalJson } from '@/lib/value'
 
 const deck = computed(() => state.deck)
 const pages = computed(() => deck.value?.pages ?? [])
@@ -46,6 +47,7 @@ async function mutate(change: (deck: Deck) => void): Promise<boolean> {
   if (!deck.value || deckHistory.saving) return false
   const next = clone(deck.value)
   change(next)
+  if (equalJson(deck.value, next)) return true
   return saveDeck(next)
 }
 
@@ -267,9 +269,25 @@ function addTile(target: DeckPage) {
 // Tiles are found by id, not position: another device can change the page
 // while the editor is open. The editor stays open when the change can't be
 // saved, so nothing typed into it is lost.
-async function editTile(change: (tiles: Tile[], at: number) => void): Promise<boolean> {
+async function editTile(change: (tiles: Tile[], at: number) => void, removing = false): Promise<boolean> {
   const edit = tileEdit.value
-  if (!edit) return false
+  if (!edit || !deck.value || deckHistory.saving) return false
+  if (!pageById(edit.pageId)) {
+    if (removing) {
+      tileEdit.value = null
+      return true
+    }
+    const fallback = page.value
+    if (fallback) edit.pageId = fallback.id
+    notify(
+      fallback
+        ? `This button’s page was deleted on another device. Save again to add it to “${fallback.name}”.`
+        : 'This button’s page was deleted on another device.',
+      'warning',
+      'deck',
+    )
+    return false
+  }
   const saved = await mutate((d) => {
     const target = d.pages.find((p) => p.id === edit.pageId)
     if (target) change(target.tiles, target.tiles.findIndex((t) => t.id === edit.tile.id))
@@ -279,17 +297,26 @@ async function editTile(change: (tiles: Tile[], at: number) => void): Promise<bo
 }
 
 function saveTile(tile: Tile) {
-  editTile((tiles, at) => {
+  if (pageById(tileEdit.value?.pageId ?? '')?.tiles.length === LIMITS.tiles && !pageById(tileEdit.value?.pageId ?? '')?.tiles.some((t) => t.id === tile.id)) {
+    notify('This page already has the maximum of 64 buttons.', 'warning', 'deck')
+    return
+  }
+  void editTile((tiles, at) => {
     if (at < 0) tiles.push(tile)
     else tiles[at] = tile
   })
 }
 
 function removeTile() {
-  editTile((tiles, at) => at >= 0 && tiles.splice(at, 1))
+  void editTile((tiles, at) => at >= 0 && tiles.splice(at, 1), true)
 }
 
 async function duplicateTile(tile: Tile) {
+  const target = pageById(tileEdit.value?.pageId ?? '')
+  if (target && target.tiles.length >= LIMITS.tiles && !target.tiles.some((t) => t.id === tile.id)) {
+    notify('This page already has the maximum of 64 buttons.', 'warning', 'deck')
+    return
+  }
   let full = false
   const saved = await editTile((tiles, at) => {
     const i = at < 0 ? tiles.push(tile) - 1 : at

@@ -18,6 +18,9 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ### Phone client
 
+- If another device deletes a Deck page while you are editing one of its
+  buttons, the editor keeps your draft and lets you save it onto the current
+  page instead of discarding it.
 - Live typing in the typing panel now starts fresh after using its arrow,
   Delete, Return or clipboard buttons, recovers cleanly from interrupted text
   composition, and keeps your draft when pasted text exceeds the 64 KB limit.
