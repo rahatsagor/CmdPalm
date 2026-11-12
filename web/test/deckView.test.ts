@@ -353,24 +353,42 @@ describe('DeckView', () => {
     field.dispatchEvent(new Event('input'))
     await nextTick()
 
-    // Another device deletes the Apps page while the button editor is open.
-    socket.receive({ t: 'deck', deck: { ...deck, pages: [deck.pages[0]] }, revision: 2 })
+    // Another device deletes the Apps page while the button editor is open,
+    // and the remaining page already happens to contain a button with the same id.
+    socket.receive({
+      t: 'deck',
+      deck: {
+        ...deck,
+        pages: [
+          {
+            ...deck.pages[0]!,
+            tiles: [
+              ...deck.pages[0]!.tiles,
+              { id: 't-custom', label: 'Existing', action: { kind: 'media', key: 'next' } },
+            ],
+          },
+        ],
+      },
+      revision: 2,
+    })
     await nextTick()
 
-    // First Save keeps the draft open and warns that its page was removed;
-    // saving again puts the button on the active page so nothing is lost.
+    // First Save keeps the draft open as a new button and warns that its page was
+    // removed; saving again appends a fresh button without overwriting Existing.
     dialogButton('Save').click()
     await flushPromises()
-    expect(document.querySelector('[role="dialog"]')?.getAttribute('aria-label')).toBe('Edit button')
+    expect(document.querySelector('[role="dialog"]')?.getAttribute('aria-label')).toBe('New button')
     expect(socket.sent.filter((m) => m.t === 'deckSave')).toEqual([])
     expect(conn.state.notices.at(-1)?.message).toContain('page was deleted')
 
-    dialogButton('Save').click()
+    dialogButton('Add').click()
     await flushPromises()
     expect(document.querySelector('[role="dialog"]')).toBeNull()
     const saved = socket.sent.filter((m) => m.t === 'deckSave') as { deck: typeof deck }[]
     expect(saved).toHaveLength(1)
-    expect(saved[0]!.deck.pages[0]!.tiles.map((t) => t.label)).toContain('Important Button')
+    const resultingTiles = saved[0]!.deck.pages[0]!.tiles
+    expect(resultingTiles.map((t) => t.label)).toEqual(['Mute', 'Play / Pause', 'Existing', 'Important Button'])
+    expect(new Set(resultingTiles.map((t) => t.id)).size).toBe(4)
 
     // Saving a button without changing anything closes the editor without sending deckSave.
     const mute = tile('Mute')

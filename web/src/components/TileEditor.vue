@@ -45,6 +45,7 @@ const symbolNames = Object.keys(SYMBOLS)
 
 function edited(): Tile {
   const tile = clone(draft.value)
+  tile.id = props.tile.id
   tile.label = tile.label.trim().slice(0, LIMITS.label)
   if (!tile.color) delete tile.color
   if (!tile.icon) delete tile.icon
