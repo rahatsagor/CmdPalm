@@ -138,9 +138,9 @@ const onVisibility = () => {
 }
 onMounted(() => document.addEventListener('visibilitychange', onVisibility))
 watch(
-  () => state.status,
-  (status) => {
-    if (status !== 'connected') abandon()
+  () => [state.status, state.paused] as const,
+  ([status, paused]) => {
+    if (status !== 'connected' || paused) abandon()
   },
 )
 watch(() => settings.scrollStrip, abandon)

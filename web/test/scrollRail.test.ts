@@ -165,4 +165,48 @@ describe('scroll strip', () => {
     fire('pointerup', 480)
     view.unmount()
   })
+
+  it('stops holding and resets trackpad drag lock when control is paused on the Mac', async () => {
+    const { settings } = await import('../src/lib/settings')
+    settings.tapAndDrag = true
+    settings.dragLock = true
+    const socket = connected()
+    const { view: railView, fire } = await rail()
+    const { default: TrackpadSurface } = await import('../src/components/TrackpadSurface.vue')
+    const pad = mount(TrackpadSurface, { attachTo: document.body })
+    const surface = pad.find('[role="application"]').element as HTMLElement
+    surface.setPointerCapture = () => {}
+
+    // Tap, then touch again and move to enter drag lock on the trackpad.
+    const touch = (type: string, x: number, y: number, timeStamp: number) => {
+      const event = new PointerEvent(type, { pointerId: 2, pointerType: 'touch', clientX: x, clientY: y, bubbles: true })
+      Object.defineProperty(event, 'timeStamp', { value: timeStamp })
+      surface.dispatchEvent(event)
+    }
+    touch('pointerdown', 50, 50, 10)
+    touch('pointerup', 50, 50, 30)
+    touch('pointerdown', 50, 50, 120)
+    touch('pointermove', 80, 50, 150)
+    touch('pointerup', 80, 50, 180)
+    await nextTick()
+    expect(surface.className).toContain('ring-2')
+
+    // Also hold the scroll strip at its end.
+    fire('pointerdown', 300)
+    fire('pointermove', 480)
+    await settle(100)
+    const beforePause = scrolls(socket).length
+
+    socket.receive({ t: 'paused', paused: true })
+    await nextTick()
+    await settle()
+    const afterPause = scrolls(socket).length
+    await settle(500)
+    expect(scrolls(socket)).toHaveLength(afterPause)
+    expect(afterPause).toBeGreaterThanOrEqual(beforePause)
+    expect(surface.className).not.toContain('ring-2')
+
+    railView.unmount()
+    pad.unmount()
+  })
 })

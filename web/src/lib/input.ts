@@ -17,10 +17,19 @@ const heldKeys = new Map<number, number>()
 /** Fingers holding each key code: the Mac has one key, released by the last. */
 const keyCount = new Map<number, number>()
 
+/** Stepping keys still repeating, so Release all can stop them. */
+const repeating = new Set<() => void>()
+
+function stopRepeating() {
+  for (const stop of repeating) stop()
+}
+
 /** The Mac let go of everything this device held; press locks again. */
 function macReleased(restore: boolean) {
+  stopRepeating()
   heldKeys.clear()
   keyCount.clear()
+  if (!restore) modifiers.dropTouches()
   if (restore) modifiers.restoreLocks()
 }
 
@@ -112,14 +121,9 @@ export function media(key: MediaKey, op: 'down' | 'up' | 'click' = 'click') {
 // here while held. Seeking keys stay down so apps can scrub.
 const STEPPING = new Set<MediaKey>(['volumeUp', 'volumeDown', 'brightnessUp', 'brightnessDown', 'illuminationUp', 'illuminationDown'])
 const SEEKING = new Set<MediaKey>(['rewind', 'fastForward'])
-/** Stepping keys still repeating, so Release all can stop them. */
-const repeating = new Set<() => void>()
 
 if (typeof document !== 'undefined') {
   // A finger lift that comes after the page is hidden never arrives.
-  const stopRepeating = () => {
-    for (const stop of repeating) stop()
-  }
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') stopRepeating()
   })
@@ -174,7 +178,7 @@ export function edit(deleteCount: number, insert: string): boolean {
 }
 
 export function releaseAll() {
-  for (const stop of repeating) stop()
+  stopRepeating()
   heldKeys.clear()
   keyCount.clear()
   modifiers.reset(false)

@@ -65,4 +65,21 @@ describe('MediaView', () => {
     expect(mediaSent(socket)).toEqual(['rewind down', 'rewind up'])
     view.unmount()
   })
+
+  it('stops repeating media keys when control is paused on the Mac', async () => {
+    const { socket, view } = await mediaView()
+    const brighter = view.find('button[aria-label="Display brightness up"]').element
+    brighter.setPointerCapture = () => {}
+    pointer(brighter, 'pointerdown', 1)
+    vi.advanceTimersByTime(550)
+    expect(mediaSent(socket).length).toBeGreaterThanOrEqual(2)
+
+    socket.receive({ t: 'paused', paused: true })
+    await nextTick()
+    const atPause = mediaSent(socket).length
+    vi.advanceTimersByTime(500)
+    expect(mediaSent(socket)).toHaveLength(atPause)
+    expect(brighter.className).not.toContain('bg-surface-3')
+    view.unmount()
+  })
 })

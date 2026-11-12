@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onDeactivated, reactive, ref, watch } from 'vue'
-import { pointer, runAction, state } from '@/lib/connection'
+import { pointer, runAction } from '@/lib/connection'
 import { GestureRecognizer, type Direction, type GestureHandler } from '@/lib/gestures'
 import { haptic, holdPointer } from '@/lib/haptics'
 import { onPageHidden } from '@/lib/heldPointers'
@@ -102,16 +102,10 @@ function resetSurface() {
   dragging.value = false
   touches.clear()
 }
-watch(
-  () => state.status,
-  (status) => {
-    if (status !== 'connected') resetSurface()
-  },
-)
 onBeforeUnmount(() => recognizer.reset())
-// A finger down when the tab changes or the page hides never reports
-// lifting; without this it would count as a second finger on return,
-// turning pointing into scrolling.
+// A finger down when the tab changes, control pauses, or the page hides never
+// reports lifting; without this it would count as a second finger on return,
+// turning pointing into scrolling, or leave drag lock visually stuck.
 onDeactivated(resetSurface)
 onPageHidden(resetSurface)
 

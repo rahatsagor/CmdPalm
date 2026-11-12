@@ -18,6 +18,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ### Phone client
 
+- Pausing control on the Mac now stops held media repeat, scroll-strip hold,
+  held buttons and keys, and clears trackpad drag lock on the phone.
 - If another device deletes a Deck page while you are editing one of its
   buttons, the editor keeps your draft and lets you save it onto the current
   page instead of discarding it.
