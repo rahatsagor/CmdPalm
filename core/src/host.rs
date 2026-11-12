@@ -510,18 +510,23 @@ impl CoreHost {
         };
         self.close_sessions(STOPPED_SHARING, true);
         let _ = running.shutdown.send(true);
+        self.shared.interrupts.stop_shell_commands();
         self.shared.cancel_voices();
         // Give sessions a moment to send their goodbye frames.
         std::thread::sleep(Duration::from_millis(100));
         running.runtime.shutdown_timeout(Duration::from_secs(1));
         // Session tasks may have been dropped mid-flight; release their input
-        // and stop any dictation they left running.
+        // and stop any dictation or shell commands they left running.
         let ids: Vec<SessionId> = self.shared.state().sessions.drain().map(|(id, _)| id).collect();
         for id in ids {
             self.shared.interrupts.end(id);
             self.shared.engine(Command::EndSession(id));
             self.shared.delegate.voice_stop(id, true);
         }
+        // An action worker may have started a shell command right as the
+        // runtime shut down; signal again and wait through the SIGKILL window
+        // so quitting CmdPalm never leaves background jobs behind.
+        self.shared.interrupts.stop_and_wait_shell_commands(Duration::from_millis(1500));
         // A delegate start may have been in flight during runtime shutdown.
         // With sessions removed, cancel its registration under the voice lock.
         self.shared.cancel_voices();

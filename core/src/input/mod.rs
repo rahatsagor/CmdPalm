@@ -335,8 +335,10 @@ pub enum Input {
 pub struct Interrupts {
     paused: AtomicBool,
     ended: Mutex<HashSet<SessionId>>,
-    /// Bumped when shell commands are turned off.
+    /// Bumped when shell commands are turned off or the server stops.
     shell_stops: std::sync::atomic::AtomicU64,
+    /// Active shell command watcher threads for this host.
+    running_shells: (Mutex<usize>, std::sync::Condvar),
 }
 
 impl Interrupts {
@@ -366,8 +368,46 @@ impl Interrupts {
         self.shell_stops.fetch_add(1, Ordering::SeqCst);
     }
 
+    /// Stop the shell commands running now and wait up to `timeout` for their
+    /// process groups to exit, so quitting CmdPalm cannot leave backgrounded
+    /// children running with inherited permissions.
+    pub fn stop_and_wait_shell_commands(&self, timeout: Duration) {
+        self.stop_shell_commands();
+        let deadline = std::time::Instant::now() + timeout;
+        let (lock, cvar) = &self.running_shells;
+        let mut count = lock.lock().unwrap_or_else(|p| p.into_inner());
+        while *count > 0 {
+            let Some(remaining) = deadline.checked_duration_since(std::time::Instant::now()) else {
+                break;
+            };
+            let (next, result) = cvar.wait_timeout(count, remaining).unwrap_or_else(|p| p.into_inner());
+            count = next;
+            if result.timed_out() {
+                break;
+            }
+        }
+    }
+
     pub fn shell_stops(&self) -> u64 {
         self.shell_stops.load(Ordering::SeqCst)
+    }
+
+    pub(crate) fn try_enter_shell(&self, max: usize) -> bool {
+        let mut count = self.running_shells.0.lock().unwrap_or_else(|p| p.into_inner());
+        if *count >= max {
+            return false;
+        }
+        *count += 1;
+        true
+    }
+
+    pub(crate) fn leave_shell(&self) {
+        let (lock, cvar) = &self.running_shells;
+        let mut count = lock.lock().unwrap_or_else(|p| p.into_inner());
+        *count = count.saturating_sub(1);
+        if *count == 0 {
+            cvar.notify_all();
+        }
     }
 }
 

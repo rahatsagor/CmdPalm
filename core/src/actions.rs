@@ -34,7 +34,6 @@ const SHELL_ERROR_READ: u64 = 16 * 1024;
 /// Commands whose process group is still being watched. Each has a thread,
 /// so a button pressed over and over can't pile up threads without end.
 const MAX_RUNNING_COMMANDS: usize = 32;
-static RUNNING_COMMANDS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
 pub(crate) async fn worker(shared: Arc<Shared>, session: SessionId, mut jobs: mpsc::Receiver<Job>) {
     while let Some(job) = jobs.recv().await {
@@ -268,21 +267,28 @@ pub(crate) fn execute(shared: &Shared, session: SessionId, action: &Action, dept
     Ok(())
 }
 
+fn group_has_members(group: libc::pid_t) -> bool {
+    // SAFETY: signal 0 only checks whether the process group still has members.
+    if unsafe { libc::killpg(group, 0) } == 0 {
+        return true;
+    }
+    std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+}
+
 fn run_shell(command: &str, interrupts: Arc<Interrupts>) -> Result<(), String> {
     use std::os::unix::process::CommandExt as _;
     use std::process::Stdio;
-    use std::sync::atomic::Ordering;
-    if RUNNING_COMMANDS.fetch_add(1, Ordering::SeqCst) >= MAX_RUNNING_COMMANDS {
-        RUNNING_COMMANDS.fetch_sub(1, Ordering::SeqCst);
+    if !interrupts.try_enter_shell(MAX_RUNNING_COMMANDS) {
         return Err("Too many shell commands are still running. Pause CmdPalm on the Mac to stop them.".into());
     }
-    struct Running;
+    struct Running(Arc<Interrupts>);
     impl Drop for Running {
         fn drop(&mut self) {
-            RUNNING_COMMANDS.fetch_sub(1, Ordering::SeqCst);
+            self.0.leave_shell();
         }
     }
-    let running = Running;
+    let stops = interrupts.shell_stops();
+    let running = Running(interrupts.clone());
     let errors = error_file();
     let stderr = errors.as_ref().and_then(|f| f.try_clone().ok()).map_or_else(Stdio::null, Stdio::from);
     let mut child = std::process::Command::new("/bin/zsh")
@@ -298,16 +304,15 @@ fn run_shell(command: &str, interrupts: Arc<Interrupts>) -> Result<(), String> {
     let group = child.id() as libc::pid_t;
     let (done, finished) = std::sync::mpsc::channel();
     // Reap the process when it finishes so it never lingers as a zombie, and
-    // stop it if input is paused or shell commands are turned off while it
-    // runs: the command inherits CmdPalm's Accessibility permission, so it
-    // must not outlive either. That includes what it left running in the
-    // background (`cmd &`, `nohup`), so the watch goes on until its whole
-    // process group is gone.
-    let stops = interrupts.shell_stops();
+    // stop it if input is paused, shell commands are turned off, or the host
+    // stops while it runs: the command inherits CmdPalm's Accessibility
+    // permission, so it must not outlive user control. That includes what it
+    // left running in the background (`cmd &`, `nohup`), so the watch goes on
+    // until its whole process group is gone.
     std::thread::spawn(move || {
         let _running = running;
         let stopped = || interrupts.paused() || interrupts.shell_stops() != stops;
-        let mut signalled: Option<Instant> = None;
+        let mut signalled: Option<(Instant, bool)> = None;
         let mut shell_done = false;
         loop {
             if !shell_done {
@@ -321,9 +326,7 @@ fn run_shell(command: &str, interrupts: Arc<Interrupts>) -> Result<(), String> {
                     let _ = done.send((status, stopped()));
                 }
             }
-            // SAFETY: signal 0 only checks whether the group created above
-            // still has members.
-            if shell_done && unsafe { libc::killpg(group, 0) } != 0 {
+            if shell_done && !group_has_members(group) {
                 break;
             }
             if stopped() {
@@ -331,11 +334,12 @@ fn run_shell(command: &str, interrupts: Arc<Interrupts>) -> Result<(), String> {
                     None => {
                         // SAFETY: signals only the process group created above.
                         unsafe { libc::killpg(group, libc::SIGTERM) };
-                        signalled = Some(Instant::now());
+                        signalled = Some((Instant::now(), false));
                     }
-                    Some(at) if at.elapsed() >= SHELL_KILL_GRACE => {
+                    Some((at, false)) if at.elapsed() >= SHELL_KILL_GRACE => {
                         // SAFETY: as above.
                         unsafe { libc::killpg(group, libc::SIGKILL) };
+                        signalled = Some((at, true));
                     }
                     Some(_) => {}
                 }
@@ -485,5 +489,21 @@ mod tests {
         assert_eq!(error, "The command failed (exit code 3): no such thing");
         let error = run_shell("exit 1", interrupts).unwrap_err();
         assert_eq!(error, "The command failed (exit code 1).");
+    }
+
+    #[test]
+    fn enforces_the_running_shell_command_limit_per_host() {
+        let interrupts = Arc::new(Interrupts::default());
+        for _ in 0..MAX_RUNNING_COMMANDS {
+            assert!(interrupts.try_enter_shell(MAX_RUNNING_COMMANDS));
+        }
+        let error = run_shell("true", interrupts.clone()).unwrap_err();
+        assert!(error.contains("Too many shell commands"));
+        let other_host = Arc::new(Interrupts::default());
+        assert!(run_shell("true", other_host).is_ok(), "independent hosts do not share command slots");
+        for _ in 0..MAX_RUNNING_COMMANDS {
+            interrupts.leave_shell();
+        }
+        assert!(run_shell("true", interrupts).is_ok());
     }
 }

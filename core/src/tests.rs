@@ -1099,3 +1099,62 @@ fn queued_voice_starts_cannot_restart_recording_after_pause_and_resume() {
         assert_eq!(*f.delegate.voice_requests.lock().unwrap(), [Some(1), Some(3)]);
     });
 }
+
+#[test]
+fn stopping_the_host_stops_running_shell_commands_and_background_jobs() {
+    let mut f = fixture();
+    let mut config = f.config.clone();
+    config.allow_shell = true;
+    f.host.update_config(config);
+    let marker = f._dir.path().join("escaped");
+    let started = f._dir.path().join("started");
+    let command = format!("(trap '' TERM; touch '{}'; sleep 2; touch '{}') &", started.display(), marker.display());
+    f.rt.block_on(async {
+        let mut ws = connect(f.port).await;
+        let code = f.host.pairing_info().link.split("#pair=").nth(1).unwrap().to_string();
+        send(&mut ws, hello("phone", json!({"method": "pair", "code": code}))).await;
+        recv_kind(&mut ws, "welcome").await;
+        send(
+            &mut ws,
+            json!({
+                "t": "action",
+                "id": 1,
+                "action": {"kind": "shell", "command": command},
+            }),
+        )
+        .await;
+        assert_eq!(recv_kind(&mut ws, "actionResult").await["ok"], true);
+    });
+    let deadline = std::time::Instant::now() + Duration::from_secs(2);
+    while !started.exists() && std::time::Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(started.exists(), "background shell job started");
+    f.host.stop();
+    // Stopping the server (and quitting the app) must finish tearing down the
+    // process group before returning, even if it ignores SIGTERM. Once stop()
+    // returns, the background job is already gone and cannot create the marker.
+    std::thread::sleep(Duration::from_millis(2300));
+    assert!(!marker.exists(), "stopping the host must stop running shell commands and background jobs");
+    // Restarting must allow running shell commands again up to the command limit.
+    f.port = f.host.start().unwrap();
+    let resumed = f._dir.path().join("resumed");
+    let command = format!("touch '{}'", resumed.display());
+    f.rt.block_on(async {
+        let mut ws = connect(f.port).await;
+        let code = f.host.pairing_info().link.split("#pair=").nth(1).unwrap().to_string();
+        send(&mut ws, hello("phone-2", json!({"method": "pair", "code": code}))).await;
+        recv_kind(&mut ws, "welcome").await;
+        send(
+            &mut ws,
+            json!({
+                "t": "action",
+                "id": 2,
+                "action": {"kind": "shell", "command": command},
+            }),
+        )
+        .await;
+        assert_eq!(recv_kind(&mut ws, "actionResult").await["ok"], true);
+    });
+    assert!(resumed.exists(), "shell commands work again after restarting");
+}

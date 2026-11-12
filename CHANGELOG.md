@@ -11,6 +11,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ### Mac app
 
+- Stopping the server or quitting CmdPalm now stops running shell commands and
+  any background jobs they started, just like pausing control.
 - Stalled browser downloads and handshake writes now time out instead of
   holding connection slots open when a device drops off Wi-Fi.
 
