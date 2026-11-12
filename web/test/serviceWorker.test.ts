@@ -197,6 +197,52 @@ describe('service worker offline and update caching', () => {
     const subpathOffline = await sw.dispatchFetch('/deck?from=pwa', 'navigate')
     expect(await subpathOffline.response.text()).toBe(v2Html)
   })
+
+  it('preserves the newest complete shell when navigation cache writes overlap across an update', async () => {
+    const html = (version: number) =>
+      `<!doctype html><script src="/assets/index-v${version}.js"></script><link href="/assets/index-v${version}.css" rel="stylesheet">`
+    let online = true
+    let version = 0
+    let entered!: () => void
+    const cssRequested = new Promise<void>((resolve) => {
+      entered = resolve
+    })
+    let release!: () => void
+    const cssResponse = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL) => {
+      if (!online) throw new TypeError('offline')
+      const path = new URL(
+        typeof input === 'string' ? input : input instanceof URL ? input.href : input.url,
+        'https://mac.local:8790',
+      ).pathname
+      if (path === '/') return new Response(html(version))
+      if (path === '/offline.html') return new Response('OFFLINE FALLBACK')
+      if (path === '/assets/index-v1.css') {
+        entered()
+        await cssResponse
+      }
+      return new Response('asset')
+    })
+
+    const sw = bootWorker(['/assets/index-v0.js', '/assets/index-v0.css'])
+    await sw.install()
+    version = 1
+    const oldNavigation = await sw.dispatchFetch('/?old', 'navigate')
+    await cssRequested
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    version = 2
+    const newNavigation = await sw.dispatchFetch('/?new', 'navigate')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    release()
+    await Promise.all([oldNavigation.settled, newNavigation.settled])
+
+    online = false
+    const offlineNavigation = await sw.dispatchFetch('/', 'navigate')
+    expect(await offlineNavigation.response.text()).toBe(html(2))
+  })
 })
 
 describe('stale build reload guard', () => {
@@ -238,5 +284,64 @@ describe('stale build reload guard', () => {
     expect(event.defaultPrevented).toBe(false)
     await Promise.resolve()
     expect(reloadSpy).not.toHaveBeenCalled()
+  })
+
+  it('recovers a selected lazy view when the Mac reconnects or when the person taps Try again', async () => {
+    const { mount, flushPromises } = await import('@vue/test-utils')
+    const { h, nextTick } = await import('vue')
+    const { state } = await import('@/lib/connection')
+    const { lazy } = await import('@/lib/reload')
+    vi.useFakeTimers()
+    let online = false
+    let attempts = 0
+    vi.stubGlobal('fetch', async () => {
+      if (!online) throw new TypeError('offline')
+      return new Response(JSON.stringify({ version: __APP_VERSION__ }))
+    })
+    state.status = 'reconnecting'
+    const component = lazy(async () => {
+      attempts++
+      if (!online) throw new TypeError('offline chunk')
+      return { render: () => h('p', 'Recovered view') }
+    })
+    const view = mount({ render: () => h(component) }, { global: { config: { errorHandler: () => {} } } })
+    try {
+      await flushPromises()
+      await vi.advanceTimersByTimeAsync(4000)
+      await flushPromises()
+      expect(attempts).toBe(3)
+      // Fallback UI shows a visible Try again action while still disconnected.
+      expect(view.find('button').text()).toBe('Try again')
+
+      // Even if state.status never left 'connected' during a brief Wi-Fi drop,
+      // tapping Try again once connectivity returns loads the view immediately.
+      const manualComponent = lazy(async () => {
+        if (!online) throw new TypeError('offline chunk')
+        return { render: () => h('p', 'Manually retried view') }
+      })
+      state.status = 'connected'
+      const manualView = mount({ render: () => h(manualComponent) }, { global: { config: { errorHandler: () => {} } } })
+      await flushPromises()
+      await vi.advanceTimersByTimeAsync(4000)
+      await flushPromises()
+      expect(manualView.find('button').text()).toBe('Try again')
+
+      online = true
+      await manualView.find('button').trigger('click')
+      await flushPromises()
+      expect(manualView.text()).toContain('Manually retried view')
+      manualView.unmount()
+
+      // And a view waiting while 'reconnecting' recovers automatically on reconnect.
+      state.status = 'reconnecting'
+      await nextTick()
+      state.status = 'connected'
+      await nextTick()
+      await flushPromises()
+      expect(view.text()).toContain('Recovered view')
+    } finally {
+      view.unmount()
+      vi.useRealTimers()
+    }
   })
 })

@@ -2,7 +2,8 @@
 // build's lazily loaded files, which the Mac no longer serves. Reloading picks
 // up the new build; the guards keep a broken setup from reloading in a loop.
 
-import { defineAsyncComponent, type Component } from 'vue'
+import { defineAsyncComponent, defineComponent, h, ref, watch, type Component } from 'vue'
+import { state } from './connection'
 
 const KEY = 'cmdpalm.reloadedAt'
 const VERSION_KEY = 'cmdpalm.reloadedFor'
@@ -55,16 +56,81 @@ export async function reloadIfBuildChanged(): Promise<boolean> {
   }
 }
 
-/** A lazily loaded component that retries on network blips and reloads if the Mac updated. */
+/** A lazily loaded component that retries on network blips, recovers on reconnect, and reloads if the Mac updated. */
 export function lazy(loader: () => Promise<Component | { default: Component }>) {
-  return defineAsyncComponent({
-    loader,
-    onError(_error, retry, fail, attempts) {
-      void reloadIfBuildChanged().then((reloading) => {
-        if (reloading) fail()
-        else if (attempts <= 2) setTimeout(retry, 800 * attempts)
-        else fail()
-      })
+  const attempt = ref(0)
+  let failed = false
+
+  const bump = () => {
+    failed = false
+    attempt.value++
+  }
+
+  const Fallback = defineComponent({
+    setup() {
+      return () =>
+        h('div', { class: 'flex h-full flex-col items-center justify-center gap-3 px-6 text-center text-muted' }, [
+          h('p', { class: 'text-[14px]' }, 'Couldn’t load this view while the Mac was unreachable.'),
+          h(
+            'button',
+            {
+              type: 'button',
+              class: 'h-9 rounded-full bg-surface-3 px-4 text-[13px] font-medium text-text',
+              onClick: bump,
+            },
+            'Try again',
+          ),
+        ])
+    },
+  })
+
+  const makeInner = () =>
+    defineAsyncComponent({
+      loader: async () => {
+        const mod = await loader()
+        failed = false
+        return mod
+      },
+      errorComponent: Fallback,
+      onError(_error, retry, fail, attempts) {
+        void reloadIfBuildChanged().then((reloading) => {
+          if (reloading) {
+            fail()
+          } else if (attempts <= 2) {
+            setTimeout(retry, 800 * attempts)
+          } else {
+            failed = true
+            fail()
+          }
+        })
+      },
+    })
+
+  let inner = makeInner()
+  let currentAttempt = 0
+
+  watch(
+    () => state.status,
+    (status) => {
+      if (status === 'connected' && failed) bump()
+    },
+  )
+  if (typeof window !== 'undefined') {
+    window.addEventListener('online', () => {
+      if (failed) bump()
+    })
+  }
+
+  return defineComponent({
+    inheritAttrs: false,
+    setup(_props, { attrs, slots }) {
+      return () => {
+        if (attempt.value !== currentAttempt) {
+          currentAttempt = attempt.value
+          inner = makeInner()
+        }
+        return h(inner, { ...attrs, key: attempt.value }, slots)
+      }
     },
   })
 }
