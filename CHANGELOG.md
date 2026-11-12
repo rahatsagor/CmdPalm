@@ -18,6 +18,9 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ### Phone client
 
+- Offline and reconnecting sessions now precache all views and sheets, keep one
+  shared app-shell cache across paths, and avoid reloading the page when Wi-Fi
+  drops briefly.
 - Pausing control on the Mac now stops held media repeat, scroll-strip hold,
   held buttons and keys, and clears trackpad drag lock on the phone.
 - If another device deletes a Deck page while you are editing one of its

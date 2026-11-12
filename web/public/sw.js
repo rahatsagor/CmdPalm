@@ -5,19 +5,38 @@
 // stands in, so the app never opens to a blank screen.
 const CACHE = 'cmdpalm-shell'
 const OFFLINE = '/offline.html'
+const ROOT = '/'
+// Populated by Vite during production builds with every emitted /assets/* chunk,
+// so lazily loaded views and sheets still open if connectivity drops mid-session.
+const PRECACHE_ASSETS = []
 
 const assetsOf = (html) => Array.from(html.matchAll(/(?:src|href)="(\/assets\/[^"?#]+)/g), (m) => m[1])
+
+async function ensureCached(cache, paths) {
+  await Promise.all(
+    paths.map(async (path) => {
+      if (!(await cache.match(path))) await cache.add(path)
+    }),
+  )
+}
 
 // The page first loads before this worker controls it, so its files were
 // never cached. Fetch them now, for the first time the Mac is unreachable.
 async function precache() {
   const cache = await caches.open(CACHE)
   await cache.addAll([OFFLINE, '/icon.svg'])
-  const response = await fetch('/', { cache: 'no-store' })
+  await ensureCached(cache, ['/manifest.webmanifest', '/voice-worklet.js', '/apple-touch-icon.png', '/icon-192.png', '/icon-512.png']).catch(() => {})
+  const response = await fetch(ROOT, { cache: 'no-store' })
   if (!response.ok) return
   const html = await response.clone().text()
-  await Promise.all(assetsOf(html).map(async (path) => (await cache.match(path)) || cache.add(path)))
-  await cache.put('/', response)
+  const entryAssets = assetsOf(html)
+  // Cache the shell's entry files first so offline launch is ready right away,
+  // then warm all lazy chunks in the background when this worker matches the build.
+  await ensureCached(cache, entryAssets)
+  await cache.put(ROOT, response)
+  if (PRECACHE_ASSETS.length && entryAssets.every((p) => PRECACHE_ASSETS.includes(p))) {
+    await ensureCached(cache, PRECACHE_ASSETS).catch(() => {})
+  }
 }
 
 self.addEventListener('install', (event) => {
@@ -26,17 +45,26 @@ self.addEventListener('install', (event) => {
 })
 self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()))
 
-// Every build has new hashed asset names. When the page itself changes, drop
-// the previous build's assets; this build's lazy chunks are cached again as
-// they load.
+// Every build has new hashed asset names. Navigation responses are stored under
+// the single canonical `/` key so query strings or client-side paths never leave
+// stale HTML entries pointing at pruned assets.
 async function store(request, response) {
   const cache = await caches.open(CACHE)
   if (request.mode !== 'navigate') return cache.put(request, response)
   const html = await response.clone().text()
-  const previous = await cache.match(request)
-  await cache.put(request, response)
+  const previous = await cache.match(ROOT)
+  const entryAssets = assetsOf(html)
+  // Cache the new page's entry assets before replacing ROOT or pruning old
+  // assets, so a dropped connection mid-update leaves the previous complete
+  // shell intact instead of falling back to offline.html.
+  await ensureCached(cache, entryAssets)
+  await cache.put(ROOT, response)
+  const keep = new Set(
+    PRECACHE_ASSETS.length && entryAssets.every((p) => PRECACHE_ASSETS.includes(p))
+      ? [...entryAssets, ...PRECACHE_ASSETS]
+      : entryAssets,
+  )
   if (!previous || (await previous.text()) === html) return
-  const keep = new Set(assetsOf(html))
   for (const key of await cache.keys()) {
     const path = new URL(key.url).pathname
     if (path.startsWith('/assets/') && !keep.has(path)) await cache.delete(key)
@@ -54,9 +82,8 @@ async function complete(page) {
 }
 
 async function cachedCopy(request) {
-  const cached = await caches.match(request)
-  if (request.mode !== 'navigate') return cached
-  const page = cached ?? (await caches.match('/'))
+  if (request.mode !== 'navigate') return caches.match(request)
+  const page = await caches.match(ROOT)
   if (page && (await complete(page))) return page
   return caches.match(OFFLINE)
 }
