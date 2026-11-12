@@ -72,6 +72,58 @@ describe('controls used without touch', () => {
     expect(socket.sent.filter((m) => m.t === 'tap')).toMatchObject([{ code: Key.Left }, { code: Key.Return }])
     expect(socket.sent.filter((m) => m.t === 'key')).toEqual([])
   })
+
+  it('starts live typing fresh after composer navigation keys, phone pastes, interrupted IME composition and oversized pastes', async () => {
+    const socket = connect()
+    const { settings } = await import('../src/lib/settings')
+    settings.liveTyping = true
+    vi.stubGlobal('navigator', {
+      ...navigator,
+      clipboard: { readText: () => Promise.resolve('clip') },
+    })
+    const { default: Composer } = await import('../src/components/Composer.vue')
+    const view = mount(Composer, { attachTo: document.body })
+    const field = view.find('textarea')
+
+    await field.setValue('hello')
+    expect(socket.sent.filter((m) => m.t === 'edit')).toEqual([{ t: 'edit', delete: 0, insert: 'hello' }])
+
+    // Moving the Mac's caret with the toolbar arrow strip must reset live history
+    // instead of backspacing from the new caret position on the next edit.
+    const left = view.find('[aria-label="Left"]')
+    left.element.setPointerCapture = () => {}
+    await left.trigger('pointerdown', { pointerId: 1 })
+    await left.trigger('pointerup', { pointerId: 1 })
+    expect((field.element as HTMLTextAreaElement).value).toBe('')
+
+    await field.setValue('!')
+    expect(socket.sent.filter((m) => m.t === 'edit').at(-1)).toEqual({ t: 'edit', delete: 0, insert: '!' })
+
+    // Pasting the phone's clipboard onto the Mac also resets live history.
+    await view.find('[aria-label="Paste the phone clipboard on the Mac"]').trigger('click')
+    await Promise.resolve()
+    expect((field.element as HTMLTextAreaElement).value).toBe('')
+
+    // Clearing or blurring mid-composition must not leave live typing stuck.
+    await field.trigger('compositionstart')
+    await field.setValue('ni')
+    await view.find('[aria-label^="Clear the field"]').trigger('click')
+    await field.setValue('ok')
+    expect(socket.sent.filter((m) => m.t === 'edit').at(-1)).toEqual({ t: 'edit', delete: 0, insert: 'ok' })
+
+    // An oversized paste (>64 KiB UTF-8) is refused without advancing live state,
+    // and in non-live mode keeps the draft in the field instead of losing it.
+    const huge = '😀'.repeat(17_000)
+    await field.setValue(`ok${huge}`)
+    expect(conn.state.notices.some((n) => n.code === 'tooLong')).toBe(true)
+    await field.setValue('ok!')
+    expect(socket.sent.filter((m) => m.t === 'edit').at(-1)).toEqual({ t: 'edit', delete: 0, insert: '!' })
+
+    settings.liveTyping = false
+    await field.setValue(huge)
+    await view.find('[aria-label="Type on the Mac"]').trigger('click')
+    expect((field.element as HTMLTextAreaElement).value).toBe(huge)
+  })
 })
 
 describe('forgetting a Mac', () => {

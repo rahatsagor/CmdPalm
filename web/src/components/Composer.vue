@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, ClipboardPaste, CornerDownLeft, Delete, Eraser, Mic, Send, Square } from '@lucide/vue'
 import { computed, onBeforeUnmount, onDeactivated, ref } from 'vue'
-import { onMessage, send, state } from '@/lib/connection'
+import { onMessage, state } from '@/lib/connection'
 import { haptic, holdPointer, keyHaptic } from '@/lib/haptics'
 import { useHeldPointers } from '@/lib/heldPointers'
 import { edit, keyDown, keyUp, modifiers, tap, tapChar, typeText } from '@/lib/input'
@@ -44,6 +44,7 @@ function syncLive() {
 function reset() {
   text.value = ''
   sent = ''
+  composing = false
 }
 
 // After a reconnect the Mac's caret may be anywhere, so live typing starts
@@ -103,6 +104,12 @@ function onCompositionEnd() {
   syncLive()
 }
 
+function onBlur() {
+  if (!composing) return
+  composing = false
+  syncLive()
+}
+
 const voiceOk = computed(() => state.features.voice && voiceSupported())
 
 async function toggleVoice() {
@@ -131,7 +138,7 @@ function pasteFromPhone() {
   navigator.clipboard
     .readText()
     .then((value) => {
-      if (value) send({ t: 'text', text: value, mode: 'paste' })
+      if (value && typeText(value, 'paste') && live.value) reset()
     })
     .catch(() => field.value?.focus())
 }
@@ -147,7 +154,13 @@ const arrows = [
 
 const fingers = useHeldPointers(keyUp)
 
+function tapToolbarKey(code: number) {
+  if (live.value) reset()
+  tap(code)
+}
+
 function down(code: number, event: PointerEvent) {
+  if (live.value) reset()
   holdPointer(event, true)
   ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
   keyDown(event.pointerId, code)
@@ -163,7 +176,7 @@ function up(event: PointerEvent) {
 // A screen reader's click has no press before it (a detail of 0), so it taps
 // the key here. The hidden switch's own copy of the click is ignored.
 function onClick(code: number, event: MouseEvent) {
-  if (event.detail === 0 && !(event.target instanceof HTMLInputElement)) tap(code)
+  if (event.detail === 0 && !(event.target instanceof HTMLInputElement)) tapToolbarKey(code)
 }
 
 defineExpose({ focus: () => field.value?.focus() })
@@ -184,8 +197,8 @@ defineExpose({ focus: () => field.value?.focus() })
         @pointerup="up"
         @pointercancel="up"
         @click="onClick(key.code, $event)"
-        @keydown.enter.prevent="tap(key.code)"
-        @keydown.space.prevent="tap(key.code)"
+        @keydown.enter.prevent="tapToolbarKey(key.code)"
+        @keydown.space.prevent="tapToolbarKey(key.code)"
         @contextmenu.prevent
       >
         <component :is="key.icon" :size="18" />
@@ -216,6 +229,7 @@ defineExpose({ focus: () => field.value?.focus() })
         @keydown="onKeydown"
         @compositionstart="composing = true"
         @compositionend="onCompositionEnd"
+        @blur="onBlur"
       />
       <div class="flex items-center gap-1 px-1.5 pb-1.5">
         <button

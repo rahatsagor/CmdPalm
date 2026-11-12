@@ -1,6 +1,6 @@
 // High-level input helpers shared by the trackpad, keyboards and deck.
 
-import { send, onMessage, pointer, labels, isOpen } from './connection'
+import { send, onMessage, pointer, labels, isOpen, notify } from './connection'
 import { haptic } from './haptics'
 import { Key, MODIFIER_CODES } from './keys'
 import { Modifiers } from './modifiers'
@@ -146,9 +146,20 @@ export function pressMedia(key: MediaKey): () => void {
   return stop
 }
 
+const MAX_TEXT_BYTES = 64 * 1024
+const MAX_EDIT_DELETE = 4_096
+const textEncoder = new TextEncoder()
+
+export function checkTextLimit(text: string): boolean {
+  if (textEncoder.encode(text).length <= MAX_TEXT_BYTES) return true
+  notify('That text is too long to send at once.', 'warning', 'tooLong')
+  return false
+}
+
 /** Returns whether the text went to the Mac. */
 export function typeText(text: string, mode: TextMode = settings.textMode): boolean {
   if (!text) return true
+  if (!checkTextLimit(text)) return false
   // With a one-shot modifier waiting, a single character becomes a shortcut.
   if (modifiers.pending() && [...text].length === 1 && tapChar(text)) return true
   modifiers.clearLatched()
@@ -158,6 +169,7 @@ export function typeText(text: string, mode: TextMode = settings.textMode): bool
 /** Returns whether the change went to the Mac. */
 export function edit(deleteCount: number, insert: string): boolean {
   if (deleteCount === 0 && !insert) return true
+  if (deleteCount > MAX_EDIT_DELETE || !checkTextLimit(insert)) return false
   return send({ t: 'edit', delete: deleteCount, insert })
 }
 

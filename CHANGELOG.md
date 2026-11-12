@@ -16,6 +16,12 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - Stalled browser downloads and handshake writes now time out instead of
   holding connection slots open when a device drops off Wi-Fi.
 
+### Phone client
+
+- Live typing in the typing panel now starts fresh after using its arrow,
+  Delete, Return or clipboard buttons, recovers cleanly from interrupted text
+  composition, and keeps your draft when pasted text exceeds the 64 KB limit.
+
 ## [0.8.0] - 2026-11-09
 
 Undo Deck edits, back up your device’s setup, and keep unsaved changes ready
