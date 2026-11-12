@@ -9,6 +9,11 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Mac app
+
+- Stalled browser downloads and handshake writes now time out instead of
+  holding connection slots open when a device drops off Wi-Fi.
+
 ## [0.8.0] - 2026-11-09
 
 Undo Deck edits, back up your device’s setup, and keep unsaved changes ready

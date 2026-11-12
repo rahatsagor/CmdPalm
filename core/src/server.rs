@@ -24,6 +24,7 @@ use crate::{auth, session, store, tls};
 const PORT_ATTEMPTS: u16 = 20;
 const HEAD_LIMIT: usize = 16 * 1024;
 const HEAD_TIMEOUT: Duration = Duration::from_secs(10);
+const WRITE_TIMEOUT: Duration = Duration::from_secs(15);
 const IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 const TLS_TIMEOUT: Duration = Duration::from_secs(10);
 const ICON_CACHE_LIMIT: usize = 256;
@@ -498,11 +499,15 @@ Content-Security-Policy: {CSP}\r\n",
         head.push_str("\r\n");
     }
     head.push_str("\r\n");
-    stream.write_all(head.as_bytes()).await?;
-    if !head_only && response.status != 304 {
-        stream.write_all(&response.body).await?;
-    }
-    stream.flush().await
+    timeout(WRITE_TIMEOUT, async {
+        stream.write_all(head.as_bytes()).await?;
+        if !head_only && response.status != 304 {
+            stream.write_all(&response.body).await?;
+        }
+        stream.flush().await
+    })
+    .await
+    .map_err(|_| std::io::Error::new(std::io::ErrorKind::TimedOut, "HTTP write timed out"))?
 }
 
 async fn serve<S>(shared: Arc<Shared>, mut stream: S, peer: IpAddr, secure: bool, shutdown: watch::Receiver<bool>)
@@ -542,7 +547,12 @@ where
                     let reply = format!(
                         "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: {accept}\r\n\r\n"
                     );
-                    if stream.write_all(reply.as_bytes()).await.is_err() || stream.flush().await.is_err() {
+                    let switched = timeout(WRITE_TIMEOUT, async {
+                        stream.write_all(reply.as_bytes()).await?;
+                        stream.flush().await
+                    })
+                    .await;
+                    if !matches!(switched, Ok(Ok(()))) {
                         return;
                     }
                     let config = WebSocketConfig::default()
@@ -865,5 +875,110 @@ mod tests {
         assert_eq!(websocket_accept(&evil, "mac.local:8790").unwrap_err().status, 403);
         let head = parse_head(base.replacen("GET", "HEAD", 1).as_bytes()).unwrap();
         assert_eq!(websocket_accept(&head, "mac.local:8790").unwrap_err().status, 405);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn stalled_http_writes_time_out() {
+        use std::pin::Pin;
+        use std::task::{Context, Poll};
+
+        struct StalledWrite(std::io::Cursor<Vec<u8>>);
+        impl AsyncRead for StalledWrite {
+            fn poll_read(
+                mut self: Pin<&mut Self>,
+                cx: &mut Context<'_>,
+                buf: &mut tokio::io::ReadBuf<'_>,
+            ) -> Poll<std::io::Result<()>> {
+                Pin::new(&mut self.0).poll_read(cx, buf)
+            }
+        }
+        impl AsyncWrite for StalledWrite {
+            fn poll_write(self: Pin<&mut Self>, _cx: &mut Context<'_>, _buf: &[u8]) -> Poll<std::io::Result<usize>> {
+                Poll::Pending
+            }
+            fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+                Poll::Pending
+            }
+            fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+                Poll::Ready(Ok(()))
+            }
+        }
+
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("index.html"), "<!doctype html>").unwrap();
+        let config = crate::api::HostConfig {
+            port: 0,
+            data_dir: String::new(),
+            web_root: dir.path().to_string_lossy().into(),
+            host_name: "Test.local".into(),
+            computer_name: "Test".into(),
+            app_version: "1.0.0".into(),
+            link_host: crate::api::LinkHost::HostName,
+            allow_local_proxy: false,
+            allow_pin: true,
+            allow_approval: true,
+            allow_shell: false,
+            voice_available: false,
+        };
+        struct Noop;
+        impl crate::api::HostDelegate for Noop {
+            fn on_event(&self, _: crate::api::HostEvent) {}
+            fn list_apps(&self) -> Vec<crate::protocol::AppEntry> {
+                Vec::new()
+            }
+            fn app_icon(&self, _: String, _: u32) -> Option<Vec<u8>> {
+                None
+            }
+            fn app_action(&self, _: String, _: crate::protocol::AppOp) -> bool {
+                false
+            }
+            fn open_url(&self, _: String) -> bool {
+                false
+            }
+            fn native(&self, _: crate::api::NativeCommand) -> bool {
+                false
+            }
+            fn run_shortcut(&self, _: String) -> bool {
+                false
+            }
+            fn set_volume(&self, _: Option<f32>, _: Option<bool>) {}
+            fn clipboard_text(&self) -> Option<String> {
+                None
+            }
+            fn set_clipboard_text(&self, _: String) {}
+            fn begin_paste(&self, _: String) -> bool {
+                false
+            }
+            fn end_paste(&self) {}
+            fn voice_start(&self, _: u64, _: Option<String>, _: Option<u32>) -> bool {
+                false
+            }
+            fn voice_audio(&self, _: u64, _: Vec<u8>) {}
+            fn voice_stop(&self, _: u64, _: bool) {}
+        }
+        let engine = crate::input::InputEngine::spawn(|| crate::input::NullSink, Box::new(|_| {}));
+        let shared = Arc::new(Shared::new(config, Arc::new(Noop), &engine, Box::new(|| true)));
+        let (_tx, rx) = watch::channel(false);
+
+        let get = StalledWrite(std::io::Cursor::new(b"GET / HTTP/1.1\r\nHost: localhost\r\n\r\n".to_vec()));
+        assert!(
+            timeout(
+                Duration::from_secs(30),
+                serve(shared.clone(), get, IpAddr::V4(Ipv4Addr::LOCALHOST), false, rx.clone())
+            )
+            .await
+            .is_ok(),
+            "a stalled HTTP response write must time out and release its connection"
+        );
+
+        let ws = StalledWrite(std::io::Cursor::new(
+            b"GET /ws HTTP/1.1\r\nHost: localhost\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: ************************\r\n\r\n".to_vec(),
+        ));
+        assert!(
+            timeout(Duration::from_secs(30), serve(shared, ws, IpAddr::V4(Ipv4Addr::LOCALHOST), false, rx))
+                .await
+                .is_ok(),
+            "a stalled WebSocket handshake write must time out and release its connection"
+        );
     }
 }
