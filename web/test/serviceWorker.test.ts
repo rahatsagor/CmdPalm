@@ -72,10 +72,18 @@ class MemoryCacheStorage {
     }
     return undefined
   }
+
+  async keys(): Promise<string[]> {
+    return [...this.stores.keys()]
+  }
+
+  async delete(name: string): Promise<boolean> {
+    return this.stores.delete(name)
+  }
 }
 
-function bootWorker(precacheAssets: string[] = []) {
-  const caches = new MemoryCacheStorage()
+function bootWorker(precacheAssets: string[] = [], sharedCaches = new MemoryCacheStorage()) {
+  const caches = sharedCaches
   const listeners = new Map<string, (event: unknown) => void>()
   const selfObj = {
     location: new URL('https://mac.local:8790/sw.js'),
@@ -107,6 +115,12 @@ function bootWorker(precacheAssets: string[] = []) {
     await Promise.all(pending)
   }
 
+  async function activate() {
+    const pending: Promise<unknown>[] = []
+    listeners.get('activate')?.({ waitUntil: (p: Promise<unknown>) => pending.push(p) })
+    await Promise.all(pending)
+  }
+
   async function dispatchFetch(path: string, mode: RequestMode = 'cors'): Promise<{ response: Response; settled: Promise<void> }> {
     const url = new URL(path, 'https://mac.local:8790').href
     const req = new Request(url, mode === 'navigate' ? undefined : { mode })
@@ -125,7 +139,7 @@ function bootWorker(precacheAssets: string[] = []) {
     return { response, settled: Promise.all(pending).then(() => undefined) }
   }
 
-  return { caches, install, dispatchFetch }
+  return { caches, install, activate, dispatchFetch }
 }
 
 beforeEach(() => {
@@ -241,6 +255,60 @@ describe('service worker offline and update caching', () => {
 
     online = false
     const offlineNavigation = await sw.dispatchFetch('/', 'navigate')
+    expect(await offlineNavigation.response.text()).toBe(html(2))
+  })
+
+  it('coordinates an installing worker with the still-active previous worker', async () => {
+    const html = (version: number) =>
+      `<!doctype html><script src="/assets/index-v${version}.js"></script><link href="/assets/index-v${version}.css" rel="stylesheet">`
+    let online = true
+    let version = 0
+    let entered!: () => void
+    const cssRequested = new Promise<void>((resolve) => {
+      entered = resolve
+    })
+    let release!: () => void
+    const cssResponse = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL) => {
+      if (!online) throw new TypeError('offline')
+      const path = new URL(
+        typeof input === 'string' ? input : input instanceof URL ? input.href : input.url,
+        'https://mac.local:8790',
+      ).pathname
+      if (path === '/') return new Response(html(version))
+      if (path === '/offline.html') return new Response('OFFLINE FALLBACK')
+      const build = path.match(/^\/assets\/index-v(\d+)\./)?.[1]
+      if (build && Number(build) !== version) return new Response('not found', { status: 404 })
+      if (path === '/assets/index-v1.css') {
+        entered()
+        await cssResponse
+      }
+      return new Response('asset')
+    })
+
+    const caches = new MemoryCacheStorage()
+    const active = bootWorker(['/assets/index-v0.js', '/assets/index-v0.css'], caches)
+    await active.install()
+    await active.activate()
+
+    version = 1
+    const installing = bootWorker(['/assets/index-v1.js', '/assets/index-v1.css'], caches)
+    const install = installing.install()
+    await cssRequested
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    version = 2
+    const navigation = await active.dispatchFetch('/?new', 'navigate')
+    await navigation.settled
+
+    release()
+    await install
+    await installing.activate()
+
+    online = false
+    const offlineNavigation = await installing.dispatchFetch('/', 'navigate')
     expect(await offlineNavigation.response.text()).toBe(html(2))
   })
 })
