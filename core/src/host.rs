@@ -481,6 +481,7 @@ impl CoreHost {
         if running.is_some() {
             return Ok(self.shared.port.load(Ordering::Relaxed));
         }
+        self.shared.interrupts.allow_shell_commands();
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(2)
             .thread_name("cmdpalm-net")

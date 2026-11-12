@@ -329,16 +329,27 @@ pub enum Input {
     ReleaseAll,
 }
 
+#[derive(Debug, Default)]
+struct ShellState {
+    running: usize,
+    stops: u64,
+    closed: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ShellDeny {
+    Busy,
+    Closed,
+}
+
 /// Stops long-running work (typing, deck sequences) without waiting for the
 /// engine queue, which may be blocked behind that very work.
 #[derive(Debug, Default)]
 pub struct Interrupts {
     paused: AtomicBool,
     ended: Mutex<HashSet<SessionId>>,
-    /// Bumped when shell commands are turned off or the server stops.
-    shell_stops: std::sync::atomic::AtomicU64,
-    /// Active shell command watcher threads for this host.
-    running_shells: (Mutex<usize>, std::sync::Condvar),
+    /// Synchronizes shell command admission, stop generations and host shutdown.
+    shells: (Mutex<ShellState>, std::sync::Condvar),
 }
 
 impl Interrupts {
@@ -363,49 +374,63 @@ impl Interrupts {
         self.paused() || self.ended.lock().unwrap_or_else(|p| p.into_inner()).contains(&session)
     }
 
-    /// Stop the shell commands running now; ones started later carry on.
-    pub fn stop_shell_commands(&self) {
-        self.shell_stops.fetch_add(1, Ordering::SeqCst);
+    /// Re-open shell command admission when the host starts.
+    pub fn allow_shell_commands(&self) {
+        self.shells.0.lock().unwrap_or_else(|p| p.into_inner()).closed = false;
     }
 
-    /// Stop the shell commands running now and wait up to `timeout` for their
-    /// process groups to exit, so quitting CmdPalm cannot leave backgrounded
-    /// children running with inherited permissions.
+    /// Stop the shell commands running now; ones started later carry on.
+    pub fn stop_shell_commands(&self) {
+        let mut state = self.shells.0.lock().unwrap_or_else(|p| p.into_inner());
+        state.stops += 1;
+    }
+
+    /// Refuse any further shell launches, signal running ones, and wait up to
+    /// `timeout` for their process groups to exit, so stopping or quitting
+    /// CmdPalm cannot leave backgrounded children running with inherited
+    /// permissions.
     pub fn stop_and_wait_shell_commands(&self, timeout: Duration) {
-        self.stop_shell_commands();
         let deadline = std::time::Instant::now() + timeout;
-        let (lock, cvar) = &self.running_shells;
-        let mut count = lock.lock().unwrap_or_else(|p| p.into_inner());
-        while *count > 0 {
+        let (lock, cvar) = &self.shells;
+        let mut state = lock.lock().unwrap_or_else(|p| p.into_inner());
+        state.closed = true;
+        state.stops += 1;
+        while state.running > 0 {
             let Some(remaining) = deadline.checked_duration_since(std::time::Instant::now()) else {
                 break;
             };
-            let (next, result) = cvar.wait_timeout(count, remaining).unwrap_or_else(|p| p.into_inner());
-            count = next;
+            let (next, result) = cvar.wait_timeout(state, remaining).unwrap_or_else(|p| p.into_inner());
+            state = next;
             if result.timed_out() {
                 break;
             }
         }
     }
 
-    pub fn shell_stops(&self) -> u64 {
-        self.shell_stops.load(Ordering::SeqCst)
+    pub fn shell_stopped_since(&self, stops: u64) -> bool {
+        let state = self.shells.0.lock().unwrap_or_else(|p| p.into_inner());
+        state.closed || state.stops != stops
     }
 
-    pub(crate) fn try_enter_shell(&self, max: usize) -> bool {
-        let mut count = self.running_shells.0.lock().unwrap_or_else(|p| p.into_inner());
-        if *count >= max {
-            return false;
+    /// Admit a shell command and return the generation it belongs to under the
+    /// same lock, so a concurrent stop or shutdown cannot be missed.
+    pub(crate) fn try_enter_shell(&self, max: usize) -> Result<u64, ShellDeny> {
+        let mut state = self.shells.0.lock().unwrap_or_else(|p| p.into_inner());
+        if state.closed {
+            return Err(ShellDeny::Closed);
         }
-        *count += 1;
-        true
+        if state.running >= max {
+            return Err(ShellDeny::Busy);
+        }
+        state.running += 1;
+        Ok(state.stops)
     }
 
     pub(crate) fn leave_shell(&self) {
-        let (lock, cvar) = &self.running_shells;
-        let mut count = lock.lock().unwrap_or_else(|p| p.into_inner());
-        *count = count.saturating_sub(1);
-        if *count == 0 {
+        let (lock, cvar) = &self.shells;
+        let mut state = lock.lock().unwrap_or_else(|p| p.into_inner());
+        state.running = state.running.saturating_sub(1);
+        if state.running == 0 {
             cvar.notify_all();
         }
     }

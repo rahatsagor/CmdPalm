@@ -9,7 +9,7 @@ use tokio::sync::{mpsc, oneshot};
 use crate::api::NativeCommand;
 use crate::deck::{MAX_DELAY_MS, MAX_DEPTH};
 use crate::host::Shared;
-use crate::input::{Command, Input, Interrupts, SessionId, TypeMode};
+use crate::input::{Command, Input, Interrupts, SessionId, ShellDeny, TypeMode};
 use crate::keycodes::{self as kc, KeyCode, mods};
 use crate::protocol::{Action, MouseButton, PressOp, ServerMessage, SystemAction};
 
@@ -278,17 +278,31 @@ fn group_has_members(group: libc::pid_t) -> bool {
 fn run_shell(command: &str, interrupts: Arc<Interrupts>) -> Result<(), String> {
     use std::os::unix::process::CommandExt as _;
     use std::process::Stdio;
-    if !interrupts.try_enter_shell(MAX_RUNNING_COMMANDS) {
-        return Err("Too many shell commands are still running. Pause CmdPalm on the Mac to stop them.".into());
-    }
+    let stops = match interrupts.try_enter_shell(MAX_RUNNING_COMMANDS) {
+        Ok(stops) => stops,
+        Err(ShellDeny::Closed) => return Err(STOPPED.into()),
+        Err(ShellDeny::Busy) => {
+            return Err("Too many shell commands are still running. Pause CmdPalm on the Mac to stop them.".into());
+        }
+    };
     struct Running(Arc<Interrupts>);
     impl Drop for Running {
         fn drop(&mut self) {
             self.0.leave_shell();
         }
     }
-    let stops = interrupts.shell_stops();
     let running = Running(interrupts.clone());
+    #[cfg(test)]
+    if let Some((entered, go)) = tests::ADMISSION_BARRIER.get() {
+        // SAFETY: pointers stay live across `handle.join()` in the test.
+        unsafe {
+            (*entered).send(()).unwrap();
+            (*go).recv_timeout(Duration::from_secs(2)).unwrap();
+        }
+    }
+    if interrupts.paused() || interrupts.shell_stopped_since(stops) {
+        return Err(STOPPED.into());
+    }
     let errors = error_file();
     let stderr = errors.as_ref().and_then(|f| f.try_clone().ok()).map_or_else(Stdio::null, Stdio::from);
     let mut child = std::process::Command::new("/bin/zsh")
@@ -311,7 +325,7 @@ fn run_shell(command: &str, interrupts: Arc<Interrupts>) -> Result<(), String> {
     // until its whole process group is gone.
     std::thread::spawn(move || {
         let _running = running;
-        let stopped = || interrupts.paused() || interrupts.shell_stops() != stops;
+        let stopped = || interrupts.paused() || interrupts.shell_stopped_since(stops);
         let mut signalled: Option<(Instant, bool)> = None;
         let mut shell_done = false;
         loop {
@@ -495,7 +509,7 @@ mod tests {
     fn enforces_the_running_shell_command_limit_per_host() {
         let interrupts = Arc::new(Interrupts::default());
         for _ in 0..MAX_RUNNING_COMMANDS {
-            assert!(interrupts.try_enter_shell(MAX_RUNNING_COMMANDS));
+            assert!(interrupts.try_enter_shell(MAX_RUNNING_COMMANDS).is_ok());
         }
         let error = run_shell("true", interrupts.clone()).unwrap_err();
         assert!(error.contains("Too many shell commands"));
@@ -505,5 +519,52 @@ mod tests {
             interrupts.leave_shell();
         }
         assert!(run_shell("true", interrupts).is_ok());
+    }
+
+    #[cfg(test)]
+    thread_local! {
+        pub(super) static ADMISSION_BARRIER: std::cell::Cell<Option<(*const std::sync::mpsc::Sender<()>, *const std::sync::mpsc::Receiver<()>)>> =
+            const { std::cell::Cell::new(None) };
+    }
+
+    #[test]
+    fn shell_admission_races_with_stop_and_shutdown_cannot_escape_cancellation() {
+        let dir = tempfile::tempdir().unwrap();
+        let marker = dir.path().join("late");
+        let interrupts = Arc::new(Interrupts::default());
+
+        // Reproduce the exact scheduling window between admitting a command and
+        // spawning/watching it while `stop_and_wait_shell_commands` runs.
+        let (entered, ready) = std::sync::mpsc::channel::<()>();
+        let (resume, go) = std::sync::mpsc::channel::<()>();
+        let worker_interrupts = interrupts.clone();
+        let command = format!("sleep 0.4; touch '{}'", marker.display());
+        let entered_ptr = &entered as *const _ as usize;
+        let go_ptr = &go as *const _ as usize;
+        let handle = std::thread::spawn(move || {
+            ADMISSION_BARRIER.set(Some((
+                entered_ptr as *const std::sync::mpsc::Sender<()>,
+                go_ptr as *const std::sync::mpsc::Receiver<()>,
+            )));
+            let result = run_shell(&command, worker_interrupts);
+            ADMISSION_BARRIER.set(None);
+            result
+        });
+        ready.recv_timeout(Duration::from_secs(2)).unwrap();
+        interrupts.stop_shell_commands();
+        let stopper = {
+            let interrupts = interrupts.clone();
+            std::thread::spawn(move || interrupts.stop_and_wait_shell_commands(Duration::from_secs(2)))
+        };
+        std::thread::sleep(Duration::from_millis(50));
+        resume.send(()).unwrap();
+        stopper.join().unwrap();
+        let result = handle.join().unwrap();
+        std::thread::sleep(Duration::from_millis(500));
+        assert!(result.is_err(), "a command admitted before shutdown must not succeed");
+        assert!(!marker.exists(), "the command must not escape shutdown and create its marker");
+        assert!(run_shell("true", interrupts.clone()).is_err(), "a stopped host refuses late launches");
+        interrupts.allow_shell_commands();
+        assert!(run_shell("true", interrupts).is_ok(), "a restarted host accepts shell commands again");
     }
 }
