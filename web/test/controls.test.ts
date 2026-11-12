@@ -125,9 +125,24 @@ describe('controls used without touch', () => {
     expect((field.element as HTMLTextAreaElement).value).toBe(huge)
 
     // Turning Live on when an unsent draft cannot be sent (e.g. >64 KiB) must
-    // preserve the draft instead of wiping it.
+    // preserve the draft (and even if toggled again) instead of wiping it.
     await view.findAll('button').find((b) => b.text() === 'Live')!.trigger('click')
     expect((field.element as HTMLTextAreaElement).value).toBe(huge)
+    expect(settings.liveTyping).toBe(false)
+    await view.findAll('button').find((b) => b.text() === 'Live')!.trigger('click')
+    expect((field.element as HTMLTextAreaElement).value).toBe(huge)
+    expect(settings.liveTyping).toBe(false)
+
+    // Turning Live off while an un-synced live edit is still in the field (for
+    // example, typed while disconnected) also preserves the unsent suffix.
+    await field.setValue('')
+    settings.liveTyping = true
+    await field.setValue('sent')
+    socket.drop()
+    await field.setValue('sent unsent')
+    await view.findAll('button').find((b) => b.text() === 'Live')!.trigger('click')
+    expect(settings.liveTyping).toBe(false)
+    expect((field.element as HTMLTextAreaElement).value).toBe(' unsent')
   })
 
   it('pastes a single character from the phone clipboard as text even when a modifier is latched', async () => {

@@ -90,15 +90,26 @@ function submit(withReturn = false) {
 }
 
 function toggleLive() {
-  settings.liveTyping = !settings.liveTyping
-  // Whatever is in the field goes to the Mac now; after that the field
-  // starts fresh in either mode. If it could not be sent, keep the draft.
-  if (settings.liveTyping) {
+  if (!settings.liveTyping) {
+    // Whatever is in the field goes to the Mac now; if it could not be sent,
+    // keep the draft and stay in non-live mode.
+    settings.liveTyping = true
     sent = ''
     composing = false
-    if (!syncLive()) return
+    if (!syncLive()) {
+      settings.liveTyping = false
+      return
+    }
+    reset()
+    return
   }
-  reset()
+  settings.liveTyping = false
+  composing = false
+  // Any text already sent in live mode stays on the Mac; any unsent suffix
+  // (for example, typed while disconnected) stays in the field as a draft.
+  const unsent = sent && text.value.startsWith(sent) ? text.value.slice(sent.length) : text.value === sent ? '' : text.value
+  sent = ''
+  text.value = unsent
 }
 
 function onCompositionEnd() {
