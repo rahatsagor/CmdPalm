@@ -131,6 +131,9 @@ too, once you allow them.
 Tap Edit and drag the page tabs to reorder them across your devices.
 Undo and redo in the Edit toolbar recover accepted edits, including deleted
 buttons and pages. Changes from another device clear this device’s Undo history.
+App buttons offer **Show / hide**, **Open**, **Hide** and **Quit**.
+Sequences wait for a Shortcuts automation to finish successfully before
+running the next step; a failed Shortcut stops the sequence.
 
 </td>
 </tr>

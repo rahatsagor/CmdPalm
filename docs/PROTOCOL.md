@@ -35,6 +35,13 @@ https` as encrypted, and checks `X-Forwarded-Host` (or `Host`) in place of
 ignored otherwise, and always on connections from other machines. The app must
 be served from `/`.
 
+An Origin must use the effective connection's `http` or `https` scheme and
+the same host and port. An omitted default port is equivalent to `:80` for
+HTTP or `:443` for HTTPS, including behind an allowed proxy. Request lines
+must use an origin-form target and HTTP/1.0 or HTTP/1.1; header names cannot
+contain whitespace. Bytes after an upgrade request's headers are retained
+as WebSocket input.
+
 Text frames carry JSON objects with a `t` field naming the message type.
 Field names are camelCase. Pointer data uses binary frames.
 
@@ -175,8 +182,8 @@ can't read. Actions are the same objects deck buttons store, tagged by `kind`:
 | `app` | `id` (bundle identifier), `op`: `open`, `toggle`, `hide`, `quit` |
 | `url` | `url`, with surrounding spaces ignored. `javascript:` and `data:` are refused. `file:` and links that open a terminal or a file server (`ssh:`, `telnet:`, `x-man-page:`, `smb:`, `cifs:`, `afp:`, `nfs:`, `ftp:`) only work while shell commands are allowed |
 | `system` | `name`, e.g. `missionControl`, `launchpad`, `lockScreen`, `screenshotArea`; see `SystemAction` |
-| `shortcut` | `name` of a macOS Shortcuts automation |
-| `shell` | `command`; refused unless allowed on the Mac. Pausing input, or turning shell commands off, stops commands that are still running. |
+| `shortcut` | `name` of a macOS Shortcuts automation; waits for a successful exit before the next sequence step, with a 60-second timeout |
+| `shell` | `command`; refused unless allowed on the Mac. Pausing input, turning shell commands off, stopping the server or quitting stops running commands and their background process groups. |
 | `mouse` | `button`, `clicks` |
 | `delay` | `ms`, up to 10 000 |
 | `sequence` | `steps`: up to 64 actions, nested at most 3 deep |
@@ -204,7 +211,7 @@ can't read. Actions are the same objects deck buttons store, tagged by `kind`:
 | `apps` | `apps: [{id, name, running, active, hidden}]` | Answer to `apps`. |
 | `appsChanged` | | Apps launched, quit, hid or changed focus. Request `apps` again if the list is visible. |
 | `deck` | `deck`, `revision` | The deck changed. Revisions are present on updated hosts. |
-| `deckSaved` | `id`, `ok`, `revision`, `message?` | Answer to a `deckSave` with an ID, after persistence succeeds or the save is refused. Keep the edit’s draft until this reply. |
+| `deckSaved` | `id`, `ok`, `revision`, `message?` | Answer to a `deckSave` with a valid ID, after persistence succeeds or the save is refused, including an unreadable deck body. Keep the edit’s draft until this reply. |
 | `layout` | `layout` | The Mac's input source changed. |
 | `volume` | `value`, `muted` | Output volume changed. |
 | `volumeUnavailable` | | The output device has no volume control (HDMI, for example). |
@@ -232,6 +239,10 @@ queued starts and late recognition results. Audio from the cancelled stream
 is refused even after control resumes; the phone must send a new `voiceStart`.
 Clients must release microphone tracks when paused, disconnected or voice is
 disabled. Tagged replies from earlier dictations cannot end the active one.
+
+On a normal dictation stop, send any buffered PCM before `voiceStop` so the
+last partial audio packet reaches recognition. On cancellation, discard that
+audio and release the microphone immediately instead.
 
 ### Keyboard layout
 
