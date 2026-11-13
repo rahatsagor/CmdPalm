@@ -70,11 +70,13 @@ pub(crate) struct State {
 
 pub(crate) type IconCache = HashMap<(String, u32), Arc<Vec<u8>>>;
 
-/// Voice operations share this lock so revocation cannot race a queued start.
+/// Bookkeeping only. Foreign delegate calls use each session's operation gate,
+/// so synchronous voice updates and other devices never wait on this lock.
 #[derive(Default)]
 pub(crate) struct Voices {
     pub active: HashMap<SessionId, Option<u32>>,
     pub accepted: HashMap<SessionId, Vec<Option<u32>>>,
+    gates: HashMap<SessionId, Weak<Mutex<()>>>,
 }
 
 pub(crate) struct Shared {
@@ -229,11 +231,27 @@ impl Shared {
         self.voices.lock().unwrap_or_else(|p| p.into_inner())
     }
 
-    pub fn cancel_voices(&self) {
+    pub fn voice_gate(&self, id: SessionId) -> Arc<Mutex<()>> {
         let mut voices = self.voices();
-        self.voice_epoch.fetch_add(1, Ordering::SeqCst);
-        voices.accepted.clear();
-        for (id, request_id) in voices.active.drain() {
+        voices.gates.retain(|_, gate| gate.strong_count() > 0);
+        if let Some(gate) = voices.gates.get(&id).and_then(Weak::upgrade) {
+            return gate;
+        }
+        let gate = Arc::new(Mutex::new(()));
+        voices.gates.insert(id, Arc::downgrade(&gate));
+        gate
+    }
+
+    pub fn cancel_voices(&self) {
+        let active: Vec<_> = {
+            let mut voices = self.voices();
+            self.voice_epoch.fetch_add(1, Ordering::SeqCst);
+            voices.accepted.clear();
+            voices.active.drain().collect()
+        };
+        for (id, request_id) in active {
+            let gate = self.voice_gate(id);
+            let _operation = gate.lock().unwrap_or_else(|p| p.into_inner());
             self.delegate.voice_stop(id, true);
             // Older open clients react to voice replies, but do not yet
             // release their microphone on a paused/features message.

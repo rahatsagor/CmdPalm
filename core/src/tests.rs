@@ -16,6 +16,8 @@ use crate::input::{EventSink, InputEngine, SharedRecorder, Synth};
 use crate::keycodes::{KEY_C, KEY_COMMAND, KEY_Q, KEY_RETURN, KEY_RIGHT_COMMAND, KEY_V, flags, mods};
 use crate::protocol::{AppEntry, AppOp};
 
+type VoiceCallback = Box<dyn Fn(u64, Option<u32>) + Send>;
+
 #[derive(Default)]
 struct MockDelegate {
     events: Mutex<Vec<HostEvent>>,
@@ -23,6 +25,7 @@ struct MockDelegate {
     voice: Mutex<Vec<&'static str>>,
     voice_requests: Mutex<Vec<Option<u32>>>,
     voice_gate: Mutex<Option<(std::sync::mpsc::Sender<()>, std::sync::mpsc::Receiver<()>)>>,
+    voice_callback: Mutex<Option<VoiceCallback>>,
     /// The events posted so far, to tell when each call below happened.
     posted: SharedRecorder,
     /// App, link and shortcut calls, with how many events were posted by then.
@@ -94,7 +97,10 @@ impl HostDelegate for MockDelegate {
         true
     }
     fn end_paste(&self) {}
-    fn voice_start(&self, _session: u64, _locale: Option<String>, request_id: Option<u32>) -> bool {
+    fn voice_start(&self, session: u64, _locale: Option<String>, request_id: Option<u32>) -> bool {
+        if let Some(callback) = self.voice_callback.lock().unwrap().as_ref() {
+            callback(session, request_id);
+        }
         // Starting recognition is slow; a stop sent meanwhile must wait for it.
         if let Some((started, ready)) = self.voice_gate.lock().unwrap().take() {
             started.send(()).unwrap();
@@ -116,6 +122,7 @@ impl HostDelegate for MockDelegate {
 
 struct Fixture {
     host: CoreHost,
+    shared: Arc<Shared>,
     config: HostConfig,
     delegate: Arc<MockDelegate>,
     recorder: SharedRecorder,
@@ -172,10 +179,10 @@ fn fixture_with(paced: bool) -> Fixture {
     };
     let delegate = Arc::new(MockDelegate { posted: recorder.clone(), ..MockDelegate::default() });
     let shared = Arc::new(Shared::new(config.clone(), delegate.clone(), &engine, Box::new(|| true)));
-    let host = CoreHost::with_shared(shared, Some(engine));
+    let host = CoreHost::with_shared(shared.clone(), Some(engine));
     let port = host.start().unwrap();
     let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
-    Fixture { host, config, delegate, recorder, port, _dir: dir, rt }
+    Fixture { host, shared, config, delegate, recorder, port, _dir: dir, rt }
 }
 
 type Client = tokio_tungstenite::WebSocketStream<TcpStream>;
@@ -1201,5 +1208,69 @@ fn malformed_deck_saves_echo_the_request_id_and_current_revision() {
         assert_eq!(result["id"], 42);
         assert_eq!(result["ok"], false);
         assert_eq!(result["revision"], welcome["deckRevision"]);
+    });
+}
+
+#[test]
+fn voice_delegate_can_report_a_synchronous_update_without_deadlocking() {
+    let f = fixture();
+    let callback_host = Arc::new(CoreHost::with_shared(f.shared.clone(), None));
+    let weak = Arc::downgrade(&callback_host);
+    *f.delegate.voice_callback.lock().unwrap() = Some(Box::new(move |session, request_id| {
+        let host = weak.upgrade().unwrap();
+        let (done, wait) = std::sync::mpsc::channel();
+        // A bounded callback prevents a regressed global lock from hanging the suite.
+        std::thread::spawn(move || {
+            host.voice_update(
+                session,
+                crate::api::VoiceUpdate {
+                    request_id,
+                    state: crate::protocol::VoiceState::Listening,
+                    text: Some("ready".into()),
+                    is_final: false,
+                    message: None,
+                },
+            );
+            let _ = done.send(());
+        });
+        wait.recv_timeout(Duration::from_secs(1)).expect("voice_update must return while voice_start is in flight");
+    }));
+    f.rt.block_on(async {
+        let mut ws = connect(f.port).await;
+        let code = f.host.pairing_info().link.split("#pair=").nth(1).unwrap().to_string();
+        send(&mut ws, hello("phone", json!({"method":"pair", "code":code}))).await;
+        recv_kind(&mut ws, "welcome").await;
+        send(&mut ws, json!({"t":"voiceStart", "id":8})).await;
+        let reply = recv_kind(&mut ws, "voice").await;
+        assert_eq!(reply["text"], "ready");
+        assert_eq!(reply["id"], 8);
+    });
+}
+
+#[test]
+fn a_slow_voice_start_does_not_block_another_devices_audio() {
+    let f = fixture();
+    f.rt.block_on(async {
+        let mut tablet = connect(f.port).await;
+        let code = f.host.pairing_info().link.split("#pair=").nth(1).unwrap().to_string();
+        send(&mut tablet, hello("tablet", json!({"method":"pair", "code":code}))).await;
+        recv_kind(&mut tablet, "welcome").await;
+        send(&mut tablet, json!({"t":"voiceStart", "id":1})).await;
+        wait_for_voice(&f.delegate, 1).await;
+        let mut phone = connect(f.port).await;
+        let code = f.host.pairing_info().link.split("#pair=").nth(1).unwrap().to_string();
+        send(&mut phone, hello("phone", json!({"method":"pair", "code":code}))).await;
+        recv_kind(&mut phone, "welcome").await;
+        let (started, entering) = std::sync::mpsc::channel();
+        let (release, ready) = std::sync::mpsc::channel();
+        *f.delegate.voice_gate.lock().unwrap() = Some((started, ready));
+        send(&mut phone, json!({"t":"voiceStart", "id":2})).await;
+        entering.recv_timeout(Duration::from_secs(2)).unwrap();
+        tablet.send(Message::Binary(vec![crate::protocol::binary::AUDIO, 0, 0].into())).await.unwrap();
+        send(&mut tablet, json!({"t":"ping", "id":15})).await;
+        let responsive = tokio::time::timeout(Duration::from_millis(500), recv_kind(&mut tablet, "pong")).await;
+        release.send(()).unwrap();
+        assert!(responsive.is_ok(), "another device can stream while recognition starts");
+        assert!(f.delegate.voice.lock().unwrap().contains(&"audio"));
     });
 }

@@ -138,6 +138,9 @@ pub trait HostDelegate: Send + Sync {
     fn begin_paste(&self, text: String) -> bool;
     /// Restore the clipboard saved by [`HostDelegate::begin_paste`].
     fn end_paste(&self);
+    /// May report updates synchronously through `CoreHost::voice_update`.
+    /// Start, audio and stop are serialized per session. Do not synchronously
+    /// re-enter pause/stop/config revocation while a voice operation is running.
     fn voice_start(&self, session: u64, locale: Option<String>, request_id: Option<u32>) -> bool;
     /// 16 kHz mono signed 16-bit little-endian PCM.
     fn voice_audio(&self, session: u64, pcm: Vec<u8>);

@@ -60,21 +60,25 @@ async fn voice_worker(
     mut ops: mpsc::UnboundedReceiver<VoiceOp>,
     starts: Arc<AtomicUsize>,
 ) {
+    let gate = shared.voice_gate(id);
     while let Some(op) = ops.recv().await {
         let shared = shared.clone();
         let starts = starts.clone();
-        let _ = tokio::task::spawn_blocking(move || match op {
-            VoiceOp::Start { locale, request_id, epoch } => {
-                let mut voices = shared.voices();
-                starts.fetch_sub(1, AtomicOrdering::SeqCst);
-                if shared.voice_epoch.load(AtomicOrdering::SeqCst) != epoch
-                    || shared.should_stop(id)
-                    || !shared.config().voice_available
-                {
-                    return;
-                }
-                let started = shared.delegate.voice_start(id, locale, request_id);
-                if started {
+        let gate = gate.clone();
+        let _ = tokio::task::spawn_blocking(move || {
+            let _operation = gate.lock().unwrap_or_else(|p| p.into_inner());
+            match op {
+                VoiceOp::Start { locale, request_id, epoch } => {
+                    let mut voices = shared.voices();
+                    starts.fetch_sub(1, AtomicOrdering::SeqCst);
+                    if shared.voice_epoch.load(AtomicOrdering::SeqCst) != epoch
+                        || shared.should_stop(id)
+                        || !shared.config().voice_available
+                    {
+                        return;
+                    }
+                    // Register before calling out: a delegate may synchronously
+                    // report success or failure through CoreHost::voice_update.
                     voices.active.insert(id, request_id);
                     let accepted = voices.accepted.entry(id).or_default();
                     if !accepted.contains(&request_id) {
@@ -83,31 +87,42 @@ async fn voice_worker(
                     if accepted.len() > 8 {
                         accepted.remove(0);
                     }
-                }
-                if !started {
-                    shared.send_to(
-                        id,
-                        voice(
-                            request_id,
-                            VoiceState::Unavailable,
-                            Some("Couldn't start speech recognition on the Mac."),
-                        ),
-                    );
-                }
-            }
-            VoiceOp::Stop { cancel, request_id } => {
-                let mut voices = shared.voices();
-                if cancel {
-                    if request_id.is_none() {
-                        voices.accepted.remove(&id);
-                    } else if let Some(accepted) = voices.accepted.get_mut(&id) {
-                        accepted.retain(|value| *value != request_id);
+                    drop(voices);
+                    let started = shared.delegate.voice_start(id, locale, request_id);
+                    if !started {
+                        let mut voices = shared.voices();
+                        if voices.active.get(&id) == Some(&request_id) {
+                            voices.active.remove(&id);
+                        }
+                        if let Some(accepted) = voices.accepted.get_mut(&id) {
+                            accepted.retain(|value| *value != request_id);
+                        }
+                        drop(voices);
+                        shared.send_to(
+                            id,
+                            voice(
+                                request_id,
+                                VoiceState::Unavailable,
+                                Some("Couldn't start speech recognition on the Mac."),
+                            ),
+                        );
                     }
                 }
-                if voices.active.get(&id).is_some_and(|active| request_id.is_none() || *active == request_id) {
-                    shared.delegate.voice_stop(id, cancel);
+                VoiceOp::Stop { cancel, request_id } => {
+                    let mut voices = shared.voices();
                     if cancel {
-                        voices.active.remove(&id);
+                        if request_id.is_none() {
+                            voices.accepted.remove(&id);
+                        } else if let Some(accepted) = voices.accepted.get_mut(&id) {
+                            accepted.retain(|value| *value != request_id);
+                        }
+                    }
+                    if voices.active.get(&id).is_some_and(|active| request_id.is_none() || *active == request_id) {
+                        if cancel {
+                            voices.active.remove(&id);
+                        }
+                        drop(voices);
+                        shared.delegate.voice_stop(id, cancel);
                     }
                 }
             }
@@ -850,8 +865,9 @@ impl Connection {
             (binary::AUDIO, len) if len > 1 && len % 2 == 1 => {
                 self.shared.engine(Command::Alive(self.id));
                 if self.voice.is_some() && !self.shared.interrupts.paused() && self.shared.config().voice_available {
-                    let voices = self.shared.voices();
-                    if !voices.active.contains_key(&self.id) {
+                    let gate = self.shared.voice_gate(self.id);
+                    let _operation = gate.lock().unwrap_or_else(|p| p.into_inner());
+                    if self.shared.interrupts.paused() || !self.shared.voices().active.contains_key(&self.id) {
                         return;
                     }
                     self.shared.delegate.voice_audio(self.id, data[1..].to_vec());
