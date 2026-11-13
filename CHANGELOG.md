@@ -9,6 +9,11 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-11-13
+
+More reliable typing, dictation and Deck editing, safer shell command
+shutdown, and better recovery from dropped connections.
+
 ### Mac app
 
 - Stopping the server or quitting CmdPalm now stops running shell commands and
@@ -16,12 +21,11 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - Stalled browser downloads and handshake writes now time out instead of
   holding connection slots open when a device drops off Wi-Fi.
 - Deck sequences wait for Shortcuts to finish and report failed Shortcuts.
-- Dictation starts no longer hold the shared voice lock while calling macOS;
-  other devices can continue streaming and callbacks can report results safely.
+- Starting dictation on one device no longer blocks audio from another.
 - Caps Lock is correct on the first connection and stays steady while text is
   temporarily typed with Caps Lock suppressed.
-- Device settings save without holding the settings read lock, and native
-  device and Deck changes save off the main thread.
+- Saving device settings keeps network requests responsive, and changing
+  devices or importing and resetting the Deck keeps the Mac interface responsive.
 - HTTP parsing rejects ambiguous request lines and headers, and secure proxies
   work with default ports in the Origin header. Buffered WebSocket frames are
   preserved during an upgrade.
@@ -30,8 +34,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 - Offline and reconnecting sessions precache views and sheets, isolate cached
   builds, preserve the previous shell across interrupted updates, and offer
-  retry after a failed tab load. Shared transactions order concurrent workers'
-  shell fetches without relying on timer precision or broadcast delivery.
+  retry after a failed tab load. Overlapping updates keep the newest complete
+  cached interface available.
 - Pausing control on the Mac now stops held media repeat, scroll-strip hold,
   held buttons and keys, and clears trackpad drag lock on the phone.
 - If another device deletes a Deck page while you are editing one of its
@@ -718,7 +722,7 @@ The first release.
   device, so they survive a cleared browser, and you can copy them from
   another device.
 
-[Unreleased]: https://github.com/rahatsagor/CmdPalm/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/rahatsagor/CmdPalm/compare/v0.8.1...HEAD
 [0.7.0]: https://github.com/rahatsagor/CmdPalm/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/rahatsagor/CmdPalm/compare/v0.5.2...v0.6.0
 [0.5.2]: https://github.com/rahatsagor/CmdPalm/compare/v0.5.1...v0.5.2
@@ -732,3 +736,4 @@ The first release.
 [0.1.1]: https://github.com/rahatsagor/CmdPalm/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/rahatsagor/CmdPalm/releases/tag/v0.1.0
 [0.8.0]: https://github.com/rahatsagor/CmdPalm/compare/v0.7.0...v0.8.0
+[0.8.1]: https://github.com/rahatsagor/CmdPalm/compare/v0.8.0...v0.8.1
