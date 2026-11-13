@@ -86,8 +86,9 @@ function fnv1a(text: string): number {
 
 // The built-in keyboards get fresh random ids until first edited, so ids alone
 // never count as a change.
-const withoutIds = (key: string, value: unknown) => (key === 'id' ? undefined : value)
-const signature = (payload: SyncedSettings) => fnv1a(JSON.stringify(payload.settings) + JSON.stringify(payload.keyboards, withoutIds))
+const signature = (payload: SyncedSettings) => fnv1a(JSON.stringify(payload.settings) + JSON.stringify(
+  payload.keyboards.map((board) => ({ ...board, id: undefined, keys: board.keys.map((key) => ({ ...key, id: undefined })) })),
+))
 
 interface Meta {
   /** When the person last changed a synced setting here, or 0 if never. */
@@ -102,6 +103,8 @@ let macAt = 0
 let saveTimer: ReturnType<typeof setTimeout> | undefined
 let changedAt = 0
 let warnedTooLarge = false
+let retryTimer: ReturnType<typeof setTimeout> | undefined
+let retryDelay = SAVE_DELAY_MS
 
 function loadMeta(): Meta {
   try {
@@ -144,6 +147,7 @@ function push() {
     warnedTooLarge = true
     return
   }
+  warnedTooLarge = false
   if (send({ t: 'settingsSave', settings: payload, updatedAt: meta.updatedAt })) macAt = meta.updatedAt
 }
 
@@ -350,6 +354,9 @@ function parseDevices(raw: unknown): SettingsSource[] {
 function handle(message: ServerMessage) {
   switch (message.t) {
     case 'welcome':
+      clearTimeout(retryTimer)
+      retryTimer = undefined
+      retryDelay = SAVE_DELAY_MS
       welcomed(parseSaved(message.settings))
       break
     case 'settings':
@@ -362,6 +369,15 @@ function handle(message: ServerMessage) {
       copier.failed = false
       break
     case 'notice':
+      if ((message.level === 'error' && message.code === 'settings') || (message.code === 'busy' && meta.updatedAt > 0)) {
+        macAt = 0
+        clearTimeout(retryTimer)
+        retryTimer = setTimeout(() => {
+          retryTimer = undefined
+          push()
+        }, retryDelay)
+        retryDelay = Math.min(retryDelay * 2, 60_000)
+      }
       if (message.code !== 'settings') break
       // The notice itself is already shown.
       if (pendingCopy) finishCopy(null)
@@ -384,6 +400,12 @@ export function installSettingsSync() {
   meta = loadMeta()
   watch([() => SYNCED_KEYS.map((key) => settings[key]), () => keyboards.boards], schedule, { deep: true })
   onMessage(handle)
+  watch(() => state.status, (status) => {
+    if (status !== 'connected') {
+      clearTimeout(retryTimer)
+      retryTimer = undefined
+    }
+  })
   document.addEventListener('visibilitychange', () => {
     // Closing the app shouldn't lose a change still waiting out the delay.
     if (document.visibilityState === 'hidden' && saveTimer !== undefined) {

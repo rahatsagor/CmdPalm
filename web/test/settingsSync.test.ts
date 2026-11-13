@@ -377,3 +377,16 @@ describe('relative times', () => {
     expect(sync.ago(NOW - 86_400_000, NOW)).toBe('yesterday')
   })
 })
+
+
+it.each(['settings', 'busy'] as const)('retries a settings backup after a %s failure', async (code) => {
+  const socket = connect()
+  prefs.settings.theme = 'dark'
+  await settle()
+  expect(saves(socket)).toHaveLength(1)
+  const first = saves(socket)[0]
+  socket.receive({ t: 'notice', code, level: code === 'settings' ? 'error' : 'warning', message: 'The backup was not saved.' })
+  await settle()
+  expect(saves(socket)).toHaveLength(2)
+  expect(saves(socket)[1]).toEqual(first)
+})
