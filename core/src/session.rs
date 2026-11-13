@@ -600,7 +600,7 @@ impl Connection {
         let Ok(message) = serde_json::from_str::<ClientMessage>(text) else {
             self.shared.engine(Command::Alive(self.id));
             tracing::debug!(session = self.id, "ignoring malformed message");
-            return unreadable_reply(text);
+            return unreadable_reply(text, self.shared.state().deck_revision);
         };
         if self.shared.interrupts.paused()
             && let Some(reply) = paused_reply(&message)
@@ -873,7 +873,7 @@ const PAUSED: &str = "Control is paused on the Mac.";
 /// version, still gets an answer where the phone waits for one: an action
 /// would otherwise count as done once the phone stops waiting, and a deck
 /// change would stay on screen without being saved.
-fn unreadable_reply(text: &str) -> Option<ServerMessage> {
+fn unreadable_reply(text: &str, revision: u64) -> Option<ServerMessage> {
     let value: serde_json::Value = serde_json::from_str(text).ok()?;
     match value.get("t")?.as_str()? {
         "action" => Some(ServerMessage::ActionResult {
@@ -881,11 +881,14 @@ fn unreadable_reply(text: &str) -> Option<ServerMessage> {
             ok: false,
             message: Some("The Mac couldn’t read that action. Reload CmdPalm on this device and try again.".into()),
         }),
-        "deckSave" => Some(notice(
-            NoticeLevel::Error,
-            "deck",
-            "The Mac couldn’t read the changed deck, so it wasn’t saved. Reload CmdPalm on this device and try again.",
-        )),
+        "deckSave" => {
+            let message = "The Mac couldn’t read the changed deck, so it wasn’t saved. Reload CmdPalm on this device and try again.";
+            let id = value.get("id").and_then(serde_json::Value::as_u64).and_then(|id| u32::try_from(id).ok());
+            Some(match id {
+                Some(id) => ServerMessage::DeckSaved { id, ok: false, revision, message: Some(message.into()) },
+                None => notice(NoticeLevel::Error, "deck", message),
+            })
+        }
         _ => None,
     }
 }

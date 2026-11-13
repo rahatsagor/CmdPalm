@@ -1187,3 +1187,19 @@ fn websocket_upgrade_preserves_an_already_buffered_hello() {
         assert_eq!(recv_kind(&mut ws, "welcome").await["v"], 1);
     });
 }
+
+#[test]
+fn malformed_deck_saves_echo_the_request_id_and_current_revision() {
+    let f = fixture();
+    f.rt.block_on(async {
+        let mut ws = connect(f.port).await;
+        let code = f.host.pairing_info().link.split("#pair=").nth(1).unwrap().to_string();
+        send(&mut ws, hello("phone", json!({"method":"pair", "code":code}))).await;
+        let welcome = recv_kind(&mut ws, "welcome").await;
+        send(&mut ws, json!({"t":"deckSave", "id":42, "deck":{"version":1, "pages":"unreadable"}})).await;
+        let result = recv_kind(&mut ws, "deckSaved").await;
+        assert_eq!(result["id"], 42);
+        assert_eq!(result["ok"], false);
+        assert_eq!(result["revision"], welcome["deckRevision"]);
+    });
+}
