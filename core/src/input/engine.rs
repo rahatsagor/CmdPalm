@@ -125,6 +125,12 @@ impl InputEngine {
         let _ = self.tx.send(command);
     }
 
+    pub fn caps_lock(&self) -> Option<bool> {
+        let (tx, rx) = mpsc::channel();
+        self.tx.send(Command::CapsLock(tx)).ok()?;
+        rx.recv_timeout(Duration::from_secs(1)).ok().flatten()
+    }
+
     /// Block until every command queued so far has been processed.
     pub fn flush(&self) {
         let (tx, rx) = mpsc::channel();
@@ -336,6 +342,7 @@ pub(crate) struct Engine<S: EventSink> {
     last_notice: HashMap<Notice, Instant>,
     /// Caps Lock as devices were last told.
     caps_lock: Option<bool>,
+    suppressing_caps_lock: bool,
     ended: VecDeque<SessionId>,
     pub(crate) interrupts: Arc<Interrupts>,
     /// Set while running, so typing can serve other devices between characters.
@@ -365,6 +372,7 @@ impl<S: EventSink> Engine<S> {
             last_watchdog: Instant::now(),
             last_notice: HashMap::new(),
             caps_lock: None,
+            suppressing_caps_lock: false,
             ended: VecDeque::new(),
             rx: None,
             backlog: VecDeque::new(),
@@ -512,6 +520,9 @@ impl<S: EventSink> Engine<S> {
             }
             Command::Tuning(tuning) => self.tuning = tuning,
             Command::Layout(layout) => self.layout = layout,
+            Command::CapsLock(reply) => {
+                let _ = reply.send(self.sink.caps_lock());
+            }
             Command::Flush(reply) => {
                 let _ = reply.send(());
             }
@@ -563,7 +574,8 @@ impl<S: EventSink> Engine<S> {
         }
         // Checked at least once a second, so a phone shows Caps Lock turned
         // on from the Mac's own keyboard too.
-        if let Some(on) = self.sink.caps_lock()
+        if !self.suppressing_caps_lock
+            && let Some(on) = self.sink.caps_lock()
             && self.caps_lock != Some(on)
         {
             self.caps_lock = Some(on);
@@ -837,12 +849,14 @@ impl<S: EventSink> Engine<S> {
             && text.chars().any(char::is_alphabetic)
             && self.sink.caps_lock() == Some(true);
         if caps {
+            self.suppressing_caps_lock = true;
             self.sink.post(Synth::SetCapsLock(false));
             self.sink.post(Synth::Pause(MOD_SETTLE));
         }
         self.type_segments(session, text, mode);
         if caps {
             self.sink.post(Synth::SetCapsLock(true));
+            self.suppressing_caps_lock = false;
         }
     }
 
@@ -2217,6 +2231,30 @@ mod tests {
         engine.handle(text("h", TypeMode::Unicode), now);
         engine.handle(text("42", TypeMode::Keystrokes), now);
         assert!(!engine.sink.events.iter().any(|e| matches!(e, Synth::SetCapsLock(_))));
+    }
+
+    #[test]
+    fn runtime_typing_hides_synthetic_caps_lock_changes() {
+        let notices = Arc::new(Mutex::new(Vec::new()));
+        let captured = notices.clone();
+        let mut engine = Engine::new(
+            Caps { events: Vec::new(), on: true },
+            Box::new(move |notice| captured.lock().unwrap().push(notice)),
+        );
+        engine.layout.chars.insert('h', (KEY_A, 0));
+        let (tx, rx) = mpsc::channel();
+        engine.rx = Some(rx);
+        engine.tick(Instant::now());
+        engine.handle(
+            Command::Input { session: A, input: Input::Text { text: "hhh".into(), mode: TypeMode::Keystrokes } },
+            Instant::now(),
+        );
+        engine.tick(Instant::now());
+        assert_eq!(*notices.lock().unwrap(), [Notice::CapsLock(true)]);
+        assert!(engine.sink.on);
+        drop(tx);
+        let input = InputEngine::spawn(|| Caps { events: Vec::new(), on: true }, Box::new(|_| {}));
+        assert_eq!(input.caps_lock(), Some(true), "the initial state does not wait for the first watchdog tick");
     }
 
     #[test]

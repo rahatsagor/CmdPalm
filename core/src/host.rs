@@ -147,7 +147,7 @@ impl Shared {
                 layout: None,
                 volume: None,
                 paused: false,
-                caps_lock: false,
+                caps_lock: engine.caps_lock().unwrap_or(false),
                 sessions: HashMap::new(),
                 approvals: HashMap::new(),
             }),

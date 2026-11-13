@@ -469,6 +469,8 @@ pub enum Command {
     SetPaused(bool),
     Tuning(Tuning),
     Layout(LayoutMap),
+    /// Snapshot the system state before the first welcome is built.
+    CapsLock(std::sync::mpsc::Sender<Option<bool>>),
     /// Reply once all previously queued commands are processed.
     Flush(std::sync::mpsc::Sender<()>),
     Shutdown,
