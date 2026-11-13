@@ -8,6 +8,7 @@ import { haptic, keyHaptic } from '@/lib/haptics'
 import { buttonDown, buttonUp, keyDown, keyUp, modifiers, pressMedia } from '@/lib/input'
 import { ALL_MODS, Key } from '@/lib/keys'
 import { symbol } from '@/lib/symbols'
+import { settings } from '@/lib/settings'
 import { useTouchKeys } from '@/lib/touchKeys'
 import CustomKeyEditor from './CustomKeyEditor.vue'
 import HapticSwitch from './HapticSwitch.vue'
@@ -123,6 +124,8 @@ watch(
   () => props.board.keys.map((k) => `${k.x},${k.y},${k.w},${k.h}`).join(' ') + `${props.board.cols}x${props.board.rows}`,
   () => touch.invalidate(),
 )
+
+watch(() => [settings.sidewaysKeyboard, settings.sidewaysTurn], () => touch.invalidate(), { flush: 'post' })
 
 const editingKey = ref<{ key: CustomKey; isNew: boolean } | null>(null)
 const empty = computed(() => (props.editing ? emptyCells(props.board) : []))

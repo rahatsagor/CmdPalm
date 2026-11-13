@@ -184,6 +184,7 @@ const kindOf = (step: Action) => ACTION_KINDS.find((k) => k.kind === step.kind)
           :options="[
             { value: 'toggle', label: 'Show / hide' },
             { value: 'open', label: 'Open' },
+            { value: 'hide', label: 'Hide' },
             { value: 'quit', label: 'Quit' },
           ]"
           @update:model-value="(op: AppOp) => patch({ op })"

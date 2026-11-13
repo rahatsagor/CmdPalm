@@ -122,6 +122,7 @@ const touch = useTouchKeys(root, {
 })
 // A layout change (ANSI to ISO) moves keys without resizing the keyboard.
 watch(rows, () => touch.invalidate())
+watch(() => [settings.sidewaysKeyboard, settings.sidewaysTurn], () => touch.invalidate(), { flush: 'post' })
 
 const caps = computed(() => {
   const map = new Map<number, { main: string; alt: string }>()

@@ -74,10 +74,10 @@ function onScroll() {
   }, 60)
 }
 
-// Runs on every deck change, as the getter returns a new array each time:
-// another device can also reorder the pages.
+// Reposition only when the page order or edit mode changes, preserving a
+// swipe in progress while another device changes a button.
 watch(
-  () => [pages.value.length, editing.value],
+  () => JSON.stringify([editing.value, pages.value.map((p) => p.id)]),
   async () => {
     await nextTick()
     selectPage(index.value, false)
