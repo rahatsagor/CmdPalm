@@ -286,20 +286,17 @@ brew install --cask rahatsagor/tap/cmdpalm
 
 1. Download [CmdPalm.dmg](https://github.com/rahatsagor/CmdPalm/releases/latest/download/CmdPalm.dmg)
    and drag CmdPalm into Applications.
-2. CmdPalm is free and open source, and it isn't notarized by Apple yet, so
-   macOS asks you to confirm the first time it opens. Run this once in
-   Terminal:
+2. Open CmdPalm from Applications. If macOS blocks it, click **Done** or
+   **OK**, then go to **System Settings → Privacy & Security** and click
+   **Open Anyway** under Security. Confirm the next prompt and authenticate
+   if asked. The button appears only after you try opening the app.
+3. Look for CmdPalm in the menu bar and continue with setup.
 
-   ```sh
-   xattr -dr com.apple.quarantine /Applications/CmdPalm.app
-   ```
+CmdPalm isn’t notarized by Apple yet. The
+[illustrated installation guide](https://cmdpalm.app/download/) walks through
+first-launch approval and includes a Terminal alternative. Only approve a
+copy you intentionally downloaded from the official releases.
 
-   Or open CmdPalm, then go to **System Settings → Privacy & Security** and
-   click **Open Anyway**.
-3. Open CmdPalm from Applications. It appears in the menu bar.
-
-You only do this once. Updates install from inside the app, and Homebrew
-skips this step for you.
 
 ## Get started in a minute
 
