@@ -93,6 +93,7 @@ Set `CMDPALM_HOST` if the host runs somewhere other than `127.0.0.1:8790`.
 CI runs all of these on every push.
 
 ```sh
+export CARGO_HOME="$(cd "${CARGO_HOME:-$HOME/.cargo}" && pwd -P)"
 cargo fmt --all --check
 cargo clippy --all-targets -- -D warnings
 cargo test
@@ -111,6 +112,9 @@ bun test ./scripts/tests
 cd apple
 xcodebuild test -project CmdPalm.xcodeproj -scheme CmdPalm -destination "platform=macOS,arch=arm64"
 ```
+
+The canonical `CARGO_HOME` path also works when `~/.cargo` is a symlink.
+UniFFI's binding generator needs its template paths to match Cargo's paths.
 
 ## App icon
 

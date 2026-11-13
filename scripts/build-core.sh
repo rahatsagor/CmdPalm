@@ -12,8 +12,8 @@ OUT="$ROOT/apple/Generated"
 export PATH="$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
 # Cargo reports paths through ~/.cargo's real location; when it is a symlink
 # uniffi-bindgen cannot match crate sources without this.
-if [[ -z "${CARGO_HOME:-}" && -d "$HOME/.cargo" ]]; then
-  CARGO_HOME="$(cd "$HOME/.cargo" && pwd -P)"
+if [[ -d "${CARGO_HOME:-$HOME/.cargo}" ]]; then
+  CARGO_HOME="$(cd "${CARGO_HOME:-$HOME/.cargo}" && pwd -P)"
   export CARGO_HOME
 fi
 

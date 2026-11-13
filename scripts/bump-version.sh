@@ -17,6 +17,7 @@ sed -i '' -E "1,/^version = /s/^version = \".*\"/version = \"$VERSION\"/" "$ROOT
 sed -i '' -E "s/^(  \"version\": )\".*\"/\1\"$VERSION\"/" "$ROOT/web/package.json"
 sed -i '' -E "s/^(    MARKETING_VERSION: )\".*\"/\1\"$VERSION\"/" "$ROOT/apple/project.yml"
 (cd "$ROOT" && cargo metadata --format-version 1 >/dev/null)
+bun "$ROOT/scripts/release-notes.ts" links "$VERSION"
 
 if ! grep -q "^## \[$VERSION\]" "$ROOT/CHANGELOG.md"; then
   echo "note: add a '## [$VERSION]' section to CHANGELOG.md before tagging."

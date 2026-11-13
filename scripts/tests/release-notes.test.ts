@@ -16,6 +16,7 @@ import {
   sign,
   toHtml,
   unwrap,
+  updateChangelogLinks,
 } from '../release-notes'
 
 const SCRIPTS = resolve(import.meta.dir, '..')
@@ -33,9 +34,18 @@ describe('release versions', () => {
       join(root, 'apple/project.yml'),
       'options:\n  deploymentTarget:\n    macOS: "15.0"\nsettings:\n  base:\n    MARKETING_VERSION: "0.1.0"\n',
     )
-    writeFileSync(join(root, 'CHANGELOG.md'), '## [0.1.0] - 2026-10-09\n\n- First release.\n')
+    writeFileSync(join(root, 'CHANGELOG.md'), '## [0.1.0] - 2026-10-09\n\n- First release.\n\n[Unreleased]: https://github.com/rahatsagor/CmdPalm/compare/v0.1.0...HEAD\n[0.1.0]: https://github.com/rahatsagor/CmdPalm/releases/tag/v0.1.0\n')
   })
   afterEach(() => rmSync(root, { recursive: true, force: true }))
+
+  test('stale changelog links are rejected and can be repaired', () => {
+    const path = join(root, 'CHANGELOG.md')
+    writeFileSync(path, readFileSync(path, 'utf8').replace('v0.1.0...HEAD', 'v0.0.9...HEAD'))
+    expect(() => checkVersion('0.1.0', root)).toThrow('[Unreleased]')
+    updateChangelogLinks('0.1.0', root)
+    checkVersion('0.1.0', root)
+    expect(readFileSync(path, 'utf8')).toContain('[Unreleased]: https://github.com/rahatsagor/CmdPalm/compare/v0.1.0...HEAD')
+  })
 
   test('consistent metadata passes', () => {
     checkVersion('0.1.0', root)
@@ -196,4 +206,9 @@ describe('Sparkle keys', () => {
       'archive signature verification failed',
     )
   })
+})
+
+test('HTML release notes keep code literal and escape link attributes', () => {
+  expect(toHtml('`**literal** [link](https://example.com)`')).toBe('<p><code>**literal** [link](https://example.com)</code></p>')
+  expect(toHtml('[safe](https://example.com/"title="x)')).toBe('<p><a href="https://example.com/&quot;title=&quot;x">safe</a></p>')
 })

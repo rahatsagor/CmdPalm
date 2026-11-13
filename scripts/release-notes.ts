@@ -12,6 +12,7 @@ const USAGE = `Release tooling that reads CHANGELOG.md.
     release-notes.ts notes 1.2.0              Markdown notes for a GitHub release
     release-notes.ts appcast 1.2.0 ZIP OUT    Sparkle appcast with HTML notes
     release-notes.ts check 1.2.0              Validate versions and release notes
+    release-notes.ts links 1.2.0              Update changelog comparison links
     release-notes.ts check-keys               Validate matching Sparkle keys
 
 The appcast is written unsigned; sign it (and the archive) with Sparkle's
@@ -72,14 +73,47 @@ export function section(version: string, root = ROOT): string {
   return body
 }
 
+function escapeHtml(text: string): string {
+  return text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;')
+}
+
 function inline(text: string): string {
-  return text
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replace(/`([^`]+)`/g, '<code>$1</code>')
-    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-    .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2">$1</a>')
+  // Tokenize source Markdown before rendering so code spans and generated
+  // attributes can never be reinterpreted by a later replacement.
+  const tokens = /`([^`]+)`|\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)|\*\*([^*]+)\*\*/g
+  let html = ''
+  let end = 0
+  for (const match of text.matchAll(tokens)) {
+    html += escapeHtml(text.slice(end, match.index))
+    if (match[1] !== undefined) html += `<code>${escapeHtml(match[1])}</code>`
+    else if (match[2] !== undefined) html += `<a href="${escapeHtml(match[3]!)}">${inline(match[2])}</a>`
+    else html += `<strong>${inline(match[4]!)}</strong>`
+    end = match.index + match[0].length
+  }
+  return html + escapeHtml(text.slice(end))
+}
+
+function changelogLinks(version: string, text: string): Record<string, string> {
+  const releases = [...text.matchAll(/^## \[(\d+\.\d+\.\d+)\]/gm)].map((m) => m[1]!)
+  const index = releases.indexOf(version)
+  const previous = releases[index < 0 ? 0 : index + 1]
+  const base = `https://github.com/${REPO}`
+  return {
+    Unreleased: `${base}/compare/v${version}...HEAD`,
+    [version]: previous ? `${base}/compare/v${previous}...v${version}` : `${base}/releases/tag/v${version}`,
+  }
+}
+
+export function updateChangelogLinks(version: string, root = ROOT): void {
+  buildNumber(version)
+  const path = join(root, 'CHANGELOG.md')
+  let text = readFileSync(path, 'utf8')
+  for (const [label, url] of Object.entries(changelogLinks(version, text))) {
+    const line = new RegExp(`^\\[${escapeRegExp(label)}\\]:.*$`, 'm')
+    if (line.test(text)) text = text.replace(line, `[${label}]: ${url}`)
+    else text = `${text.trimEnd()}\n[${label}]: ${url}\n`
+  }
+  writeFileSync(path, text)
 }
 
 /** Just enough Markdown for changelog sections: headings, lists, paragraphs. */
@@ -164,6 +198,11 @@ export function checkVersion(version: string, root = ROOT): void {
     if (recorded !== version) fail(`tag version ${version} does not match ${recorded} in ${filename}`)
   }
   section(version, root)
+  const text = readFileSync(join(root, 'CHANGELOG.md'), 'utf8')
+  const links = new Map([...text.matchAll(/^\[([^\]]+)\]:\s*(\S+)$/gm)].map((match) => [match[1], match[2]]))
+  for (const [label, url] of Object.entries(changelogLinks(version, text))) {
+    if (links.get(label) !== url) fail(`CHANGELOG.md [${label}] link must be ${url}`)
+  }
 }
 
 /** Strict base64: no stray characters such as a pasted newline, and correct
@@ -281,6 +320,8 @@ function main(args: string[]): void {
   } else if (command === 'check' && rest.length === 1) {
     checkVersion(rest[0]!)
     console.log(`Release metadata for ${rest[0]} is consistent`)
+  } else if (command === 'links' && rest.length === 1) {
+    updateChangelogLinks(rest[0]!)
   } else if (command === 'check-keys' && rest.length === 0) {
     checkKeys()
     console.log('Sparkle keys match')
