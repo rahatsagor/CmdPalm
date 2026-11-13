@@ -21,6 +21,7 @@
     "@types/node": "^26.6.6",
     "@vitejs/plugin-vue": "^6.0.10",
     "@vue/test-utils": "^2.5.1",
+    "fake-indexeddb": "^6.2.8",
     "happy-dom": "^21.0.4",
     "oxlint": "^1.91.0",
     "tailwindcss": "^4.3.4",

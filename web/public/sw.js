@@ -6,7 +6,6 @@
 const STATIC_CACHE = 'cmdpalm-static'
 const SHELL_PREFIX = 'cmdpalm-shell-'
 const LEGACY_CACHE = 'cmdpalm-shell'
-const ORDER_CHANNEL = 'cmdpalm-shell-order'
 const MAX_SHELL_CACHES = 3
 const OFFLINE = '/offline.html'
 const ROOT = '/'
@@ -37,53 +36,80 @@ async function ensureCached(cache, paths) {
   )
 }
 
-// Lamport clock synchronized across worker instances via BroadcastChannel (and
-// hydrated from CacheStorage when a sleeping worker wakes up), so request-start
-// order is assigned synchronously before any async cache or network I/O begins.
-let latestStartOrder = 0
-const orderChannel = typeof BroadcastChannel === 'function' ? new BroadcastChannel(ORDER_CHANNEL) : null
-if (orderChannel) {
-  orderChannel.addEventListener('message', (event) => {
-    const data = event.data
-    if (!data || typeof data !== 'object') return
-    if (typeof data.order === 'number' && Number.isFinite(data.order) && data.order > latestStartOrder) {
-      latestStartOrder = data.order
-    }
-    if (data.sync === true && latestStartOrder > 0) {
-      orderChannel.postMessage({ order: latestStartOrder })
-    }
-  })
-  // Ask any already-running worker instance for its latest order immediately on boot.
-  orderChannel.postMessage({ sync: true })
-}
-
-function wallMicros() {
-  if (typeof performance === 'object' && performance && typeof performance.now === 'function' && Number.isFinite(performance.timeOrigin)) {
-    return Math.floor((performance.timeOrigin + performance.now()) * 1000)
-  }
-  return Date.now() * 1000
-}
-
-/** Allocate a strictly monotonic request-start order synchronously, before any await. */
-function allocateStartOrder() {
-  latestStartOrder = Math.max(wallMicros(), latestStartOrder + 1)
-  const order = latestStartOrder
-  if (orderChannel) orderChannel.postMessage({ order })
-  return order
-}
-
+// Per-worker publication stays serial. Cross-worker fetch order comes from an
+// IndexedDB read/write transaction, committed before issuing the HTTP request.
 let shellEpoch = 0
-let latestNavigationOrder = 0
 let shellQueue = Promise.resolve()
+let orderDatabase
 
-if (orderChannel) {
-  orderChannel.addEventListener('message', (event) => {
-    const data = event.data
-    if (!data || typeof data !== 'object') return
-    if (data.kind === 'navigate' && typeof data.order === 'number' && data.order > latestNavigationOrder) {
-      latestNavigationOrder = data.order
+function openOrderDatabase() {
+  orderDatabase ??= new Promise((resolve, reject) => {
+    const request = indexedDB.open('cmdpalm-shell-order', 1)
+    request.onupgradeneeded = () => request.result.createObjectStore('state')
+    request.onerror = () => reject(request.error)
+    request.onblocked = () => reject(new Error('Cache order database is blocked'))
+    request.onsuccess = () => {
+      const database = request.result
+      database.onversionchange = () => {
+        database.close()
+        orderDatabase = undefined
+      }
+      resolve(database)
     }
+  }).catch((error) => {
+    orderDatabase = undefined
+    throw error
   })
+  return orderDatabase
+}
+
+async function updateOrder(key, update) {
+  const database = await openOrderDatabase()
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction('state', 'readwrite')
+    const store = transaction.objectStore('state')
+    const request = store.get(key)
+    let next
+    request.onsuccess = () => {
+      next = update(request.result)
+      store.put(next, key)
+    }
+    transaction.oncomplete = () => resolve(next)
+    transaction.onabort = () => reject(transaction.error ?? new Error('Cache order transaction aborted'))
+    transaction.onerror = () => reject(transaction.error)
+  })
+}
+
+async function cachedOrder(name) {
+  const database = await openOrderDatabase()
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction('state', 'readonly')
+    const request = transaction.objectStore('state').get(name)
+    request.onsuccess = () => resolve(request.result)
+    request.onerror = () => reject(request.error)
+  })
+}
+
+async function allocateStartOrder() {
+  // Migration reads precede fetch, so delayed storage cannot attach a new order
+  // to a response already obtained from an older build.
+  let seed = 0
+  for (const name of await shellCaches()) {
+    const meta = await readMeta(await caches.open(name))
+    seed = Math.max(seed, meta.startedAt)
+  }
+  return updateOrder('clock', (current) => Math.max(Number.isSafeInteger(current) ? current : 0, seed) + 1)
+}
+
+async function orderOrNull(work) {
+  let timer
+  try {
+    return await Promise.race([work, new Promise((resolve) => { timer = setTimeout(() => resolve(null), 500) })])
+  } catch {
+    return null
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 function enqueueShell(work) {
@@ -108,7 +134,6 @@ async function readMeta(cache) {
     const parsed = JSON.parse(raw)
     if (parsed && typeof parsed === 'object') {
       const startedAt = Number.isFinite(parsed.startedAt) ? parsed.startedAt : 0
-      if (startedAt > latestStartOrder) latestStartOrder = startedAt
       return {
         startedAt,
         updatedAt: Number.isFinite(parsed.updatedAt) ? parsed.updatedAt : 0,
@@ -119,17 +144,7 @@ async function readMeta(cache) {
   }
   const fallback = Number(raw)
   const scaled = Number.isFinite(fallback) ? fallback * 1000 : 0
-  if (scaled > latestStartOrder) latestStartOrder = scaled
   return { startedAt: scaled, updatedAt: Number.isFinite(fallback) ? fallback : 0 }
-}
-
-async function hydrateOrderFromStorage() {
-  const staticCache = await caches.open(STATIC_CACHE)
-  await readMeta(staticCache)
-  for (const name of await shellCaches()) {
-    const cache = await caches.open(name)
-    await readMeta(cache)
-  }
 }
 
 async function writeMeta(cache, startedAt) {
@@ -138,12 +153,8 @@ async function writeMeta(cache, startedAt) {
     startedAt: Math.max(startedAt, current.startedAt),
     updatedAt: Math.max(Date.now(), current.updatedAt),
   }
-  if (next.startedAt > latestStartOrder) latestStartOrder = next.startedAt
   await cache.put(SHELL_META, new Response(JSON.stringify(next)))
 }
-
-// Hydrate `latestStartOrder` on worker startup in case all previous workers had closed.
-const hydration = hydrateOrderFromStorage().catch(() => {})
 
 /** Check whether `page` has every entry asset inside `cache`. */
 async function completeIn(cache, page) {
@@ -161,7 +172,7 @@ async function newestCompleteShell() {
     const cache = await caches.open(name)
     const page = await cache.match(ROOT)
     if (!page || !(await completeIn(cache, page))) continue
-    const { startedAt } = await readMeta(cache)
+    const { startedAt } = (await orderOrNull(cachedOrder(name))) ?? await readMeta(cache)
     if (startedAt >= bestOrder) {
       bestOrder = startedAt
       bestPage = page
@@ -185,7 +196,7 @@ async function pruneShellCaches(keepName) {
   const now = Date.now()
   for (const name of names) {
     const cache = await caches.open(name)
-    const { startedAt, updatedAt } = await readMeta(cache)
+    const { startedAt, updatedAt } = (await orderOrNull(cachedOrder(name))) ?? await readMeta(cache)
     const page = await cache.match(ROOT)
     if (page && (await completeIn(cache, page))) {
       complete.push({ name, startedAt })
@@ -225,7 +236,7 @@ async function pruneShellCaches(keepName) {
 }
 
 async function publishShell(response, html, epoch, startedAt) {
-  if (epoch !== shellEpoch || startedAt < latestNavigationOrder) return
+  if (epoch !== shellEpoch) return
   const entryAssets = assetsOf(html)
   const name = shellCacheName(html, entryAssets)
   const cache = await caches.open(name)
@@ -236,11 +247,13 @@ async function publishShell(response, html, epoch, startedAt) {
   // publishing ROOT, so neither overlapping navigations nor another worker
   // instance can overwrite or delete a sibling build's files.
   await ensureCached(cache, entryAssets)
-  if (epoch !== shellEpoch || startedAt < latestNavigationOrder) return
+  if (epoch !== shellEpoch) return
   await writeMeta(cache, startedAt)
   await cache.put(ROOT, response)
-  const staticCache = await caches.open(STATIC_CACHE)
-  await writeMeta(staticCache, startedAt)
+  await updateOrder(name, (current) => ({
+    startedAt: Math.max(startedAt, current?.startedAt ?? 0),
+    updatedAt: Date.now(),
+  }))
   const matchesBuild = PRECACHE_ASSETS.length && entryAssets.every((p) => PRECACHE_ASSETS.includes(p))
   if (matchesBuild) await ensureCached(cache, PRECACHE_ASSETS).catch(() => {})
   await pruneShellCaches(name)
@@ -253,10 +266,9 @@ async function precache() {
   const staticCache = await caches.open(STATIC_CACHE)
   await staticCache.addAll([OFFLINE, '/icon.svg'])
   await ensureCached(staticCache, ['/manifest.webmanifest', '/voice-worklet.js', '/apple-touch-icon.png', '/icon-192.png', '/icon-512.png']).catch(() => {})
-  await hydration
-  const startedAt = allocateStartOrder()
+  const startedAt = await orderOrNull(allocateStartOrder())
   const response = await fetch(ROOT, { cache: 'no-store' })
-  if (!response.ok || epoch !== shellEpoch) return
+  if (!response.ok || epoch !== shellEpoch || startedAt === null) return
   const html = await response.clone().text()
   if (epoch !== shellEpoch) return
   await enqueueShell(() => publishShell(response, html, epoch, startedAt))
@@ -305,14 +317,11 @@ async function respond(event) {
     if (cached) return cached
   }
   const epoch = request.mode === 'navigate' ? ++shellEpoch : shellEpoch
-  let startedAt = 0
-  if (request.mode === 'navigate') {
-    startedAt = allocateStartOrder()
-    latestNavigationOrder = Math.max(latestNavigationOrder, startedAt)
-    if (orderChannel) orderChannel.postMessage({ kind: 'navigate', order: startedAt })
-  }
+  const startedAt = request.mode === 'navigate' ? await orderOrNull(allocateStartOrder()) : null
   const network = fetch(request).then((response) => {
-    if (response.ok) event.waitUntil(store(request, response.clone(), epoch, startedAt).catch(() => {}))
+    if (response.ok && (request.mode !== 'navigate' || startedAt !== null)) {
+      event.waitUntil(store(request, response.clone(), epoch, startedAt).catch(() => {}))
+    }
     return response
   })
   try {

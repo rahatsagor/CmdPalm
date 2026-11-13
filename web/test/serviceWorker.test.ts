@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { IDBFactory } from 'fake-indexeddb'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const SW_SOURCE = readFileSync(resolve(import.meta.dirname, '../public/sw.js'), 'utf8')
@@ -172,6 +173,7 @@ const openChannels: BroadcastChannel[] = []
 
 beforeEach(() => {
   vi.resetModules()
+  vi.stubGlobal('indexedDB', new IDBFactory())
   sessionStorage.clear()
 })
 
@@ -480,13 +482,13 @@ describe('service worker offline and update caching', () => {
       try {
         await (await active.dispatchFetch('/?warmup', 'navigate')).settled
         blockNextShell = true
-        const olderNavigation = await active.dispatchFetch('/?old', 'navigate')
+        const olderNavigation = active.dispatchFetch('/?old', 'navigate')
         await waitingOnStorage
         version = 2
         const installing = bootWorker(['/assets/index-v2.js'], caches, withChannel)
         await installing.install()
         release()
-        await olderNavigation.settled
+        await (await olderNavigation).settled
         await installing.activate()
         online = false
         const offline = await installing.dispatchFetch('/', 'navigate')
@@ -597,4 +599,75 @@ describe('stale build reload guard', () => {
       vi.useRealTimers()
     }
   })
+})
+
+it('keeps newer build selection with a coarse clock and no BroadcastChannel after an uncached request', async () => {
+  const fixedNow = Date.now()
+  const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(fixedNow)
+  vi.stubGlobal('performance', { timeOrigin: fixedNow, now: () => 0 })
+  const html = (version: number) => `<!doctype html><script src="/assets/index-v${version}.js"></script>`
+  let version = 1
+  let online = true
+  let failNext = false
+  vi.stubGlobal('fetch', async (input: RequestInfo | URL) => {
+    if (!online) throw new TypeError('offline')
+    const path = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url, 'https://mac.local:8790').pathname
+    if (path === '/') {
+      if (failNext) { failNext = false; return new Response('busy', { status: 503 }) }
+      return new Response(html(version))
+    }
+    if (path === '/offline.html') return new Response('OFFLINE FALLBACK')
+    return new Response('asset')
+  })
+  try {
+    const caches = new MemoryCacheStorage()
+    const active = bootWorker(['/assets/index-v1.js'], caches, false)
+    await active.install()
+    await active.activate()
+    failNext = true
+    await (await active.dispatchFetch('/?uncached', 'navigate')).settled
+    const open = caches.open.bind(caches)
+    let blockNextShell = true
+    let entered!: () => void
+    const waitingOnStorage = new Promise<void>(resolve => { entered = resolve })
+    let release!: () => void
+    const storageReady = new Promise<void>(resolve => { release = resolve })
+    caches.open = async name => {
+      if (name.startsWith('cmdpalm-shell-') && blockNextShell) {
+        blockNextShell = false
+        entered()
+        await storageReady
+      }
+      return open(name)
+    }
+    const older = active.dispatchFetch('/?old', 'navigate')
+    await waitingOnStorage
+    version = 2
+    const installing = bootWorker(['/assets/index-v2.js'], caches, false)
+    await installing.install()
+    release()
+    await (await older).settled
+    await installing.activate()
+    online = false
+    const offline = await installing.dispatchFetch('/', 'navigate')
+    expect(await offline.response.text()).toBe(html(2))
+  } finally {
+    nowSpy.mockRestore()
+  }
+})
+
+it('keeps a complete legacy shell when IndexedDB is unavailable', async () => {
+  const html = '<script src="/assets/legacy.js"></script>'
+  const caches = new MemoryCacheStorage()
+  const legacy = await caches.open('cmdpalm-shell')
+  await legacy.put('/', new Response(html))
+  await legacy.put('/assets/legacy.js', new Response('legacy code'))
+  await legacy.put('/offline.html', new Response('OFFLINE FALLBACK'))
+  vi.stubGlobal('indexedDB', undefined)
+  vi.stubGlobal('fetch', () => Promise.reject(new TypeError('offline')))
+  const worker = bootWorker([], caches, false)
+  await worker.install()
+  await worker.activate()
+  const result = await worker.dispatchFetch('/', 'navigate')
+  expect(await result.response.text()).toBe(html)
 })
