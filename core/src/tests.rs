@@ -1158,3 +1158,32 @@ fn stopping_the_host_stops_running_shell_commands_and_background_jobs() {
     });
     assert!(resumed.exists(), "shell commands work again after restarting");
 }
+
+#[test]
+fn websocket_upgrade_preserves_an_already_buffered_hello() {
+    let f = fixture();
+    f.rt.block_on(async {
+        let code = f.host.pairing_info().link.split("#pair=").nth(1).unwrap().to_string();
+        let hello = serde_json::to_vec(&hello("buffered-phone", json!({"method": "pair", "code": code}))).unwrap();
+        let mut bytes = format!("GET /ws HTTP/1.1\r\nHost: localhost:{}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n", f.port).into_bytes();
+        bytes.push(0x81);
+        if hello.len() < 126 {
+            bytes.push(0x80 | hello.len() as u8);
+        } else {
+            bytes.push(0x80 | 126);
+            bytes.extend_from_slice(&(hello.len() as u16).to_be_bytes());
+        }
+        let mask = [1, 2, 3, 4];
+        bytes.extend_from_slice(&mask);
+        bytes.extend(hello.iter().enumerate().map(|(i, b)| b ^ mask[i % 4]));
+        let mut tcp = TcpStream::connect(("127.0.0.1", f.port)).await.unwrap();
+        tcp.write_all(&bytes).await.unwrap();
+        let mut head = Vec::new();
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while !head.ends_with(b"\r\n\r\n") { head.push(tcp.read_u8().await.unwrap()); }
+        }).await.unwrap();
+        assert!(head.starts_with(b"HTTP/1.1 101"));
+        let mut ws = tokio_tungstenite::WebSocketStream::from_raw_socket(tcp, tokio_tungstenite::tungstenite::protocol::Role::Client, None).await;
+        assert_eq!(recv_kind(&mut ws, "welcome").await["v"], 1);
+    });
+}

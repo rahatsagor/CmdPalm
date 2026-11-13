@@ -377,7 +377,13 @@ pub(crate) fn parse_head(head: &[u8]) -> Option<Request> {
     let method = start.next()?.to_string();
     let target = start.next()?;
     let version = start.next()?;
-    if !version.starts_with("HTTP/1.") {
+    if !matches!(version, "HTTP/1.0" | "HTTP/1.1")
+        || start.next().is_some()
+        || method.is_empty()
+        || !method.bytes().all(is_token)
+        || !target.starts_with('/')
+        || target.bytes().any(|b| b <= b' ' || b == 0x7f || b == b'#')
+    {
         return None;
     }
     let (raw_path, raw_query) = target.split_once('?').unwrap_or((target, ""));
@@ -397,7 +403,10 @@ pub(crate) fn parse_head(head: &[u8]) -> Option<Request> {
             continue;
         }
         let (name, value) = line.split_once(':')?;
-        headers.push((name.trim().to_ascii_lowercase(), value.trim().to_string()));
+        if name.is_empty() || !name.bytes().all(is_token) || value.bytes().any(|b| b.is_ascii_control() && b != b'\t') {
+            return None;
+        }
+        headers.push((name.to_ascii_lowercase(), value.trim_matches([' ', '\t']).to_string()));
     }
     // A proxy in front could read a different copy of these than this server
     // does, which is how requests get smuggled past it.
@@ -409,6 +418,10 @@ pub(crate) fn parse_head(head: &[u8]) -> Option<Request> {
     Some(Request { method, path, query, headers, http10: version == "HTTP/1.0" })
 }
 
+fn is_token(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || b"!#$%&'*+-.^_`|~".contains(&byte)
+}
+
 /// Read one request head. Leftover bytes stay in `buf` for the next request.
 async fn read_head<S: AsyncRead + Unpin>(stream: &mut S, buf: &mut Vec<u8>, first: bool) -> Option<Vec<u8>> {
     let deadline = if first { HEAD_TIMEOUT } else { IDLE_TIMEOUT };
@@ -418,6 +431,9 @@ async fn read_head<S: AsyncRead + Unpin>(stream: &mut S, buf: &mut Vec<u8>, firs
         let mut scanned = 0;
         loop {
             if let Some(end) = buf[scanned..].windows(4).position(|w| w == b"\r\n\r\n").map(|i| i + scanned) {
+                if end > HEAD_LIMIT {
+                    return None;
+                }
                 let head = buf[..end].to_vec();
                 buf.drain(..end + 4);
                 return Some(head);
@@ -542,7 +558,7 @@ where
         };
         let (address, secure) = (client.address, client.secure);
         if request.path == "/ws" {
-            match websocket_accept(&request, host) {
+            match websocket_accept(&request, host, secure) {
                 Ok(accept) => {
                     let reply = format!(
                         "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: {accept}\r\n\r\n"
@@ -558,7 +574,7 @@ where
                     let config = WebSocketConfig::default()
                         .max_message_size(Some(MAX_MESSAGE))
                         .max_frame_size(Some(MAX_MESSAGE));
-                    let ws = WebSocketStream::from_raw_socket(stream, Role::Server, Some(config)).await;
+                    let ws = WebSocketStream::from_partially_read(stream, buf, Role::Server, Some(config)).await;
                     session::run(shared, ws, address, secure, shutdown).await;
                 }
                 Err(response) => {
@@ -665,7 +681,7 @@ pub(crate) fn client(request: &Request, peer: IpAddr, secure: bool, allow_proxy:
 
 /// Validate a WebSocket upgrade. Browsers always send `Origin`; requiring it
 /// to match the host stops other web pages from talking to the server.
-fn websocket_accept(request: &Request, host: &str) -> Result<String, Response> {
+fn websocket_accept(request: &Request, host: &str, secure: bool) -> Result<String, Response> {
     if request.method != "GET" {
         return Err(Response::text(405, "Method not allowed"));
     }
@@ -678,13 +694,31 @@ fn websocket_accept(request: &Request, host: &str) -> Result<String, Response> {
     let Some(key) = request.header("sec-websocket-key") else {
         return Err(Response::text(400, "Missing WebSocket key"));
     };
-    if let Some(origin) = request.header("origin") {
-        let origin_host = origin.split_once("://").map(|(_, rest)| rest).unwrap_or(origin);
-        if !origin_host.eq_ignore_ascii_case(host) {
-            return Err(Response::text(403, "Cross-origin connections are not allowed"));
-        }
+    if let Some(origin) = request.header("origin")
+        && !same_origin(origin, host, secure)
+    {
+        return Err(Response::text(403, "Cross-origin connections are not allowed"));
     }
     Ok(derive_accept_key(key.as_bytes()))
+}
+
+fn same_origin(origin: &str, host: &str, secure: bool) -> bool {
+    use tokio_tungstenite::tungstenite::http::uri::Authority;
+    let Some((scheme, origin_host)) = origin.split_once("://") else { return false };
+    if !scheme.eq_ignore_ascii_case(if secure { "https" } else { "http" }) {
+        return false;
+    }
+    if origin_host.contains(['/', '?', '#', '@']) || host.contains('@') {
+        return false;
+    }
+    let (Ok(origin), Ok(host)) = (origin_host.parse::<Authority>(), host.parse::<Authority>()) else {
+        return false;
+    };
+    let default_port = if secure { 443 } else { 80 };
+    let port = |authority: &Authority| {
+        if authority.port().is_some() { authority.port_u16() } else { Some(default_port) }
+    };
+    origin.host().eq_ignore_ascii_case(host.host()) && port(&origin).is_some() && port(&origin) == port(&host)
 }
 
 async fn route(shared: &Arc<Shared>, request: &Request, secure: bool) -> Response {
@@ -856,6 +890,34 @@ mod tests {
     }
 
     #[test]
+    fn rejects_ambiguous_http_syntax_and_normalizes_only_default_origin_ports() {
+        for head in [
+            "GET / HTTP/1.1 extra\r\nHost: mac.local",
+            "GET / HTTP/1.9\r\nHost: mac.local",
+            "GET http://mac.local/ HTTP/1.1\r\nHost: mac.local",
+            "GET / HTTP/1.1\r\nHost : mac.local",
+            "GET / HTTP/1.1\r\nX-Forwarded-Host\t: mac.local",
+            "GET / HTTP/1.1\r\nBad(Name: value",
+            "GET / HTTP/1.1\r\nX-Test: a\nb",
+        ] {
+            assert!(parse_head(head.as_bytes()).is_none(), "{head:?}");
+        }
+        assert!(same_origin("https://mac.local", "mac.local:443", true));
+        assert!(same_origin("http://mac.local:80", "MAC.local", false));
+        assert!(same_origin("https://[::1]", "[::1]:443", true));
+        for origin in [
+            "http://mac.local",
+            "https://mac.local:80",
+            "https://mac.local.evil",
+            "https://mac.local/path",
+            "https://evil@mac.local",
+            "null",
+        ] {
+            assert!(!same_origin(origin, "mac.local:443", true), "{origin}");
+        }
+    }
+
+    #[test]
     fn static_paths_cannot_escape_the_root() {
         let root = Path::new("/srv/web");
         assert_eq!(resolve_static(root, "/"), Ok(None));
@@ -870,11 +932,11 @@ mod tests {
     fn websocket_upgrades_require_same_origin() {
         let base = "GET /ws HTTP/1.1\r\nHost: mac.local:8790\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n";
         let ok = parse_head(format!("{base}Origin: http://mac.local:8790\r\n").as_bytes()).unwrap();
-        assert_eq!(websocket_accept(&ok, "mac.local:8790").unwrap(), "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=");
+        assert_eq!(websocket_accept(&ok, "mac.local:8790", false).unwrap(), "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=");
         let evil = parse_head(format!("{base}Origin: https://evil.example\r\n").as_bytes()).unwrap();
-        assert_eq!(websocket_accept(&evil, "mac.local:8790").unwrap_err().status, 403);
+        assert_eq!(websocket_accept(&evil, "mac.local:8790", false).unwrap_err().status, 403);
         let head = parse_head(base.replacen("GET", "HEAD", 1).as_bytes()).unwrap();
-        assert_eq!(websocket_accept(&head, "mac.local:8790").unwrap_err().status, 405);
+        assert_eq!(websocket_accept(&head, "mac.local:8790", false).unwrap_err().status, 405);
     }
 
     #[tokio::test(start_paused = true)]
