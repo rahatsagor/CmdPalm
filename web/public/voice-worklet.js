@@ -9,6 +9,16 @@ class Downsampler extends AudioWorkletProcessor {
     this.buf = new Int16Array(Math.round(rate / 10))
     this.len = 0
     this.peak = 0
+    this.port.onmessage = (event) => {
+      if (event.data?.t === 'flush') this.flush(true)
+    }
+  }
+
+  flush(flushed = false) {
+    const pcm = this.buf.slice(0, this.len)
+    this.port.postMessage({ pcm, peak: this.peak, flushed }, [pcm.buffer])
+    this.len = 0
+    this.peak = 0
   }
 
   process(inputs) {
@@ -19,9 +29,7 @@ class Downsampler extends AudioWorkletProcessor {
       this.peak = Math.max(this.peak, Math.abs(s))
       this.buf[this.len++] = s < 0 ? s * 0x8000 : s * 0x7fff
       if (this.len === this.buf.length) {
-        this.port.postMessage({ pcm: this.buf.slice(0), peak: this.peak })
-        this.len = 0
-        this.peak = 0
+        this.flush()
       }
     }
     this.pos -= ch.length

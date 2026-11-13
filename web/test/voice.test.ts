@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { FakeSocket, lastSocket, welcome } from './fakeSocket'
 
@@ -14,7 +16,7 @@ class FakeAudioContext {
   createGain = () => ({ gain: { value: 1 }, connect: (next: unknown) => next })
 }
 class FakeWorkletNode {
-  port = { onmessage: null }
+  port: { onmessage: unknown; postMessage?: (message?: unknown) => void } = { onmessage: null }
   connect = (next: unknown) => next
   disconnect = () => {}
 }
@@ -136,4 +138,77 @@ describe('voice typing', () => {
     expect(voiceLib.voice.active).toBe(false)
     expect(voiceLib.voice.error).toBe('The Mac is still busy.')
   })
+})
+
+
+it('flushes the final partial worklet packet before disconnecting', () => {
+  const postMessage = vi.fn()
+  class ProcessorBase {
+    port = { postMessage, onmessage: null as ((event: { data: { t: string } }) => void) | null }
+  }
+  type Processor = ProcessorBase & { process(inputs: Float32Array[][]): boolean }
+  let make!: () => Processor
+  const source = readFileSync(resolve(import.meta.dirname, '../public/voice-worklet.js'), 'utf8')
+  new Function('AudioWorkletProcessor', 'registerProcessor', 'sampleRate', source)(
+    ProcessorBase,
+    (_name: string, type: new (options: { processorOptions: { rate: number } }) => Processor) => { make = () => new type({ processorOptions: { rate: 16000 } }) },
+    48000,
+  )
+  const processor = make()
+  processor.process([[new Float32Array(128).fill(0.5)]])
+  expect(postMessage).not.toHaveBeenCalled()
+  processor.port.onmessage!({ data: { t: 'flush' } })
+  expect(postMessage.mock.calls[0]![0].pcm).toHaveLength(43)
+  expect(postMessage.mock.calls[0]![0].flushed).toBe(true)
+})
+
+it('sends worklet tail audio before voiceStop and does not flush cancelled audio', async () => {
+  class FlushingNode extends FakeWorkletNode {
+    override port = {
+      onmessage: null as ((event: { data: { pcm: Int16Array; flushed: boolean } }) => void) | null,
+      postMessage: () => queueMicrotask(() => this.port.onmessage?.({ data: { pcm: new Int16Array([9]), flushed: true } })),
+    }
+  }
+  vi.stubGlobal('AudioWorkletNode', FlushingNode)
+  const socket = connected()
+  const events: string[] = []
+  const send = socket.send.bind(socket)
+  socket.send = (data: unknown) => {
+    if (data instanceof ArrayBuffer) events.push('audio')
+    else if (typeof data === 'string' && JSON.parse(data).t === 'voiceStop') events.push('stop')
+    send(data)
+  }
+  let started = voiceLib.startVoice(() => {})
+  microphone.shift()!(fakeStream())
+  await started
+  await voiceLib.stopVoice()
+  expect(events).toEqual(['audio', 'stop'])
+  events.length = 0
+  started = voiceLib.startVoice(() => {})
+  microphone.shift()!(fakeStream())
+  await started
+  await voiceLib.stopVoice(true)
+  expect(events).toEqual(['stop'])
+})
+
+it('cancels a new dictation waiting for the previous audio flush on a quick pause and resume', async () => {
+  class HeldFlushNode extends FakeWorkletNode {
+    override port = { onmessage: null, postMessage: vi.fn() }
+  }
+  vi.stubGlobal('AudioWorkletNode', HeldFlushNode)
+  const socket = connected()
+  const stop = vi.fn()
+  const started = voiceLib.startVoice(() => {})
+  microphone.shift()!({ getTracks: () => [{ stop, addEventListener: vi.fn() }] } as unknown as MediaStream)
+  await started
+  const finishing = voiceLib.stopVoice()
+  const pending = voiceLib.startVoice(() => {})
+  socket.receive({ t: 'paused', paused: true })
+  socket.receive({ t: 'paused', paused: false })
+  await finishing
+  expect(stop).toHaveBeenCalledOnce()
+  expect(microphone).toHaveLength(0)
+  await pending
+  expect(voiceLib.voice.active).toBe(false)
+  expect(sentTypes(socket)).toEqual(['voiceStart', 'voiceStop'])
 })

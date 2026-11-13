@@ -24,6 +24,8 @@ let lastStoppedId: number | null = null
 let starting = false
 /** Bumped by every stop, so a start still awaiting the microphone knows it was cancelled. */
 let generation = 0
+let finishing: Promise<void> | null = null
+let cancelFinishing: (() => void) | undefined
 /** Whether the Mac is dictating for this page. Its last update for a dictation
  * already stopped here can arrive after the next start, and must not end it. */
 
@@ -75,6 +77,11 @@ if (typeof document !== 'undefined') {
 
 /** Start listening. `onFinal` receives each finished phrase. */
 export async function startVoice(onFinal: (text: string) => void, locale = navigator.language) {
+  if (finishing) {
+    const waitingGeneration = generation
+    await finishing
+    if (waitingGeneration !== generation) return
+  }
   if (voice.active || starting) return
   voice.error = ''
   voice.partial = ''
@@ -166,12 +173,23 @@ export async function startVoice(onFinal: (text: string) => void, locale = navig
 }
 
 export async function stopVoice(cancel = false, notifyMac = true) {
-  generation++
+  if (finishing) {
+    if (cancel) {
+      generation++
+      dictations.clear()
+      voice.partial = ''
+      cancelFinishing?.()
+      if (notifyMac) send({ t: 'voiceStop', cancel: true, ...(lastStoppedId !== null ? { id: lastStoppedId } : {}) })
+      lastStoppedId = null
+    }
+    return finishing
+  }
+  const run = ++generation
   starting = false
   const id = activeId
   activeId = null
   if (id !== null) lastStoppedId = id
-  if (notifyMac && voice.active) send({ t: 'voiceStop', cancel, ...(id !== null ? { id } : {}) })
+  const wasActive = voice.active
   if (cancel) {
     dictations.clear()
     lastStoppedId = null
@@ -179,12 +197,59 @@ export async function stopVoice(cancel = false, notifyMac = true) {
   }
   voice.active = false
   voice.level = 0
-  node?.disconnect()
-  node = null
-  stream?.getTracks().forEach((t) => t.stop())
-  stream = null
-  // Cleared before waiting, so a start meanwhile keeps the context it creates.
+  // Detach globals before waiting: a cancelled start cannot take ownership of
+  // this recording, and the next dictation waits until its final audio is sent.
   const closing = context
+  const endingNode = node
+  const endingStream = stream
   context = null
-  await closing?.close().catch(() => {})
+  node = null
+  stream = null
+  if (!closing && !endingNode && !endingStream) {
+    if (notifyMac && wasActive) send({ t: 'voiceStop', cancel, ...(id !== null ? { id } : {}) })
+    return
+  }
+  let cancelled = cancel
+  let cleaned = false
+  let wakeFlush: (() => void) | undefined
+  const cleanup = () => {
+    if (cleaned) return
+    cleaned = true
+    endingNode?.disconnect()
+    endingStream?.getTracks().forEach((track) => track.stop())
+  }
+  cancelFinishing = () => {
+    cancelled = true
+    cleanup()
+    wakeFlush?.()
+  }
+  finishing = (async () => {
+    if (!cancel && notifyMac && wasActive && endingNode && typeof endingNode.port.postMessage === 'function') {
+      await new Promise<void>((resolve) => {
+        const done = () => {
+          clearTimeout(timer)
+          resolve()
+        }
+        const timer = setTimeout(done, 150)
+        wakeFlush = done
+        endingNode.port.onmessage = (event: MessageEvent<{ pcm?: Int16Array; flushed?: boolean }>) => {
+          // Also deliver full chunks already queued on the port before Stop.
+          if (!cancelled && run === generation && conn.status === 'connected' && !conn.paused && conn.features.voice && event.data.pcm?.length) {
+            sendBinary(encodeAudio(event.data.pcm))
+          }
+          if (event.data.flushed) done()
+        }
+        try { endingNode.port.postMessage({ t: 'flush' }) } catch { done() }
+      })
+    }
+    if (notifyMac && wasActive && !cancelled) send({ t: 'voiceStop', cancel: false, ...(id !== null ? { id } : {}) })
+    if (notifyMac && wasActive && cancel) send({ t: 'voiceStop', cancel: true, ...(id !== null ? { id } : {}) })
+    cleanup()
+    if (endingNode) endingNode.port.onmessage = null
+    await closing?.close().catch(() => {})
+  })().finally(() => {
+    finishing = null
+    cancelFinishing = undefined
+  })
+  return finishing
 }
