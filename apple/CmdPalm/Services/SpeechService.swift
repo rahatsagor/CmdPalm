@@ -73,6 +73,8 @@ final class SpeechService: @unchecked Sendable {
 
     func start(session id: UInt64, locale: String?, requestId: UInt32?) -> Bool {
         guard Self.mayBeAvailable, let recognizer = Self.recognizer(for: locale) else { return false }
+        // Do not request permission for a language that cannot be transcribed locally.
+        guard recognizer.supportsOnDeviceRecognition else { return false }
         recognizer.queue = handlerQueue
         queue.async { [self] in
             if let old = sessions.removeValue(forKey: id) {

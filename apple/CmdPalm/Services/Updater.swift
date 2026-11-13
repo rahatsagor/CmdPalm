@@ -79,6 +79,7 @@ final class Updater: NSObject {
             _ = AppActivation.shared.present { alert.runModal() }
             return
         }
+        guard controller.updater.canCheckForUpdates else { return }
         pendingVersion = nil
         AppActivation.shared.enter()
         controller.checkForUpdates(nil)
