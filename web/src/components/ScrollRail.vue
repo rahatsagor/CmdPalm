@@ -162,27 +162,26 @@ const listeners = {
 <template>
   <div
     v-if="settings.scrollStrip === 'long'"
-    class="absolute inset-y-3 touch-none rounded-full transition-colors"
-    :class="active !== null ? 'bg-text/10' : 'bg-text/[0.035]'"
+    class="absolute inset-y-3 flex touch-none flex-col items-center justify-between rounded-full py-2 transition-colors"
+    :class="active !== null ? 'bg-text/10' : 'bg-text/[0.05]'"
     :style="placement"
     aria-label="Scroll strip"
     v-on="listeners"
   >
-    <div class="absolute inset-x-0 top-1/2 mx-auto flex w-1 -translate-y-1/2 flex-col gap-1.5">
-      <span v-for="i in 3" :key="i" class="h-1 w-1 rounded-full bg-text/25" />
-    </div>
+    <ChevronUp :size="15" :stroke-width="2.2" class="shrink-0 text-text/30" />
+    <ChevronDown :size="15" :stroke-width="2.2" class="shrink-0 text-text/30" />
   </div>
   <div v-else ref="track" class="pointer-events-none absolute inset-y-3" :style="placement">
     <div
       ref="handle"
-      class="pointer-events-auto absolute inset-x-0 top-1/2 flex h-24 max-h-full touch-none flex-col items-center justify-between rounded-full py-2"
+      class="pointer-events-auto absolute inset-x-0 top-1/2 flex h-28 max-h-full touch-none flex-col items-center justify-between rounded-full py-2"
       :class="[active !== null ? 'bg-text/10' : 'bg-text/[0.05] transition-[transform,background-color] duration-200']"
       :style="{ transform: `translateY(calc(-50% + ${offset}px))` }"
       aria-label="Scroll strip"
       v-on="listeners"
     >
-      <ChevronUp :size="15" :stroke-width="2.2" class="transition-colors" :class="holding < 0 ? 'text-text/70' : 'text-text/30'" />
-      <ChevronDown :size="15" :stroke-width="2.2" class="transition-colors" :class="holding > 0 ? 'text-text/70' : 'text-text/30'" />
+      <ChevronUp :size="15" :stroke-width="2.2" class="shrink-0 transition-colors" :class="holding < 0 ? 'text-text/70' : 'text-text/30'" />
+      <ChevronDown :size="15" :stroke-width="2.2" class="shrink-0 transition-colors" :class="holding > 0 ? 'text-text/70' : 'text-text/30'" />
     </div>
   </div>
 </template>

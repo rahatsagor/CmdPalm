@@ -41,13 +41,13 @@ function scrolls(socket: FakeSocket) {
 /** Lets batched pointer messages go out. */
 const settle = (ms = 20) => vi.advanceTimersByTimeAsync(ms)
 
-// The track is 400px and the handle 96px, so the handle travels 152px each way.
+// The track is 400px and the handle 112px, so the handle travels 144px each way.
 async function rail() {
   const { default: ScrollRail } = await import('../src/components/ScrollRail.vue')
   const view = mount(ScrollRail, { attachTo: document.body })
   const [track, handle] = [view.element as HTMLElement, view.find('[aria-label="Scroll strip"]').element as HTMLElement]
   Object.defineProperty(track, 'clientHeight', { value: 400 })
-  Object.defineProperty(handle, 'clientHeight', { value: 96 })
+  Object.defineProperty(handle, 'clientHeight', { value: 112 })
   handle.setPointerCapture = () => {}
   const fire = (type: string, clientY: number) => handle.dispatchEvent(new PointerEvent(type, { pointerId: 1, clientY, bubbles: true }))
   return { view, fire }
@@ -66,7 +66,7 @@ describe('scroll strip', () => {
     await settle(300)
     expect(scrolls(socket)).toHaveLength(1)
 
-    fire('pointermove', 300 + 152 + 20)
+    fire('pointermove', 300 + 144 + 20)
     await settle()
     const before = scrolls(socket).length
     await settle(500)
@@ -76,7 +76,7 @@ describe('scroll strip', () => {
     // About (360 + 20 * 14) px/s for half a second, at 1.6× scroll scale.
     expect(held.reduce((sum, s) => sum + s.dy, 0)).toBeCloseTo(512, -2)
 
-    fire('pointerup', 472)
+    fire('pointerup', 464)
     await settle()
     const done = scrolls(socket).length
     expect(scrolls(socket).at(-1)!.phase).toBe(ScrollPhase.Ended)

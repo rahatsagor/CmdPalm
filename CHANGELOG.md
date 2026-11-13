@@ -9,6 +9,11 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Phone client
+
+- Both scroll-strip lengths now use matching up/down chevrons at every width,
+  with more space between the chevrons on the short handle.
+
 ## [0.8.1] - 2026-11-13
 
 More reliable typing, dictation and Deck editing, safer shell command
