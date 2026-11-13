@@ -797,13 +797,15 @@ impl Connection {
                 let device = self.device_id.clone();
                 self.blocking(move |shared| {
                     let saved = SavedSettings { settings, updated_at };
-                    let mut store = shared.device_settings();
                     // The device may have been removed on the Mac since it sent
                     // these; saving them would bring its settings back.
                     if !shared.state().trust.contains(&device) {
                         return None;
                     }
-                    store.set(&device, saved).err().map(|e| notice(NoticeLevel::Error, "settings", &e.to_string()))
+                    shared
+                        .save_device_settings(&device, saved)
+                        .err()
+                        .map(|e| notice(NoticeLevel::Error, "settings", &e.to_string()))
                 });
                 None
             }

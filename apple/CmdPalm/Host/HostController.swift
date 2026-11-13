@@ -194,26 +194,30 @@ final class HostController {
     }
 
     func forget(_ device: TrustedDevice) {
-        host.forgetDevice(id: device.id)
+        enqueue { host in host.forgetDevice(id: device.id) }
     }
 
     func forgetAllDevices() {
-        host.forgetAllDevices()
+        enqueue { host in host.forgetAllDevices() }
     }
 
     func rename(_ device: TrustedDevice, to name: String) {
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty, name != device.name else { return }
-        host.renameDevice(id: device.id, name: name)
+        enqueue { host in host.renameDevice(id: device.id, name: name) }
     }
 
     func deckJSON() -> String { host.deckJson() }
 
-    func importDeck(_ json: String) throws {
-        try host.setDeckJson(json: json)
+    func importDeck(_ json: String) async throws {
+        let host = host!
+        try await Task.detached { try host.setDeckJson(json: json) }.value
     }
 
-    func resetDeck() { host.resetDeck() }
+    func resetDeck() async {
+        let host = host!
+        await Task.detached { host.resetDeck() }.value
+    }
 
     func certificate() -> Data { host.caCertificate() }
 

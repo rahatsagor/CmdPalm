@@ -64,8 +64,10 @@ struct DeckPane: View {
         }
         .confirmationDialog("Reset the deck?", isPresented: $confirmReset) {
             Button("Reset Deck", role: .destructive) {
-                host.resetDeck()
-                refresh()
+                Task {
+                    await host.resetDeck()
+                    refresh()
+                }
             }
         } message: {
             Text("Every page and button is replaced with the defaults on all devices. Export first to keep a copy.")
@@ -124,10 +126,16 @@ struct DeckPane: View {
                     self.error = "That file isn’t a CmdPalm deck."
                     return
                 }
-                try host.importDeck(json)
-                refresh()
-            } catch let failure as HostError {
-                if case let .Failed(message) = failure { self.error = "Couldn’t import the deck: \(message)" }
+                Task {
+                    do {
+                        try await host.importDeck(json)
+                        refresh()
+                    } catch let failure as HostError {
+                        if case let .Failed(message) = failure { self.error = "Couldn’t import the deck: \(message)" }
+                    } catch {
+                        self.error = "Couldn’t import the deck: \(error.localizedDescription)"
+                    }
+                }
             } catch {
                 self.error = "Couldn’t read the file: \(error.localizedDescription)"
             }

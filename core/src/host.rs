@@ -17,7 +17,7 @@ use crate::api::{
 use crate::auth::{self, Pairing, TrustStore, TrustedDevice};
 use crate::deck::Deck;
 use crate::input::{Command, InputEngine, Interrupts, LayoutMap, Notice, SessionId, Tuning};
-use crate::prefs::DeviceSettings;
+use crate::prefs::{DeviceSettings, SavedSettings, SettingsError};
 use crate::protocol::{Features, KeyboardLayout, NoticeLevel, ServerMessage, VolumeState};
 use crate::{server, store, tls};
 
@@ -96,6 +96,8 @@ pub(crate) struct Shared {
     /// Open connections per address; see `server::ConnectionSlot`.
     pub connections: Mutex<HashMap<IpAddr, usize>>,
     pub settings: Mutex<DeviceSettings>,
+    /// Disk writes serialize independently of the settings read lock.
+    settings_write: Mutex<()>,
     pub voices: Mutex<Voices>,
     pub voice_epoch: AtomicU64,
     state: Mutex<State>,
@@ -134,6 +136,7 @@ impl Shared {
             trust_written: Mutex::new(0),
             connections: Mutex::new(HashMap::new()),
             settings: Mutex::new(settings),
+            settings_write: Mutex::new(()),
             voices: Mutex::new(Voices::default()),
             voice_epoch: AtomicU64::new(0),
             state: Mutex::new(State {
@@ -225,6 +228,29 @@ impl Shared {
 
     pub fn device_settings(&self) -> MutexGuard<'_, DeviceSettings> {
         self.settings.lock().unwrap_or_else(|p| p.into_inner())
+    }
+
+    pub fn save_device_settings(&self, id: &str, saved: SavedSettings) -> Result<bool, SettingsError> {
+        let _writer = self.settings_write.lock().unwrap_or_else(|p| p.into_inner());
+        if !self.state().trust.contains(id) {
+            return Ok(false);
+        }
+        let Some(save) = self.device_settings().prepare(id, saved)? else { return Ok(false) };
+        save.write()?;
+        self.device_settings().commit(save);
+        Ok(true)
+    }
+
+    fn remove_device_settings(&self, ids: Option<&[String]>) {
+        let _writer = self.settings_write.lock().unwrap_or_else(|p| p.into_inner());
+        let paths: Vec<_> = {
+            let mut settings = self.device_settings();
+            let ids = ids.map(<[String]>::to_vec).unwrap_or_else(|| settings.ids());
+            ids.iter().filter_map(|id| settings.forget(id)).collect()
+        };
+        for path in paths {
+            let _ = std::fs::remove_file(path);
+        }
     }
 
     pub fn voices(&self) -> MutexGuard<'_, Voices> {
@@ -662,7 +688,7 @@ impl CoreHost {
     pub fn forget_device(&self, id: String) {
         let removed = self.shared.state().trust.remove(&id);
         self.shared.save_trust();
-        self.shared.device_settings().remove(&id);
+        self.shared.remove_device_settings(Some(std::slice::from_ref(&id)));
         self.close_device(&id, "This device was removed on the Mac. Pair again to reconnect.");
         if removed {
             self.shared.emit(HostEvent::DevicesChanged);
@@ -672,7 +698,7 @@ impl CoreHost {
     pub fn forget_all_devices(&self) {
         self.shared.state().trust.clear();
         self.shared.save_trust();
-        self.shared.device_settings().retain(&[]);
+        self.shared.remove_device_settings(None);
         self.close_sessions("All devices were removed on the Mac. Pair again to reconnect.", false);
         self.shared.emit(HostEvent::DevicesChanged);
     }

@@ -46,6 +46,25 @@ pub struct DeviceSettings {
     devices: HashMap<String, SavedSettings>,
 }
 
+pub(crate) struct SettingsSave {
+    dir: Option<PathBuf>,
+    id: String,
+    saved: SavedSettings,
+}
+
+impl SettingsSave {
+    pub fn write(&self) -> Result<(), SettingsError> {
+        if let Some(dir) = &self.dir {
+            let file = SettingsFile { version: 1, id: self.id.clone(), saved: self.saved.clone() };
+            store::save(&file_path(dir, &self.id), &file).map_err(|err| {
+                tracing::error!(%err, "could not save device settings");
+                SettingsError::Io
+            })?;
+        }
+        Ok(())
+    }
+}
+
 impl DeviceSettings {
     pub fn load(dir: Option<PathBuf>) -> Self {
         let mut devices = HashMap::new();
@@ -70,7 +89,7 @@ impl DeviceSettings {
 
     /// Keep `saved` for `id` unless the Mac already has newer settings.
     /// Returns whether anything changed.
-    pub fn set(&mut self, id: &str, saved: SavedSettings) -> Result<bool, SettingsError> {
+    pub(crate) fn prepare(&self, id: &str, saved: SavedSettings) -> Result<Option<SettingsSave>, SettingsError> {
         if !saved.settings.is_object() {
             return Err(SettingsError::NotAnObject);
         }
@@ -79,24 +98,35 @@ impl DeviceSettings {
             return Err(SettingsError::TooLarge);
         }
         if self.devices.get(id).is_some_and(|old| old.updated_at > saved.updated_at || *old == saved) {
-            return Ok(false);
+            return Ok(None);
         }
-        if let Some(dir) = &self.dir {
-            let file = SettingsFile { version: 1, id: id.to_string(), saved: saved.clone() };
-            if let Err(err) = store::save(&file_path(dir, id), &file) {
-                tracing::error!(%err, "could not save device settings");
-                return Err(SettingsError::Io);
-            }
-        }
-        self.devices.insert(id.to_string(), saved);
+        Ok(Some(SettingsSave { dir: self.dir.clone(), id: id.to_string(), saved }))
+    }
+
+    pub(crate) fn commit(&mut self, save: SettingsSave) {
+        self.devices.insert(save.id, save.saved);
+    }
+
+    #[cfg(test)]
+    pub fn set(&mut self, id: &str, saved: SavedSettings) -> Result<bool, SettingsError> {
+        let Some(save) = self.prepare(id, saved)? else { return Ok(false) };
+        save.write()?;
+        self.commit(save);
         Ok(true)
     }
 
+    pub(crate) fn forget(&mut self, id: &str) -> Option<PathBuf> {
+        self.devices.remove(id)?;
+        self.dir.as_ref().map(|dir| file_path(dir, id))
+    }
+
+    pub(crate) fn ids(&self) -> Vec<String> {
+        self.devices.keys().cloned().collect()
+    }
+
     pub fn remove(&mut self, id: &str) {
-        if self.devices.remove(id).is_some()
-            && let Some(dir) = &self.dir
-        {
-            let _ = fs::remove_file(file_path(dir, id));
+        if let Some(path) = self.forget(id) {
+            let _ = fs::remove_file(path);
         }
     }
 
