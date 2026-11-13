@@ -36,28 +36,48 @@ enum SystemActions {
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { return false }
         // "--" so a name starting with "-" isn't read as an option.
-        return launch("/usr/bin/shortcuts", ["run", "--", name])
+        return launch("/usr/bin/shortcuts", ["run", "--", name], timeout: 60)
     }
 
     private static func openApp(at path: String) -> Bool {
         guard FileManager.default.fileExists(atPath: path) else { return false }
+        guard !Thread.isMainThread else { return false }
         let url = URL(fileURLWithPath: path)
+        let completion = AppActionCompletion()
         DispatchQueue.main.async {
-            NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
+            guard completion.isPending else { return }
+            NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration()) { app, error in
+                completion.finish(app != nil && error == nil)
+            }
         }
-        return true
+        return completion.wait(timeout: 5)
     }
 
-    private static func launch(_ tool: String, _ arguments: [String]) -> Bool {
+    /// Called on the action worker so sequence steps wait for the tool's result.
+    static func launch(_ tool: String, _ arguments: [String], timeout: TimeInterval = 15) -> Bool {
+        guard !Thread.isMainThread else { return false }
         let process = Process()
+        let completion = AppActionCompletion()
         process.executableURL = URL(fileURLWithPath: tool)
         process.arguments = arguments
         process.standardInput = FileHandle.nullDevice
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
+        process.terminationHandler = { task in
+            completion.finish(task.terminationReason == .exit && task.terminationStatus == 0)
+        }
         do {
             try process.run()
-            return true
+            let success = completion.wait(timeout: timeout)
+            if process.isRunning {
+                process.terminate()
+                // A timed-out Shortcut must not silently continue past later steps.
+                let until = Date().addingTimeInterval(1)
+                while process.isRunning && Date() < until { Thread.sleep(forTimeInterval: 0.01) }
+                if process.isRunning { kill(process.processIdentifier, SIGKILL) }
+                process.waitUntilExit()
+            }
+            return success
         } catch {
             NSLog("CmdPalm: could not run %@: %@", tool, error.localizedDescription)
             return false

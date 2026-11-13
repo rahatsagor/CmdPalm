@@ -276,3 +276,26 @@ import Testing
         }
     }
 }
+
+
+@Suite struct SystemActionProcessTests {
+    @Test func waitsForTheToolAndReportsItsExitStatus() async {
+        let result = await Task.detached {
+            let started = Date()
+            let succeeded = SystemActions.launch("/bin/sh", ["-c", "sleep 0.05; exit 0"], timeout: 2)
+            let waited = Date().timeIntervalSince(started)
+            let failed = SystemActions.launch("/bin/sh", ["-c", "exit 7"], timeout: 2)
+            return (succeeded, waited, failed)
+        }.value
+        #expect(result.0)
+        #expect(result.1 >= 0.04)
+        #expect(!result.2)
+    }
+
+    @Test func stopsAToolThatOutlivesItsDeadline() async {
+        let result = await Task.detached {
+            SystemActions.launch("/bin/sh", ["-c", "exec sleep 10"], timeout: 0.05)
+        }.value
+        #expect(!result)
+    }
+}
