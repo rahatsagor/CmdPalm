@@ -120,6 +120,7 @@ impl Shared {
             settings.retain(&trust.devices().into_iter().map(|d| d.id).collect::<Vec<_>>());
         }
         let deck = dir.as_ref().and_then(|d| load_deck(&d.join("deck.json"))).unwrap_or_default();
+        engine.interrupts().set_shell_enabled(config.allow_shell);
         Self {
             config: RwLock::new(config),
             delegate,
@@ -546,8 +547,8 @@ impl CoreHost {
     pub fn update_config(&self, config: HostConfig) {
         let previous = self.shared.config();
         *self.shared.config.write().unwrap_or_else(|p| p.into_inner()) = config.clone();
-        if previous.allow_shell && !config.allow_shell {
-            self.shared.interrupts.stop_shell_commands();
+        if previous.allow_shell != config.allow_shell {
+            self.shared.interrupts.set_shell_enabled(config.allow_shell);
         }
         if previous.voice_available && !config.voice_available {
             self.shared.cancel_voices();

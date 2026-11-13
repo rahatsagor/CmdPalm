@@ -23,6 +23,7 @@ pub(crate) struct Job {
 const PASTE_RESTORE_DELAY: Duration = Duration::from_millis(450);
 const DELAY_SLICE: Duration = Duration::from_millis(50);
 const STOPPED: &str = "Stopped because control was paused or the device disconnected.";
+const SHELL_DISABLED: &str = "Shell commands are turned off. Turn them on in CmdPalm settings on the Mac.";
 const SHELL_POLL: Duration = Duration::from_millis(50);
 const SHELL_KILL_GRACE: Duration = Duration::from_secs(1);
 /// How long a button waits for its shell command before carrying on, so a
@@ -236,7 +237,7 @@ pub(crate) fn execute(shared: &Shared, session: SessionId, action: &Action, dept
         }
         Action::Shell { command } => {
             if !shared.config().allow_shell {
-                return Err("Shell commands are turned off. Turn them on in CmdPalm settings on the Mac.".into());
+                return Err(SHELL_DISABLED.into());
             }
             settle(shared, session)?;
             run_shell(command, shared.interrupts.clone())?;
@@ -281,6 +282,7 @@ fn run_shell(command: &str, interrupts: Arc<Interrupts>) -> Result<(), String> {
     let stops = match interrupts.try_enter_shell(MAX_RUNNING_COMMANDS) {
         Ok(stops) => stops,
         Err(ShellDeny::Closed) => return Err(STOPPED.into()),
+        Err(ShellDeny::Disabled) => return Err(SHELL_DISABLED.into()),
         Err(ShellDeny::Busy) => {
             return Err("Too many shell commands are still running. Pause CmdPalm on the Mac to stop them.".into());
         }
@@ -388,16 +390,18 @@ fn error_file() -> Option<std::fs::File> {
 fn shell_failure(status: std::process::ExitStatus, errors: Option<std::fs::File>) -> String {
     use std::io::{Read as _, Seek as _};
     let detail = errors.and_then(|mut file| {
-        file.seek(std::io::SeekFrom::Start(0)).ok()?;
+        let size = file.metadata().ok()?.len();
+        file.seek(std::io::SeekFrom::Start(size.saturating_sub(SHELL_ERROR_READ))).ok()?;
         let mut bytes = Vec::new();
         file.take(SHELL_ERROR_READ).read_to_end(&mut bytes).ok()?;
         let text = String::from_utf8_lossy(&bytes);
         let line = text.lines().map(str::trim).rfind(|line| !line.is_empty())?;
-        let mut line: String = line.chars().take(SHELL_ERROR_CHARS).collect();
-        if line.chars().count() == SHELL_ERROR_CHARS {
-            line.push('…');
+        let mut chars = line.chars();
+        let mut detail: String = chars.by_ref().take(SHELL_ERROR_CHARS).collect();
+        if chars.next().is_some() {
+            detail.push('…');
         }
-        Some(line)
+        Some(detail)
     });
     let how = match status.code() {
         Some(code) => format!("exit code {code}"),
@@ -500,6 +504,31 @@ mod tests {
         assert_eq!(error, "The command failed (exit code 3): no such thing");
         let error = run_shell("exit 1", interrupts).unwrap_err();
         assert_eq!(error, "The command failed (exit code 1).");
+    }
+
+    #[test]
+    fn shell_errors_keep_the_tail_without_truncating_an_exact_length_line() {
+        use std::io::Write as _;
+        let mut file = error_file().unwrap();
+        file.write_all(&vec![b'x'; SHELL_ERROR_READ as usize + 100]).unwrap();
+        let line = "z".repeat(SHELL_ERROR_CHARS);
+        write!(file, "\n{line}\n").unwrap();
+        let status = std::process::Command::new("/bin/sh").args(["-c", "exit 1"]).status().unwrap();
+        assert_eq!(shell_failure(status, Some(file)), format!("The command failed (exit code 1): {line}"));
+    }
+
+    #[test]
+    fn disabled_shell_permission_and_a_quick_pause_cannot_be_bypassed_by_admission() {
+        let interrupts = Arc::new(Interrupts::default());
+        interrupts.set_shell_enabled(false);
+        assert_eq!(run_shell("true", interrupts.clone()), Err(SHELL_DISABLED.into()));
+        interrupts.set_shell_enabled(true);
+        let order = interrupts.try_enter_shell(MAX_RUNNING_COMMANDS).unwrap();
+        interrupts.set_paused(true);
+        interrupts.set_paused(false);
+        assert!(interrupts.shell_stopped_since(order), "resuming cannot revive an admitted pre-pause command");
+        interrupts.leave_shell();
+        assert!(run_shell("true", interrupts).is_ok());
     }
 
     #[test]

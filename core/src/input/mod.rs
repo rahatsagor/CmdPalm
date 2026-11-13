@@ -329,17 +329,25 @@ pub enum Input {
     ReleaseAll,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 struct ShellState {
     running: usize,
     stops: u64,
     closed: bool,
+    enabled: bool,
+}
+
+impl Default for ShellState {
+    fn default() -> Self {
+        Self { running: 0, stops: 0, closed: false, enabled: true }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ShellDeny {
     Busy,
     Closed,
+    Disabled,
 }
 
 /// Stops long-running work (typing, deck sequences) without waiting for the
@@ -354,7 +362,11 @@ pub struct Interrupts {
 
 impl Interrupts {
     pub fn set_paused(&self, paused: bool) {
-        self.paused.store(paused, Ordering::SeqCst);
+        if paused && !self.paused.swap(true, Ordering::SeqCst) {
+            self.stop_shell_commands();
+        } else if !paused {
+            self.paused.store(false, Ordering::SeqCst);
+        }
     }
 
     pub fn paused(&self) -> bool {
@@ -377,6 +389,14 @@ impl Interrupts {
     /// Re-open shell command admission when the host starts.
     pub fn allow_shell_commands(&self) {
         self.shells.0.lock().unwrap_or_else(|p| p.into_inner()).closed = false;
+    }
+
+    pub fn set_shell_enabled(&self, enabled: bool) {
+        let mut state = self.shells.0.lock().unwrap_or_else(|p| p.into_inner());
+        if state.enabled && !enabled {
+            state.stops += 1;
+        }
+        state.enabled = enabled;
     }
 
     /// Stop the shell commands running now; ones started later carry on.
@@ -418,6 +438,9 @@ impl Interrupts {
         let mut state = self.shells.0.lock().unwrap_or_else(|p| p.into_inner());
         if state.closed {
             return Err(ShellDeny::Closed);
+        }
+        if !state.enabled {
+            return Err(ShellDeny::Disabled);
         }
         if state.running >= max {
             return Err(ShellDeny::Busy);
