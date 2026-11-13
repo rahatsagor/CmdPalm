@@ -15,12 +15,23 @@ and versions follow [Semantic Versioning](https://semver.org/).
   any background jobs they started, just like pausing control.
 - Stalled browser downloads and handshake writes now time out instead of
   holding connection slots open when a device drops off Wi-Fi.
+- Deck sequences wait for Shortcuts to finish and report failed Shortcuts.
+- Dictation starts no longer hold the shared voice lock while calling macOS;
+  other devices can continue streaming and callbacks can report results safely.
+- Caps Lock is correct on the first connection and stays steady while text is
+  temporarily typed with Caps Lock suppressed.
+- Device settings save without holding the settings read lock, and native
+  device and Deck changes save off the main thread.
+- HTTP parsing rejects ambiguous request lines and headers, and secure proxies
+  work with default ports in the Origin header. Buffered WebSocket frames are
+  preserved during an upgrade.
 
 ### Phone client
 
-- Offline and reconnecting sessions now precache all views and sheets, keep one
-  shared app-shell cache across paths, and avoid reloading the page when Wi-Fi
-  drops briefly.
+- Offline and reconnecting sessions precache views and sheets, isolate cached
+  builds, preserve the previous shell across interrupted updates, and offer
+  retry after a failed tab load. Shared transactions order concurrent workers'
+  shell fetches without relying on timer precision or broadcast delivery.
 - Pausing control on the Mac now stops held media repeat, scroll-strip hold,
   held buttons and keys, and clears trackpad drag lock on the phone.
 - If another device deletes a Deck page while you are editing one of its
@@ -29,6 +40,10 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - Live typing in the typing panel now starts fresh after using its arrow,
   Delete, Return or clipboard buttons, recovers cleanly from interrupted text
   composition, and keeps your draft when pasted text exceeds the 64 KB limit.
+- Settings backups retry failed writes, keyboard touches follow a sideways
+  rotation, and remote button edits no longer interrupt a Deck page swipe.
+- Dictation flushes its last audio packet before stopping, and Deck app actions
+  include a separate Hide choice.
 
 ## [0.8.0] - 2026-11-09
 

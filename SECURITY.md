@@ -31,9 +31,9 @@ Only the latest release receives fixes.
   /64 network, so one device can't dodge the lockout by switching addresses.
   Wrong PINs are forgotten after an hour without any, so occasional typos
   don't add up to longer lockouts. After 20 wrong PINs within a minute, from
-  any mix of addresses, pairing by PIN or approval pauses for everyone until
-  the minute has passed. The QR code is too long to guess, so it keeps
-  working during a lockout.
+  any mix of addresses, pairing by PIN pauses for everyone until the minute
+  has passed. QR pairing and Mac-side approval remain available, so PIN
+  guessing from another device cannot block them.
 - **Approval requests.** Each address (or IPv6 /64 network) can wait on one
   request at a time. After 3 requests in a row are declined, left
   unanswered or abandoned by the device, that address has to wait before
@@ -51,8 +51,8 @@ Only the latest release receives fixes.
   serve, which blocks DNS rebinding: an IP address, `localhost`, a name
   without dots, a name under `.local`, `.home.arpa` or `.internal`, or the
   custom address you set on the Mac.
-- **Connection limits.** Each address (or IPv6 /64 network) can hold at most
-  16 connections, and idle connections are closed and recycled, so another
+- **Connection limits.** Each address can hold at most 16 connections, and an
+  IPv6 /64 network can hold 64. Idle connections are closed and recycled, so another
   device on the network can't use up the connections your phone needs. An
   allowed proxy on the Mac may hold up to 64, since it connects for every
   phone that uses it.
@@ -76,6 +76,11 @@ port speaks both HTTP and HTTPS.
   the SHA-256 fingerprint shown there if you want to be sure. The
   [encrypted connection guide](https://cmdpalm.app/docs/encrypted-connection/)
   walks through installing, checking and removing it.
+  The generated certificates cover `.local` and `localhost` names and the
+  supported local IPv4 ranges. Use the encrypted address shown by CmdPalm.
+  Accepting a hostname over HTTP does not add it to the certificate: custom
+  names under `.home.arpa` or `.internal`, dotless names and IPv6 need a
+  reverse proxy with its own certificate for HTTPS.
 - **A reverse proxy on the Mac** is ignored unless you turn on **Accept
   connections through a proxy on this Mac** in **Settings → Advanced**. With
   it on, CmdPalm believes the `X-Forwarded-For`, `X-Forwarded-Proto` and
