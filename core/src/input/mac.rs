@@ -282,8 +282,8 @@ impl MacSink {
         let inside = |r: &CGRect| {
             point.x >= r.origin.x
                 && point.y >= r.origin.y
-                && point.x < r.origin.x + r.size.width
-                && point.y < r.origin.y + r.size.height
+                && point.x <= r.origin.x + r.size.width - 0.001
+                && point.y <= r.origin.y + r.size.height - 0.001
         };
         if self.displays.is_empty() || self.displays.iter().any(inside) {
             return point;
@@ -291,8 +291,8 @@ impl MacSink {
         self.displays
             .iter()
             .map(|r| CGPoint {
-                x: point.x.clamp(r.origin.x, r.origin.x + r.size.width - 1.0),
-                y: point.y.clamp(r.origin.y, r.origin.y + r.size.height - 1.0),
+                x: point.x.clamp(r.origin.x, r.origin.x + r.size.width - 0.001),
+                y: point.y.clamp(r.origin.y, r.origin.y + r.size.height - 0.001),
             })
             .min_by(|a, b| {
                 let da = (a.x - point.x).hypot(a.y - point.y);
@@ -361,11 +361,16 @@ impl MacSink {
     }
 
     fn scroll(&mut self, dx: f64, dy: f64, phase: u8, momentum: u8, event_flags: u64) {
+        if phase == super::scroll_phase::BEGAN {
+            self.scroll_remainder = (0.0, 0.0);
+        }
         let rx = self.scroll_remainder.0 + dx;
         let ry = self.scroll_remainder.1 + dy;
         let (ix, iy) = (rx.trunc(), ry.trunc());
         self.scroll_remainder = (rx - ix, ry - iy);
-        if phase != 0 && phase != super::scroll_phase::CHANGED || momentum == super::momentum_phase::END {
+        if matches!(phase, super::scroll_phase::ENDED | super::scroll_phase::CANCELLED)
+            || momentum == super::momentum_phase::END
+        {
             self.scroll_remainder = (0.0, 0.0);
         }
         let Some(event) =
@@ -454,13 +459,15 @@ impl MacSink {
         }
     }
 
-    fn gesture(&mut self, kind: GestureKind, phase: u8, value: f64) {
+    fn gesture(&mut self, kind: GestureKind, phase: u8, value: f64, event_flags: u64) {
         // Without a source, like the window server's own gesture events.
         let Some(event) = CGEvent::new(None) else {
             return;
         };
         let e = Some(&*event);
         CGEvent::set_type(e, CGEventType(GESTURE_EVENT));
+        let caps = self.caps_flag();
+        CGEvent::set_flags(e, CGEventFlags(event_flags | caps));
         let field = |field: u32| CGEventField(field);
         match kind {
             GestureKind::Zoom => {
@@ -534,7 +541,7 @@ impl EventSink for MacSink {
             Synth::Button { button, down, clicks, flags } => self.mouse_button(button, down, clicks, flags),
             Synth::Scroll { dx, dy, phase, momentum, flags } => self.scroll(dx, dy, phase, momentum, flags),
             Synth::Media { key, down } => self.media(key, down),
-            Synth::Gesture { kind, phase, value } => self.gesture(kind, phase, value),
+            Synth::Gesture { kind, phase, value, flags } => self.gesture(kind, phase, value, flags),
             Synth::ToggleCapsLock => self.toggle_caps_lock(),
             Synth::SetCapsLock(on) => self.set_caps_lock(on),
             Synth::Pause(duration) => std::thread::sleep(duration),

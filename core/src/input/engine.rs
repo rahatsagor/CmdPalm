@@ -551,7 +551,12 @@ impl<S: EventSink> Engine<S> {
             std::mem::take(&mut self.gestures).into_iter().partition(|g| now.duration_since(g.last) >= GESTURE_STALE);
         self.gestures = live;
         for gesture in stale {
-            self.sink.post(Synth::Gesture { kind: gesture.kind, phase: scroll_phase::ENDED, value: 0.0 });
+            self.sink.post(Synth::Gesture {
+                kind: gesture.kind,
+                phase: scroll_phase::ENDED,
+                value: 0.0,
+                flags: self.flags(),
+            });
         }
         if now.duration_since(self.last_watchdog) >= WATCHDOG_PERIOD {
             self.last_watchdog = now;
@@ -1042,7 +1047,7 @@ impl<S: EventSink> Engine<S> {
             return;
         }
         if kind == GestureKind::SmartZoom {
-            self.sink.post(Synth::Gesture { kind, phase: scroll_phase::NONE, value: 0.0 });
+            self.sink.post(Synth::Gesture { kind, phase: scroll_phase::NONE, value: 0.0, flags: self.flags() });
             return;
         }
         let limit = if kind == GestureKind::Zoom { MAX_ZOOM_STEP } else { MAX_ROTATE_STEP };
@@ -1055,7 +1060,12 @@ impl<S: EventSink> Engine<S> {
                 let continues = match active {
                     Some(i) if phase == scroll_phase::BEGAN || self.gestures[i].session != session => {
                         self.gestures.remove(i);
-                        self.sink.post(Synth::Gesture { kind, phase: scroll_phase::ENDED, value: 0.0 });
+                        self.sink.post(Synth::Gesture {
+                            kind,
+                            phase: scroll_phase::ENDED,
+                            value: 0.0,
+                            flags: self.flags(),
+                        });
                         false
                     }
                     Some(i) => {
@@ -1068,14 +1078,14 @@ impl<S: EventSink> Engine<S> {
                     self.gestures.push(TouchGesture { session, kind, last: now });
                 }
                 let phase = if continues { scroll_phase::CHANGED } else { scroll_phase::BEGAN };
-                self.sink.post(Synth::Gesture { kind, phase, value });
+                self.sink.post(Synth::Gesture { kind, phase, value, flags: self.flags() });
             }
             scroll_phase::ENDED | scroll_phase::CANCELLED => {
                 if let Some(i) = active
                     && self.gestures[i].session == session
                 {
                     self.gestures.remove(i);
-                    self.sink.post(Synth::Gesture { kind, phase, value: 0.0 });
+                    self.sink.post(Synth::Gesture { kind, phase, value: 0.0, flags: self.flags() });
                 }
             }
             _ => {}
@@ -1175,7 +1185,12 @@ impl<S: EventSink> Engine<S> {
             std::mem::take(&mut self.gestures).into_iter().partition(|g| g.session == id);
         self.gestures = others;
         for gesture in ended {
-            self.sink.post(Synth::Gesture { kind: gesture.kind, phase: scroll_phase::CANCELLED, value: 0.0 });
+            self.sink.post(Synth::Gesture {
+                kind: gesture.kind,
+                phase: scroll_phase::CANCELLED,
+                value: 0.0,
+                flags: self.flags(),
+            });
         }
         let Some(state) = self.sessions.get_mut(&id) else {
             return;
@@ -1922,7 +1937,7 @@ mod tests {
         events
             .into_iter()
             .filter_map(|e| match e {
-                Synth::Gesture { kind, phase, value } => Some((kind, phase, value)),
+                Synth::Gesture { kind, phase, value, .. } => Some((kind, phase, value)),
                 _ => None,
             })
             .collect()

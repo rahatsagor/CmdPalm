@@ -116,6 +116,7 @@ pub enum Synth {
         kind: GestureKind,
         phase: u8,
         value: f64,
+        flags: u64,
     },
     ToggleCapsLock,
     SetCapsLock(bool),
