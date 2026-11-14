@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Check, LocateFixed, Monitor, Play, RefreshCw, RotateCcw, Settings2, Square, ZoomIn, ZoomOut } from '@lucide/vue'
+import { Check, LocateFixed, Maximize, Minimize, Monitor, Play, RefreshCw, RotateCcw, Settings2, Square, ZoomIn, ZoomOut } from '@lucide/vue'
 import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, reactive, ref, watch } from 'vue'
 import RangeRow from '@/components/RangeRow.vue'
 import ScrollRail from '@/components/ScrollRail.vue'
@@ -18,6 +18,7 @@ const displayArea = ref<HTMLElement>()
 const body = ref<HTMLElement>()
 const preview = ref<HTMLElement>()
 const options = ref(false)
+const fullView = ref(false)
 const size = reactive({ width: 0, height: 0 })
 const zoom = ref(1)
 const pan = reactive({ x: 0, y: 0 })
@@ -36,7 +37,7 @@ const previewLength = computed(() => {
 })
 const previewStyle = computed(() => settings.displayControls === 'view' ? { flex: '1 1 0%' } : { flex: `0 0 ${previewLength.value}px` })
 const controlsHeight = computed(() => wide.value ? size.height : Math.max(0, size.height - previewLength.value - 8))
-const compactPreview = computed(() => settings.displayControls !== 'view' && (wide.value ? size.height : previewLength.value) < 140)
+const compactPreview = computed(() => !fullView.value && settings.displayControls !== 'view' && (wide.value ? size.height : previewLength.value) < 140)
 const maxZoom = computed(() => screen.original ? 8 : 4)
 const mode = computed({ get: () => settings.displayControls, set: value => { releaseAll(); settings.displayControls = value } })
 const qualities = [
@@ -55,22 +56,48 @@ const placeholder = computed(() => {
 })
 
 function activate() { if (video.value) activateScreen(video.value, picture.value) }
+function enterFullscreen() {
+  releaseAll()
+  fullView.value = true
+  options.value = false
+  const element = displayArea.value
+  if (element?.requestFullscreen && document.fullscreenEnabled) {
+    void element.requestFullscreen().then(() => {
+      if (!fullView.value || !screen.active || !streaming.value) {
+        if (document.fullscreenElement === element) void document.exitFullscreen().catch(() => {})
+      }
+    }).catch(() => {})
+  }
+}
+function leaveFullscreen() {
+  fullView.value = false
+  if (document.fullscreenElement === displayArea.value) void document.exitFullscreen().catch(() => {})
+}
+function fullscreenChanged() { if (!document.fullscreenElement) fullView.value = false }
+function escape(event: KeyboardEvent) {
+  if (event.key === 'Escape' && fullView.value) { event.preventDefault(); event.stopPropagation(); leaveFullscreen() }
+}
 onMounted(() => {
   observer = new ResizeObserver(([entry]) => {
     if (entry) { size.width = entry.contentRect.width; size.height = entry.contentRect.height; clampPan() }
   })
   if (body.value) observer.observe(body.value)
+  document.addEventListener('fullscreenchange', fullscreenChanged)
+  addEventListener('keydown', escape, true)
   activate()
 })
 onActivated(activate)
-onDeactivated(() => { deactivateScreen() })
+onDeactivated(() => { leaveFullscreen(); deactivateScreen() })
 onBeforeUnmount(() => {
-  observer?.disconnect(); deactivateScreen()
+  leaveFullscreen(); observer?.disconnect(); deactivateScreen()
+  document.removeEventListener('fullscreenchange', fullscreenChanged)
+  removeEventListener('keydown', escape, true)
 })
 
 function resetZoom() { zoom.value = 1; pan.x = 0; pan.y = 0; pointers.clear(); gesture = undefined }
 watch(() => [settings.displayId, settings.displayQuality], () => { stopViewing(); resetZoom() }, { flush: 'sync' })
-watch(() => screen.status, status => { if (status !== 'live') resetZoom() })
+watch(() => screen.status, status => { if (status !== 'live') resetZoom(); if (!streaming.value) leaveFullscreen() })
+watch(fullView, () => { void nextTick(clampPan) })
 watch(() => [settings.displayControls, settings.displaySplit], () => { void nextTick(clampPan) })
 
 function chooseDisplay(id: string) {
@@ -184,15 +211,22 @@ function up(event: PointerEvent) { pointers.delete(event.pointerId); beginGestur
         :options="[{ value: 'view', label: 'View' }, { value: 'trackpad', label: 'Trackpad' }, { value: 'keyboard', label: 'Keyboard' }]"
         aria-label="Controls below the display"
       />
+      <button v-if="live" type="button" class="grid size-11 shrink-0 place-items-center rounded-xl text-muted active:bg-surface-3" aria-label="Fullscreen display" @click="enterFullscreen"><Maximize :size="19" /></button>
       <button type="button" class="grid size-11 shrink-0 place-items-center rounded-xl text-muted active:bg-surface-3" aria-label="Display options" @click="options = true"><Settings2 :size="19" /></button>
     </div>
 
     <div ref="body" class="flex min-h-0 flex-1 gap-2" :class="wide ? 'flex-row' : 'flex-col'">
       <div
         ref="displayArea"
-        class="display-preview relative flex min-h-0 min-w-0 flex-col overflow-hidden rounded-2xl bg-black"
-        :style="previewStyle"
+        class="display-preview relative flex min-h-0 min-w-0 flex-col overflow-hidden bg-black"
+        :class="fullView ? 'fixed! inset-0 z-[100] px-2 pt-[calc(env(safe-area-inset-top)+52px)] pb-[env(safe-area-inset-bottom)]' : 'rounded-2xl'"
+        :style="fullView ? undefined : previewStyle"
       >
+        <div v-if="fullView" class="absolute inset-x-2 top-[env(safe-area-inset-top)] flex h-12 items-center justify-between gap-2 text-white">
+          <span class="min-w-0 truncate px-2 text-[13px]">{{ display?.name }}{{ screen.original ? ' · HD text · 1/sec' : '' }}</span>
+          <button type="button" class="flex min-h-11 items-center gap-1.5 rounded-xl px-3 text-[13px]" @click="stopViewing()"><Square :size="15" />Stop</button>
+          <button type="button" class="flex min-h-11 items-center gap-1.5 rounded-xl px-3 text-[13px]" @click="leaveFullscreen"><Minimize :size="17" />Exit</button>
+        </div>
         <div
           ref="preview"
           class="relative min-h-0 min-w-0 flex-1 touch-none overflow-hidden"
