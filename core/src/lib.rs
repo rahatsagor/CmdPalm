@@ -11,6 +11,7 @@ mod actions;
 pub mod api;
 pub mod auth;
 pub mod deck;
+mod display;
 pub mod host;
 pub mod input;
 pub mod keycodes;

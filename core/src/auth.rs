@@ -46,6 +46,9 @@ pub struct TrustedDevice {
     pub paired_at: i64,
     pub last_seen: i64,
     pub last_address: String,
+    /// Existing pairings do not automatically receive screen access.
+    #[serde(default)]
+    pub display_allowed: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -212,6 +215,7 @@ impl TrustStore {
                 paired_at: now,
                 last_seen: now,
                 last_address: address.to_string(),
+                display_allowed: false,
             },
             token_hash: hash_token(&token),
         });
@@ -254,6 +258,20 @@ impl TrustStore {
             self.save();
         }
         removed
+    }
+
+    pub fn display_allowed(&self, id: &str) -> bool {
+        self.devices.iter().any(|d| d.device.id == id && d.device.display_allowed)
+    }
+
+    pub fn set_display_allowed(&mut self, id: &str, allowed: bool) -> bool {
+        let Some(device) = self.devices.iter_mut().find(|d| d.device.id == id) else { return false };
+        if device.device.display_allowed == allowed {
+            return false;
+        }
+        device.device.display_allowed = allowed;
+        self.save();
+        true
     }
 
     pub fn rename(&mut self, id: &str, name: &str) -> bool {

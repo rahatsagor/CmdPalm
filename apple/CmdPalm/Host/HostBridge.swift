@@ -20,15 +20,17 @@ final class HostBridge: HostDelegate, Sendable {
     let volume: AudioVolume
     let pasteboard: Pasteboard
     let speech: SpeechService
+    let display: DisplayService
     /// Mirrors the host config's `allowShell`, which also governs file URLs.
     private let allowsShell = Mutex(false)
     private let events: @Sendable (HostEvent) -> Void
 
-    init(apps: AppCatalog, volume: AudioVolume, pasteboard: Pasteboard, speech: SpeechService, events: @escaping @Sendable (HostEvent) -> Void) {
+    init(apps: AppCatalog, volume: AudioVolume, pasteboard: Pasteboard, speech: SpeechService, display: DisplayService, events: @escaping @Sendable (HostEvent) -> Void) {
         self.apps = apps
         self.volume = volume
         self.pasteboard = pasteboard
         self.speech = speech
+        self.display = display
         self.events = events
     }
 
@@ -63,4 +65,5 @@ final class HostBridge: HostDelegate, Sendable {
     func voiceAudio(session: UInt64, pcm: Data) { speech.append(session: session, pcm: pcm) }
 
     func voiceStop(session: UInt64, cancel: Bool) { speech.stop(session: session, cancel: cancel) }
+    func displayCommand(session: UInt64, command: DisplayCommand) { display.command(session: session, command: command) }
 }

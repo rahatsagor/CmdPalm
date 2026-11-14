@@ -344,6 +344,50 @@ pub enum ClientMessage {
         #[serde(default)]
         id: Option<u64>,
     },
+    Displays {
+        id: u32,
+    },
+    DisplayAccessRequest {
+        id: u32,
+    },
+    DisplayAccessCancel {
+        id: u32,
+    },
+    DisplayStart {
+        id: u32,
+        display_id: String,
+        sdp: String,
+        quality: DisplayQuality,
+    },
+    DisplayStop {
+        id: u32,
+    },
+    DisplayAlive {
+        id: u32,
+    },
+    DisplayFocus {
+        id: u32,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum DisplayQuality {
+    Auto,
+    Battery,
+    Sharp,
+    Original,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, uniffi::Record)]
+#[serde(rename_all = "camelCase")]
+pub struct DisplayInfo {
+    /// A display UUID, not an index or a persisted CGDirectDisplayID.
+    pub id: String,
+    pub name: String,
+    pub width: u32,
+    pub height: u32,
+    pub main: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -370,6 +414,9 @@ pub struct Features {
     pub shell: bool,
     pub secure: bool,
     pub permission: bool,
+    pub display: bool,
+    pub display_requests: bool,
+    pub display_original: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, uniffi::Record)]
@@ -481,6 +528,30 @@ pub enum ServerMessage {
         apps: Vec<AppEntry>,
     },
     AppsChanged,
+    DisplayAccess {
+        allowed: bool,
+    },
+    DisplayRequest {
+        id: u32,
+        state: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        message: Option<String>,
+    },
+    Displays {
+        id: u32,
+        displays: Vec<DisplayInfo>,
+        can_request: bool,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        message: Option<String>,
+    },
+    DisplayState {
+        id: u32,
+        state: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        sdp: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        message: Option<String>,
+    },
     Deck {
         deck: Deck,
         revision: u64,

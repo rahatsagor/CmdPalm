@@ -10,6 +10,7 @@ final class Permissions {
     /// Accessibility, which lets CmdPalm post keyboard and mouse events.
     private(set) var canControl = Permissions.isTrusted()
     private(set) var speech = SFSpeechRecognizer.authorizationStatus()
+    private(set) var canView = CGPreflightScreenCaptureAccess()
 
     @ObservationIgnored var onChange: (() -> Void)?
     @ObservationIgnored private var timer: Timer?
@@ -40,9 +41,11 @@ final class Permissions {
     func refresh() {
         let control = Self.isTrusted()
         let speech = SFSpeechRecognizer.authorizationStatus()
-        guard control != canControl || speech != self.speech else { return }
+        let view = CGPreflightScreenCaptureAccess()
+        guard control != canControl || speech != self.speech || view != canView else { return }
         canControl = control
         self.speech = speech
+        canView = view
         onChange?()
     }
 
@@ -68,6 +71,12 @@ final class Permissions {
         default:
             break
         }
+    }
+
+    func requestViewing() {
+        _ = CGRequestScreenCaptureAccess()
+        if !CGPreflightScreenCaptureAccess() { Self.openSettings("Privacy_ScreenCapture") }
+        refresh()
     }
 
     static func openSettings(_ anchor: String) {

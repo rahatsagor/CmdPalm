@@ -46,6 +46,8 @@
 	<string>CmdPalm lists the apps in folders you added in Settings, so you can open them from your phone.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>CmdPalm turns speech from your phone’s microphone into text typed on this Mac.</string>
+	<key>NSScreenCaptureUsageDescription</key>
+	<string>CmdPalm lets devices you explicitly allow view a display on this Mac over your local network.</string>
 	<key>NSSupportsAutomaticTermination</key>
 	<false/>
 	<key>NSSupportsSuddenTermination</key>

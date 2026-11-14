@@ -981,6 +981,7 @@ mod tests {
             allow_approval: true,
             allow_shell: false,
             voice_available: false,
+            display_enabled: false,
         };
         struct Noop;
         impl crate::api::HostDelegate for Noop {
@@ -1017,6 +1018,7 @@ mod tests {
             }
             fn voice_audio(&self, _: u64, _: Vec<u8>) {}
             fn voice_stop(&self, _: u64, _: bool) {}
+            fn display_command(&self, _: u64, _: crate::api::DisplayCommand) {}
         }
         let engine = crate::input::InputEngine::spawn(|| crate::input::NullSink, Box::new(|_| {}));
         let shared = Arc::new(Shared::new(config, Arc::new(Noop), &engine, Box::new(|| true)));

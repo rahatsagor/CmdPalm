@@ -10,7 +10,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio_tungstenite::tungstenite::Message;
 
-use crate::api::{HostConfig, HostDelegate, HostEvent, LinkHost, NativeCommand};
+use crate::api::{DisplayCommand, HostConfig, HostDelegate, HostEvent, LinkHost, NativeCommand};
 use crate::host::{CoreHost, Shared};
 use crate::input::{EventSink, InputEngine, SharedRecorder, Synth};
 use crate::keycodes::{KEY_C, KEY_COMMAND, KEY_Q, KEY_RETURN, KEY_RIGHT_COMMAND, KEY_V, flags, mods};
@@ -26,6 +26,7 @@ struct MockDelegate {
     voice_requests: Mutex<Vec<Option<u32>>>,
     voice_gate: Mutex<Option<(std::sync::mpsc::Sender<()>, std::sync::mpsc::Receiver<()>)>>,
     voice_callback: Mutex<Option<VoiceCallback>>,
+    display_commands: Mutex<Vec<(u64, DisplayCommand)>>,
     /// The events posted so far, to tell when each call below happened.
     posted: SharedRecorder,
     /// App, link and shortcut calls, with how many events were posted by then.
@@ -118,6 +119,9 @@ impl HostDelegate for MockDelegate {
     fn voice_stop(&self, _session: u64, _cancel: bool) {
         self.voice.lock().unwrap().push("stop");
     }
+    fn display_command(&self, session: u64, command: DisplayCommand) {
+        self.display_commands.lock().unwrap().push((session, command));
+    }
 }
 
 struct Fixture {
@@ -169,6 +173,7 @@ fn fixture_with(paced: bool) -> Fixture {
         allow_approval: true,
         allow_shell: false,
         voice_available: true,
+        display_enabled: false,
     };
     let recorder = SharedRecorder::default();
     let sink = recorder.clone();
@@ -218,6 +223,468 @@ async fn recv_kind(ws: &mut Client, kind: &str) -> Value {
 
 fn hello(device: &str, auth: Value) -> Value {
     json!({"t": "hello", "v": 1, "device": {"id": device, "name": "Test Phone", "model": "iPhone"}, "auth": auth})
+}
+
+#[test]
+fn screen_viewing_needs_a_separate_native_grant_and_filters_late_lists() {
+    let f = fixture();
+    f.host.set_pin_shown(true);
+    f.rt.block_on(async {
+        let mut ws = connect(f.port).await;
+        send(&mut ws, hello("viewer", json!({"method":"pin", "pin":f.host.pairing_info().pin}))).await;
+        let welcome = recv_kind(&mut ws, "welcome").await;
+        assert_eq!(welcome["features"]["display"], false);
+        assert!(!f.host.trusted_devices()[0].display_allowed);
+        let session = f.host.connected_devices()[0].session;
+
+        send(&mut ws, json!({"t":"displays", "id":1})).await;
+        assert!(recv_kind(&mut ws, "displays").await["message"].as_str().unwrap().contains("off"));
+        let mut config = f.config.clone();
+        config.display_enabled = true;
+        f.host.update_config(config);
+        send(&mut ws, json!({"t":"displays", "id":2})).await;
+        assert!(recv_kind(&mut ws, "displays").await["displays"].as_array().unwrap().is_empty());
+        assert!(f.delegate.display_commands.lock().unwrap().is_empty());
+
+        f.host.set_display_allowed("viewer".into(), true);
+        assert_eq!(recv_kind(&mut ws, "displayAccess").await["allowed"], true);
+        assert!(f.host.trusted_devices()[0].display_allowed);
+        send(&mut ws, json!({"t":"displays", "id":3})).await;
+        tokio::time::sleep(Duration::from_millis(30)).await;
+        assert!(
+            f.delegate.display_commands.lock().unwrap().contains(&(session, DisplayCommand::List { request_id: 3 }))
+        );
+        let display = crate::protocol::DisplayInfo {
+            id: "monitor".into(),
+            name: "Test display".into(),
+            width: 2560,
+            height: 1440,
+            main: true,
+        };
+        f.host.display_sources(session, 2, vec![display.clone()], None);
+        f.host.display_sources(session, 3, vec![display], None);
+        let sources = recv_kind(&mut ws, "displays").await;
+        assert_eq!(sources["id"], 3, "a stale native list must not replace the requested list");
+        assert_eq!(sources["displays"][0]["id"], "monitor");
+
+        f.host.set_display_allowed("viewer".into(), false);
+        assert_eq!(recv_kind(&mut ws, "displayAccess").await["allowed"], false);
+        f.host.display_sources(session, 3, vec![], None);
+        send(&mut ws, json!({"t":"displays", "id":4})).await;
+        let denied = recv_kind(&mut ws, "displays").await;
+        assert_eq!(denied["id"], 4);
+        assert!(denied["displays"].as_array().unwrap().is_empty());
+        assert!(!f.host.display_frame(session, 999, vec![1], 0, true));
+    });
+}
+
+#[test]
+fn a_temporary_connection_cannot_inherit_or_persist_a_remembered_devices_screen_grant() {
+    let f = fixture();
+    let mut config = f.config.clone();
+    config.display_enabled = true;
+    f.host.update_config(config);
+    f.host.set_pin_shown(true);
+    f.rt.block_on(async {
+        let mut remembered = connect(f.port).await;
+        send(&mut remembered, hello("same-id", json!({"method":"pin", "pin":f.host.pairing_info().pin}))).await;
+        recv_kind(&mut remembered, "welcome").await;
+        f.host.set_display_allowed("same-id".into(), true);
+        recv_kind(&mut remembered, "displayAccess").await;
+
+        let mut temporary = connect(f.port).await;
+        let mut request = hello("same-id", json!({"method":"pin", "pin":f.host.pairing_info().pin}));
+        request["remember"] = json!(false);
+        send(&mut temporary, request).await;
+        recv_kind(&mut temporary, "welcome").await;
+        let session = f.host.connected_devices().into_iter().find(|d| !d.remembered).unwrap().session;
+        assert!(!f.host.connected_devices().into_iter().find(|d| d.session == session).unwrap().display_allowed);
+        f.host.set_display_allowed("same-id".into(), true);
+        assert!(!f.host.connected_devices().into_iter().find(|d| d.session == session).unwrap().display_allowed);
+        send(&mut temporary, json!({"t":"displays", "id":1})).await;
+        assert!(recv_kind(&mut temporary, "displays").await["displays"].as_array().unwrap().is_empty());
+
+        f.host.set_session_display_allowed(session, true);
+        assert_eq!(recv_kind(&mut temporary, "displayAccess").await["allowed"], true);
+        f.host.set_session_display_allowed(session, false);
+        assert_eq!(recv_kind(&mut temporary, "displayAccess").await["allowed"], false);
+        assert!(
+            f.host.trusted_devices()[0].display_allowed,
+            "changing a temporary connection cannot modify a stored grant"
+        );
+    });
+}
+
+#[test]
+fn screen_access_is_revoked_before_a_pairing_can_reuse_it() {
+    let f = fixture();
+    let mut config = f.config.clone();
+    config.display_enabled = true;
+    f.host.update_config(config);
+    f.host.set_pin_shown(true);
+    f.rt.block_on(async {
+        let mut ws = connect(f.port).await;
+        send(&mut ws, hello("viewer", json!({"method":"pin", "pin":f.host.pairing_info().pin}))).await;
+        recv_kind(&mut ws, "welcome").await;
+        f.host.set_display_allowed("viewer".into(), true);
+        recv_kind(&mut ws, "displayAccess").await;
+        let mut again = connect(f.port).await;
+        send(&mut again, hello("viewer", json!({"method":"pin", "pin":f.host.pairing_info().pin}))).await;
+        recv_kind(&mut again, "welcome").await;
+        assert!(!f.host.trusted_devices()[0].display_allowed);
+        send(&mut ws, json!({"t":"displays", "id":1})).await;
+        assert!(recv_kind(&mut ws, "displays").await["displays"].as_array().unwrap().is_empty());
+    });
+}
+
+#[test]
+fn screen_video_negotiates_over_plain_websocket_and_stops_before_accepting_late_frames() {
+    use std::time::Instant;
+    use str0m::change::SdpAnswer;
+    use str0m::media::{Direction, MediaKind};
+    use str0m::net::{Protocol, Receive};
+    use str0m::{Candidate, Event, Input, Output, Rtc};
+
+    let f = fixture();
+    let mut config = f.config.clone();
+    config.display_enabled = true;
+    f.host.update_config(config);
+    f.host.set_pin_shown(true);
+    f.rt.block_on(async {
+        let mut ws = connect(f.port).await;
+        send(&mut ws, hello("video-peer", json!({"method":"pin", "pin":f.host.pairing_info().pin}))).await;
+        recv_kind(&mut ws, "welcome").await;
+        f.host.set_display_allowed("video-peer".into(), true);
+        recv_kind(&mut ws, "displayAccess").await;
+        let session = f.host.connected_devices()[0].session;
+        send(&mut ws, json!({"t":"displays", "id":1})).await;
+        for _ in 0..100 {
+            if f.delegate.display_commands.lock().unwrap().contains(&(session, DisplayCommand::List { request_id: 1 })) { break; }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        f.host.display_sources(session, 1, vec![crate::protocol::DisplayInfo { id: "test".into(), name: "Test".into(), width: 640, height: 360, main: true }], None);
+        recv_kind(&mut ws, "displays").await;
+
+        let socket = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let local = socket.local_addr().unwrap();
+        let mut builder = Rtc::builder();
+        builder.codec_config().clear();
+        builder.codec_config().add_h264(108.into(), Some(109.into()), true, 0x42e01f);
+        let mut receiver = builder.build(Instant::now());
+        receiver.add_local_candidate(Candidate::host(local, "udp").unwrap());
+        while !matches!(receiver.poll_output().unwrap(), Output::Timeout(_)) {}
+        let mut change = receiver.sdp_api();
+        change.add_media(MediaKind::Video, Direction::RecvOnly, None, None, None);
+        let (offer, pending) = change.apply().unwrap();
+        send(&mut ws, json!({"t":"displayStart", "id":2, "displayId":"test", "quality":"auto", "sdp":offer.to_sdp_string()})).await;
+        let answer = loop {
+            let answer = recv_kind(&mut ws, "displayState").await;
+            if answer["state"] == "answer" { break answer; }
+            assert_ne!(answer["state"], "error", "negotiation failed: {answer}");
+        };
+        receiver.sdp_api().accept_answer(pending, SdpAnswer::from_sdp_string(answer["sdp"].as_str().unwrap()).unwrap()).unwrap();
+
+        let mut buffer = [0; 2048];
+        let mut pulse = tokio::time::interval(Duration::from_millis(20));
+        let began = Instant::now();
+        let mut generation = None;
+        let mut timestamp = 0;
+        let received = 'video: loop {
+            assert!(began.elapsed() < Duration::from_secs(5), "the encrypted video transport never delivered a frame");
+            let deadline = loop {
+                match receiver.poll_output().unwrap() {
+                    Output::Timeout(deadline) => break deadline,
+                    Output::Transmit(packet) => { socket.send_to(&packet.contents, packet.destination).await.unwrap(); }
+                    Output::Event(Event::MediaData(data)) => break 'video data.data,
+                    _ => {}
+                }
+            };
+            tokio::select! {
+                result = socket.recv_from(&mut buffer) => {
+                    let (length, source) = result.unwrap();
+                    let packet = Receive::new(Protocol::Udp, source, local, &buffer[..length]).unwrap();
+                    receiver.handle_input(Input::Receive(Instant::now(), packet)).unwrap();
+                }
+                _ = pulse.tick() => {
+                    send(&mut ws, json!({"t":"displayAlive", "id":2})).await;
+                    generation = f.delegate.display_commands.lock().unwrap().iter().find_map(|(owner, command)| {
+                        if *owner == session && let DisplayCommand::Start { generation, .. } = command { Some(*generation) } else { None }
+                    }).or(generation);
+                    if let Some(generation) = generation {
+                        // Minimal IDR payload: the transport test verifies
+                        // packetization/decryption, not an H.264 decoder.
+                        f.host.display_frame(session, generation, vec![0,0,0,1,0x65,0x88,0x84,0x21], timestamp, true);
+                        timestamp += 33_333;
+                    }
+                }
+                _ = tokio::time::sleep_until(deadline.into()) => { receiver.handle_input(Input::Timeout(Instant::now())).unwrap(); }
+            }
+        };
+        assert!(!received.is_empty());
+        let generation = generation.expect("capture must start only after video negotiation");
+        send(&mut ws, json!({"t":"displayStop", "id":1})).await;
+        send(&mut ws, json!({"t":"ping", "id":987})).await;
+        recv_kind(&mut ws, "pong").await;
+        assert!(f.host.display_frame(session, generation, vec![0,0,0,1,0x65,0x88,0x84,0x21], timestamp, true), "an old stop cannot cancel the current view");
+        send(&mut ws, json!({"t":"displayStop", "id":2})).await;
+        loop { if recv_kind(&mut ws, "displayState").await["state"] == "stopped" { break; } }
+        assert!(!f.host.display_frame(session, generation, vec![1], timestamp, true));
+        assert!(f.delegate.display_commands.lock().unwrap().contains(&(session, DisplayCommand::Stop { generation })));
+
+        // A suspended phone may never deliver Stop. Its lease must still
+        // release the viewer slot, even before media negotiation finishes.
+        send(&mut ws, json!({"t":"displayStart", "id":3, "displayId":"test", "quality":"auto", "sdp":offer.to_sdp_string()})).await;
+        let expired = loop {
+            let message = recv_kind(&mut ws, "displayState").await;
+            assert_ne!(message["state"], "error", "the prior viewer slot was not released: {message}");
+            if message["id"] == 3 && message["state"] == "stopped" { break message; }
+        };
+        assert!(expired["message"].as_str().unwrap().contains("no longer active"));
+        send(&mut ws, json!({"t":"displayStart", "id":4, "displayId":"test", "quality":"auto", "sdp":offer.to_sdp_string()})).await;
+        let restarted = recv_kind(&mut ws, "displayState").await;
+        assert_eq!(restarted["id"], 4);
+        assert_eq!(restarted["state"], "connecting");
+        send(&mut ws, json!({"t":"displayStop", "id":4})).await;
+    });
+}
+
+#[test]
+fn existing_pairings_do_not_automatically_gain_screen_access() {
+    let device: crate::auth::TrustedDevice = serde_json::from_value(json!({
+        "id":"old-phone", "name":"Phone", "model":"Phone", "pairedAt":1,
+        "lastSeen":2, "lastAddress":"127.0.0.1"
+    }))
+    .unwrap();
+    assert!(!device.display_allowed);
+}
+
+fn latest_display_approval(f: &Fixture) -> crate::api::DisplayApprovalRequest {
+    f.delegate
+        .events
+        .lock()
+        .unwrap()
+        .iter()
+        .rev()
+        .find_map(|event| {
+            if let HostEvent::DisplayApprovalRequested { request } = event { Some(request.clone()) } else { None }
+        })
+        .expect("the Mac must receive a separate screen approval request")
+}
+
+#[test]
+fn requesting_screen_access_cannot_grant_it_and_native_approval_is_bound_to_the_connection() {
+    for remembered in [true, false] {
+        let f = fixture();
+        f.host.set_pin_shown(true);
+        f.rt.block_on(async {
+            let mut ws = connect(f.port).await;
+            let mut request = hello("requesting-phone", json!({"method":"pin", "pin":f.host.pairing_info().pin}));
+            request["remember"] = json!(remembered);
+            send(&mut ws, request).await;
+            recv_kind(&mut ws, "welcome").await;
+            send(&mut ws, json!({"t":"displayAccessRequest", "id":7})).await;
+            assert_eq!(recv_kind(&mut ws, "displayRequest").await["state"], "pending");
+            let request = latest_display_approval(&f);
+            assert_eq!(request.remembered, remembered);
+            assert_eq!(f.host.pending_display_approvals()[0].id, request.id);
+            assert!(!f.host.connected_devices()[0].display_allowed);
+            assert!(f.delegate.display_commands.lock().unwrap().is_empty(), "requesting must never begin capture");
+            assert!(!f.host.respond_display_approval(request.id + 1, true));
+            assert!(f.host.respond_display_approval(request.id, true));
+            assert!(f.host.pending_display_approvals().is_empty());
+            assert_eq!(recv_kind(&mut ws, "displayAccess").await["allowed"], true);
+            assert_eq!(recv_kind(&mut ws, "displayRequest").await["state"], "allowed");
+            assert!(f.host.connected_devices()[0].display_allowed);
+            assert!(!f.host.respond_display_approval(request.id, true), "an approval can be consumed only once");
+            if remembered {
+                assert!(f.host.trusted_devices()[0].display_allowed);
+            } else {
+                assert!(f.host.trusted_devices().is_empty());
+            }
+        });
+    }
+}
+
+#[test]
+fn screen_approval_cannot_survive_revocation_pause_sleep_repair_or_client_cancellation() {
+    for stop in ["revoke", "pause", "sleep", "repair", "cancel"] {
+        let f = fixture();
+        f.host.set_pin_shown(true);
+        f.rt.block_on(async {
+            let mut ws = connect(f.port).await;
+            send(&mut ws, hello("viewer", json!({"method":"pin", "pin":f.host.pairing_info().pin}))).await;
+            recv_kind(&mut ws, "welcome").await;
+            send(&mut ws, json!({"t":"displayAccessRequest", "id":5})).await;
+            recv_kind(&mut ws, "displayRequest").await;
+            let request = latest_display_approval(&f);
+            match stop {
+                "revoke" => f.host.set_display_allowed("viewer".into(), false),
+                "pause" => {
+                    f.host.set_paused(true);
+                    f.host.set_paused(false);
+                }
+                "sleep" => {
+                    f.host.set_display_awake(false);
+                    f.host.set_display_awake(true);
+                }
+                "repair" => {
+                    let mut again = connect(f.port).await;
+                    send(&mut again, hello("viewer", json!({"method":"pin", "pin":f.host.pairing_info().pin}))).await;
+                    recv_kind(&mut again, "welcome").await;
+                }
+                "cancel" => {
+                    send(&mut ws, json!({"t":"displayAccessCancel", "id":5})).await;
+                    recv_kind(&mut ws, "displayRequest").await;
+                }
+                _ => unreachable!(),
+            }
+            assert!(!f.host.respond_display_approval(request.id, true), "stale approval survived {stop}");
+            assert!(f.host.pending_display_approvals().is_empty(), "stale prompt survived {stop}");
+            assert!(!f.host.trusted_devices()[0].display_allowed);
+        });
+    }
+}
+
+#[test]
+fn declined_screen_approval_is_rate_limited_across_token_reconnects() {
+    let f = fixture();
+    f.host.set_pin_shown(true);
+    f.rt.block_on(async {
+        let mut ws = connect(f.port).await;
+        send(&mut ws, hello("viewer", json!({"method":"pin", "pin":f.host.pairing_info().pin}))).await;
+        let welcome = recv_kind(&mut ws, "welcome").await;
+        send(&mut ws, json!({"t":"displayAccessRequest", "id":5})).await;
+        recv_kind(&mut ws, "displayRequest").await;
+        assert!(f.host.respond_display_approval(latest_display_approval(&f).id, false));
+        assert_eq!(recv_kind(&mut ws, "displayRequest").await["state"], "denied");
+        let mut second = connect(f.port).await;
+        send(&mut second, hello("viewer", json!({"method":"token", "token":welcome["token"]}))).await;
+        recv_kind(&mut second, "welcome").await;
+        send(&mut second, json!({"t":"displayAccessRequest", "id":6})).await;
+        assert_eq!(recv_kind(&mut second, "displayRequest").await["state"], "error");
+        let count = f
+            .delegate
+            .events
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|e| matches!(e, HostEvent::DisplayApprovalRequested { .. }))
+            .count();
+        assert_eq!(count, 1);
+    });
+}
+
+#[test]
+fn screen_approval_expires_without_native_interaction() {
+    let f = fixture();
+    f.host.set_pin_shown(true);
+    f.rt.block_on(async {
+        let mut ws = connect(f.port).await;
+        send(&mut ws, hello("viewer", json!({"method":"pin", "pin":f.host.pairing_info().pin}))).await;
+        recv_kind(&mut ws, "welcome").await;
+        let session = f.host.connected_devices()[0].session;
+        f.shared.displays.request_access(f.shared.clone(), session, 7);
+        let request = latest_display_approval(&f);
+        tokio::time::pause();
+        tokio::task::yield_now().await;
+        tokio::time::advance(Duration::from_secs(61)).await;
+        tokio::task::yield_now().await;
+        assert!(!f.host.respond_display_approval(request.id, true));
+        assert!(!f.host.trusted_devices()[0].display_allowed);
+    });
+}
+
+#[test]
+fn original_pictures_cross_encrypted_data_channels_with_bounded_chunks_and_stop_cleanly() {
+    use std::time::Instant;
+    use str0m::change::SdpAnswer;
+    use str0m::net::{Protocol, Receive};
+    use str0m::{Candidate, Event, Input, Output, Rtc};
+    let f = fixture();
+    let mut config = f.config.clone();
+    config.display_enabled = true;
+    f.host.update_config(config);
+    f.host.set_pin_shown(true);
+    f.rt.block_on(async {
+        let mut ws = connect(f.port).await;
+        send(&mut ws, hello("original-peer", json!({"method":"pin", "pin":f.host.pairing_info().pin}))).await;
+        recv_kind(&mut ws, "welcome").await;
+        f.host.set_display_allowed("original-peer".into(), true);
+        recv_kind(&mut ws, "displayAccess").await;
+        let session = f.host.connected_devices()[0].session;
+        send(&mut ws, json!({"t":"displays", "id":1})).await;
+        for _ in 0..100 {
+            if f.delegate.display_commands.lock().unwrap().contains(&(session, DisplayCommand::List { request_id: 1 })) { break; }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        f.host.display_sources(session, 1, vec![crate::protocol::DisplayInfo { id: "test".into(), name: "Test".into(), width: 1920, height: 1080, main: true }], None);
+        recv_kind(&mut ws, "displays").await;
+        let socket = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let local = socket.local_addr().unwrap();
+        let mut receiver = Rtc::builder().build(Instant::now());
+        receiver.add_local_candidate(Candidate::host(local, "udp").unwrap());
+        while !matches!(receiver.poll_output().unwrap(), Output::Timeout(_)) {}
+        let mut change = receiver.sdp_api();
+        change.add_channel("cmdpalm.original".into());
+        let (offer, pending) = change.apply().unwrap();
+        send(&mut ws, json!({"t":"displayStart", "id":2, "displayId":"test", "quality":"original", "sdp":offer.to_sdp_string()})).await;
+        let answer = loop {
+            let state = recv_kind(&mut ws, "displayState").await;
+            assert_ne!(state["state"], "error", "{state}");
+            if state["state"] == "answer" { break state; }
+        };
+        receiver.sdp_api().accept_answer(pending, SdpAnswer::from_sdp_string(answer["sdp"].as_str().unwrap()).unwrap()).unwrap();
+        // Larger than the SCTP send buffer: correct delivery requires the
+        // sender to honor backpressure rather than enqueueing a whole frame.
+        let image: Vec<u8> = (0..300_000).map(|i| (i * 31 + i / 7) as u8).collect();
+        let mut received = Vec::new();
+        let mut buffer = [0; 2048];
+        let mut pulse = tokio::time::interval(Duration::from_millis(20));
+        let began = Instant::now(); let mut generation = None; let mut sent = false;
+        while received.len() < image.len() {
+            assert!(began.elapsed() < Duration::from_secs(8), "HD picture transfer stalled at {} bytes", received.len());
+            let deadline = loop {
+                match receiver.poll_output().unwrap() {
+                    Output::Timeout(deadline) => break deadline,
+                    Output::Transmit(packet) => { socket.send_to(&packet.contents, packet.destination).await.unwrap(); }
+                    Output::Event(Event::ChannelData(data)) => {
+                        assert!(data.binary); assert!(data.data.len() <= 16 * 1024);
+                        assert_eq!(&data.data[..4], b"CPNG");
+                        assert_eq!(u32::from_le_bytes(data.data[8..12].try_into().unwrap()) as usize, image.len());
+                        assert_eq!(u32::from_le_bytes(data.data[12..16].try_into().unwrap()) as usize, received.len());
+                        received.extend_from_slice(&data.data[16..]);
+                    }
+                    _ => {}
+                }
+            };
+            tokio::select! {
+                packet = socket.recv_from(&mut buffer) => {
+                    let (size, source) = packet.unwrap();
+                    receiver.handle_input(Input::Receive(Instant::now(), Receive::new(Protocol::Udp, source, local, &buffer[..size]).unwrap())).unwrap();
+                }
+                _ = pulse.tick() => {
+                    send(&mut ws, json!({"t":"displayAlive", "id":2})).await;
+                    generation = f.delegate.display_commands.lock().unwrap().iter().find_map(|(_, command)| {
+                        if let DisplayCommand::Start { generation, original: true, max_dimension, fps, .. } = command {
+                            assert_eq!((*max_dimension, *fps), (3840, 1)); Some(*generation)
+                        } else { None }
+                    }).or(generation);
+                    if !sent && let Some(generation) = generation { sent = f.host.display_frame(session, generation, image.clone(), 0, true); }
+                }
+                _ = tokio::time::sleep_until(deadline.into()) => { receiver.handle_input(Input::Timeout(Instant::now())).unwrap(); }
+                message = ws.next() => {
+                    if let Some(Ok(Message::Text(text))) = message {
+                        let state: Value = serde_json::from_str(&text).unwrap();
+                        assert!(!(state["t"] == "displayState" && state["state"] == "stopped"), "{state}");
+                    }
+                }
+            }
+        }
+        assert_eq!(received, image, "encrypted transport must preserve original picture bytes exactly");
+        send(&mut ws, json!({"t":"displayStop", "id":2})).await;
+        loop { if recv_kind(&mut ws, "displayState").await["state"] == "stopped" { break; } }
+        assert!(!f.host.display_frame(session, generation.unwrap(), image, 1, true));
+    });
 }
 
 #[test]

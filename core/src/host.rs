@@ -45,6 +45,7 @@ pub(crate) const STOPPED_SHARING: &str = "The Mac stopped sharing.";
 
 pub(crate) struct LiveSession {
     pub info: ConnectedDevice,
+    pub display_epoch: u64,
     /// Authorizes HTTP requests (app icons) made on behalf of this session.
     pub key: String,
     pub tx: mpsc::UnboundedSender<Outgoing>,
@@ -80,6 +81,7 @@ pub(crate) struct Voices {
 }
 
 pub(crate) struct Shared {
+    pub displays: crate::display::DisplayHub,
     pub config: RwLock<HostConfig>,
     pub delegate: Arc<dyn HostDelegate>,
     pub engine: Mutex<Sender<Command>>,
@@ -126,6 +128,7 @@ impl Shared {
         let deck = dir.as_ref().and_then(|d| load_deck(&d.join("deck.json"))).unwrap_or_default();
         engine.interrupts().set_shell_enabled(config.allow_shell);
         Self {
+            displays: crate::display::DisplayHub::default(),
             config: RwLock::new(config),
             delegate,
             engine: Mutex::new(engine.sender()),
@@ -302,7 +305,15 @@ impl Shared {
 
     pub fn features(&self, secure: bool) -> Features {
         let config = self.config();
-        Features { voice: config.voice_available, shell: config.allow_shell, secure, permission: (self.permission)() }
+        Features {
+            voice: config.voice_available,
+            shell: config.allow_shell,
+            secure,
+            permission: (self.permission)(),
+            display: config.display_enabled,
+            display_requests: true,
+            display_original: true,
+        }
     }
 
     pub fn data_dir(&self) -> Option<PathBuf> {
@@ -454,6 +465,8 @@ impl CoreHost {
     }
 
     fn close_sessions(&self, reason: &str, reconnect: bool) {
+        self.shared.displays.cancel_access(&self.shared, None, None, "cancelled", reason);
+        self.shared.displays.cancel(&self.shared, None, None, reason);
         let sessions: Vec<_> = self.shared.state().sessions.values().map(|s| s.tx.clone()).collect();
         for tx in sessions {
             let _ = tx.send(Outgoing::Close { reason: reason.into(), reconnect });
@@ -461,6 +474,17 @@ impl CoreHost {
     }
 
     fn close_device(&self, device_id: &str, reason: &str) {
+        let ids: Vec<_> = self
+            .shared
+            .state()
+            .sessions
+            .values()
+            .filter(|s| s.info.device_id == device_id)
+            .map(|s| s.info.session)
+            .collect();
+        for id in ids {
+            self.shared.displays.forget(&self.shared, id);
+        }
         let sessions: Vec<_> = self
             .shared
             .state()
@@ -597,13 +621,33 @@ impl CoreHost {
         if previous.voice_available && !config.voice_available {
             self.shared.cancel_voices();
         }
-        if previous.allow_shell != config.allow_shell || previous.voice_available != config.voice_available {
+        if previous.display_enabled && !config.display_enabled {
+            self.shared.displays.cancel_access(
+                &self.shared,
+                None,
+                None,
+                "cancelled",
+                "Screen viewing was turned off on the Mac.",
+            );
+            self.shared.displays.cancel(&self.shared, None, None, "Screen viewing was turned off on the Mac.");
+        }
+        if previous.allow_shell != config.allow_shell
+            || previous.voice_available != config.voice_available
+            || previous.display_enabled != config.display_enabled
+        {
             let permission = (self.shared.permission)();
             let sessions: Vec<_> =
                 self.shared.state().sessions.values().map(|s| (s.tx.clone(), s.info.secure)).collect();
             for (tx, secure) in sessions {
-                let features =
-                    Features { voice: config.voice_available, shell: config.allow_shell, secure, permission };
+                let features = Features {
+                    voice: config.voice_available,
+                    shell: config.allow_shell,
+                    secure,
+                    permission,
+                    display: config.display_enabled,
+                    display_requests: true,
+                    display_original: true,
+                };
                 let _ = tx.send(Outgoing::Message(ServerMessage::Features { features }));
             }
         }
@@ -723,6 +767,7 @@ impl CoreHost {
     }
 
     pub fn disconnect(&self, session: u64) {
+        self.shared.displays.forget(&self.shared, session);
         if let Some(live) = self.shared.state().sessions.get(&session) {
             let _ = live.tx.send(Outgoing::Close { reason: "Disconnected from the Mac.".into(), reconnect: false });
         }
@@ -747,7 +792,15 @@ impl CoreHost {
         }
         self.shared.interrupts.set_paused(paused);
         if paused {
+            self.shared.displays.cancel_access(
+                &self.shared,
+                None,
+                None,
+                "cancelled",
+                "Screen viewing is paused on the Mac.",
+            );
             self.shared.cancel_voices();
+            self.shared.displays.cancel(&self.shared, None, None, "Screen viewing is paused on the Mac.");
         }
         self.shared.engine(Command::SetPaused(paused));
         self.shared.broadcast(ServerMessage::Paused { paused });
@@ -804,9 +857,138 @@ impl CoreHost {
         let config = self.shared.config();
         let sessions: Vec<_> = self.shared.state().sessions.values().map(|s| (s.tx.clone(), s.info.secure)).collect();
         for (tx, secure) in sessions {
-            let features = Features { voice: config.voice_available, shell: config.allow_shell, secure, permission };
+            let features = Features {
+                voice: config.voice_available,
+                shell: config.allow_shell,
+                secure,
+                permission,
+                display: config.display_enabled,
+                display_requests: true,
+                display_original: true,
+            };
             let _ = tx.send(Outgoing::Message(ServerMessage::Features { features }));
         }
+    }
+
+    /// Only native Mac settings can grant this capability. An unremembered
+    /// connection claiming the same device ID never inherits a stored grant.
+    pub fn set_display_allowed(&self, id: String, allowed: bool) {
+        let sessions = {
+            let mut state = self.shared.state();
+            state.trust.set_display_allowed(&id, allowed);
+            state
+                .sessions
+                .values_mut()
+                .filter(|s| s.info.device_id == id && s.info.remembered)
+                .map(|s| {
+                    s.info.display_allowed = allowed;
+                    if !allowed {
+                        s.display_epoch = s.display_epoch.wrapping_add(1);
+                    }
+                    s.info.session
+                })
+                .collect::<Vec<_>>()
+        };
+        if !allowed {
+            for session in &sessions {
+                self.shared.displays.forget(&self.shared, *session);
+            }
+        }
+        for session in sessions {
+            if allowed {
+                self.shared.displays.cancel_access(
+                    &self.shared,
+                    Some(session),
+                    None,
+                    "allowed",
+                    "Screen viewing was allowed on the Mac.",
+                );
+            }
+            self.shared.send_to(session, ServerMessage::DisplayAccess { allowed });
+        }
+        self.shared.save_trust();
+        self.shared.emit(HostEvent::DevicesChanged);
+    }
+
+    pub fn set_session_display_allowed(&self, session: u64, allowed: bool) {
+        let changed = {
+            let mut state = self.shared.state();
+            if let Some(live) = state.sessions.get_mut(&session).filter(|s| !s.info.remembered) {
+                live.info.display_allowed = allowed;
+                if !allowed {
+                    live.display_epoch = live.display_epoch.wrapping_add(1);
+                }
+                true
+            } else {
+                false
+            }
+        };
+        if !changed {
+            return;
+        }
+        if !allowed {
+            self.shared.displays.forget(&self.shared, session);
+        }
+        self.shared.send_to(session, ServerMessage::DisplayAccess { allowed });
+        if allowed {
+            self.shared.displays.cancel_access(
+                &self.shared,
+                Some(session),
+                None,
+                "allowed",
+                "Screen viewing was allowed on the Mac.",
+            );
+        }
+        self.shared.emit(HostEvent::SessionsChanged);
+    }
+
+    pub fn display_sources(
+        &self,
+        session: u64,
+        request_id: u32,
+        displays: Vec<crate::protocol::DisplayInfo>,
+        message: Option<String>,
+    ) {
+        self.shared.displays.sources(&self.shared, session, request_id, displays, message);
+    }
+
+    pub fn respond_display_approval(&self, id: u64, allow: bool) -> bool {
+        self.shared.displays.respond_access(&self.shared, id, allow)
+    }
+
+    pub fn pending_display_approvals(&self) -> Vec<crate::api::DisplayApprovalRequest> {
+        self.shared.displays.pending_access()
+    }
+
+    pub fn set_display_awake(&self, awake: bool) {
+        self.shared.displays.set_awake(&self.shared, awake);
+    }
+
+    pub fn display_frame(
+        &self,
+        session: u64,
+        generation: u64,
+        data: Vec<u8>,
+        timestamp_us: u64,
+        keyframe: bool,
+    ) -> bool {
+        self.shared.displays.frame(&self.shared, session, generation, data, timestamp_us, keyframe)
+    }
+
+    pub fn display_failed(&self, session: u64, generation: u64, message: String) {
+        self.shared.displays.failed(&self.shared, session, generation, &message);
+    }
+
+    /// Lock, sleep, or native permission revocation ends viewing without
+    /// preventing the existing input controls from reconnecting afterward.
+    pub fn suspend_display(&self) {
+        self.shared.displays.cancel_access(&self.shared, None, None, "cancelled", "Screen viewing stopped on the Mac.");
+        self.shared.displays.cancel(
+            &self.shared,
+            None,
+            None,
+            "Screen viewing stopped on the Mac. Unlock or wake the Mac, then start viewing again.",
+        );
     }
 
     pub fn voice_update(&self, session: u64, update: VoiceUpdate) {

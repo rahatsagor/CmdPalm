@@ -10,7 +10,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use cmdpalm_core::api::{HostConfig, HostDelegate, HostEvent, LinkHost, NativeCommand};
+use cmdpalm_core::api::{DisplayCommand, HostConfig, HostDelegate, HostEvent, LinkHost, NativeCommand};
 use cmdpalm_core::host::CoreHost;
 use cmdpalm_core::protocol::{AppEntry, AppOp};
 
@@ -86,6 +86,7 @@ impl HostDelegate for Delegate {
     }
     fn voice_audio(&self, _session: u64, _pcm: Vec<u8>) {}
     fn voice_stop(&self, _session: u64, _cancel: bool) {}
+    fn display_command(&self, _session: u64, _command: DisplayCommand) {}
 }
 
 fn main() {
@@ -106,6 +107,7 @@ fn main() {
         allow_approval: false,
         allow_shell: false,
         voice_available: false,
+        display_enabled: false,
     };
     let delegate = Arc::new(Delegate { volume: Mutex::new((0.5, false)), clipboard: Mutex::new(String::new()) });
     let host = if live { CoreHost::new(config, delegate) } else { CoreHost::dry_run(config, delegate) };

@@ -215,9 +215,11 @@ pub(crate) async fn run<S>(
         if authorized.remembered && !state.trust.contains(&device.id) {
             break 'welcome None;
         }
+        let display_allowed = authorized.remembered && state.trust.display_allowed(&device.id);
         state.sessions.insert(
             id,
             LiveSession {
+                display_epoch: 0,
                 info: ConnectedDevice {
                     session: id,
                     device_id: device.id.clone(),
@@ -227,6 +229,7 @@ pub(crate) async fn run<S>(
                     connected_at: auth::unix_now(),
                     secure,
                     remembered: authorized.remembered,
+                    display_allowed,
                 },
                 key: key.clone(),
                 tx,
@@ -335,6 +338,7 @@ pub(crate) async fn run<S>(
     // Stop typing and running deck actions before releasing held input.
     shared.interrupts.end(id);
     shared.state().sessions.remove(&id);
+    shared.displays.forget(&shared, id);
     shared.engine(Command::EndSession(id));
     worker.abort();
     let _ = conn.voice_ops.send(VoiceOp::Stop { cancel: true, request_id: None });
@@ -385,7 +389,28 @@ where
     };
     let accept = |shared: &Shared| {
         let name = fallback_name();
-        let token = remember.then(|| shared.state().trust.issue(device, peer));
+        let token = remember.then(|| {
+            let (token, previous) = {
+                let mut state = shared.state();
+                let token = state.trust.issue(device, peer);
+                let previous = state
+                    .sessions
+                    .values_mut()
+                    .filter(|s| s.info.remembered && s.info.device_id == device.id)
+                    .map(|s| {
+                        s.info.display_allowed = false;
+                        s.display_epoch = s.display_epoch.wrapping_add(1);
+                        s.info.session
+                    })
+                    .collect::<Vec<_>>();
+                (token, previous)
+            };
+            for session in previous {
+                shared.displays.forget(shared, session);
+                shared.send_to(session, ServerMessage::DisplayAccess { allowed: false });
+            }
+            token
+        });
         Ok(Authorized { token, remembered: remember, newly_paired: true, name })
     };
     match request {
@@ -624,6 +649,40 @@ impl Connection {
             return reply;
         }
         match message {
+            ClientMessage::DisplayAccessRequest { id } => {
+                self.shared.displays.request_access(self.shared.clone(), self.id, id);
+                None
+            }
+            ClientMessage::DisplayAccessCancel { id } => {
+                self.shared.displays.cancel_access(
+                    &self.shared,
+                    Some(self.id),
+                    Some(id),
+                    "cancelled",
+                    "The request was cancelled.",
+                );
+                None
+            }
+            ClientMessage::Displays { id } => {
+                self.shared.displays.list(&self.shared, self.id, id);
+                None
+            }
+            ClientMessage::DisplayStart { id, display_id, sdp, quality } => {
+                crate::display::start(self.shared.clone(), self.id, id, display_id, sdp, quality);
+                None
+            }
+            ClientMessage::DisplayStop { id } => {
+                self.shared.displays.cancel(&self.shared, Some(self.id), Some(id), "Screen viewing stopped.");
+                None
+            }
+            ClientMessage::DisplayAlive { id } => {
+                self.shared.displays.alive(self.id, id);
+                None
+            }
+            ClientMessage::DisplayFocus { id } => {
+                self.shared.displays.focus(&self.shared, self.id, id);
+                None
+            }
             ClientMessage::Hello { .. } => None,
             ClientMessage::Ping { id } => {
                 self.shared.engine(Command::Alive(self.id));
@@ -924,6 +983,14 @@ fn paused_reply(message: &ClientMessage) -> Option<Option<ServerMessage>> {
         | ClientMessage::SettingsList
         | ClientMessage::SettingsCopy { .. }
         | ClientMessage::VoiceStop { .. } => None,
+        ClientMessage::DisplayStop { .. }
+        | ClientMessage::DisplayAlive { .. }
+        | ClientMessage::Displays { .. }
+        | ClientMessage::DisplayAccessCancel { .. } => None,
+        ClientMessage::DisplayAccessRequest { id } => Some(Some(crate::display::access_state(*id, "error", PAUSED))),
+        ClientMessage::DisplayStart { id, .. } | ClientMessage::DisplayFocus { id } => {
+            Some(Some(crate::display::state(*id, "error", Some(PAUSED))))
+        }
         ClientMessage::Action { id, .. } => {
             Some(Some(ServerMessage::ActionResult { id: *id, ok: false, message: Some(PAUSED.into()) }))
         }

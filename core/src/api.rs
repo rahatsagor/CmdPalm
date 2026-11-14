@@ -26,6 +26,8 @@ pub struct HostConfig {
     pub allow_shell: bool,
     /// Whether the Mac can transcribe speech streamed from the phone.
     pub voice_available: bool,
+    /// Screen viewing is an explicit opt-in on the Mac.
+    pub display_enabled: bool,
 }
 
 /// Which address the pairing link and QR code use.
@@ -69,6 +71,7 @@ pub struct ConnectedDevice {
     pub connected_at: i64,
     pub secure: bool,
     pub remembered: bool,
+    pub display_allowed: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
@@ -77,6 +80,16 @@ pub struct ApprovalRequest {
     pub device_name: String,
     pub model: String,
     pub address: String,
+}
+
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct DisplayApprovalRequest {
+    pub id: u64,
+    pub session: u64,
+    pub device_name: String,
+    pub model: String,
+    pub address: String,
+    pub remembered: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, uniffi::Enum)]
@@ -97,6 +110,12 @@ pub enum HostEvent {
     },
     /// The request was answered elsewhere or the device gave up.
     ApprovalEnded {
+        id: u64,
+    },
+    DisplayApprovalRequested {
+        request: DisplayApprovalRequest,
+    },
+    DisplayApprovalEnded {
         id: u64,
     },
     Paired {
@@ -145,6 +164,18 @@ pub trait HostDelegate: Send + Sync {
     /// 16 kHz mono signed 16-bit little-endian PCM.
     fn voice_audio(&self, session: u64, pcm: Vec<u8>);
     fn voice_stop(&self, session: u64, cancel: bool);
+    /// Screen capture work is queued by the host, never performed inline.
+    fn display_command(&self, session: u64, command: DisplayCommand);
+}
+
+#[derive(Debug, Clone, PartialEq, uniffi::Enum)]
+pub enum DisplayCommand {
+    List { request_id: u32 },
+    Start { generation: u64, display_id: String, max_dimension: u32, fps: u32, bitrate: u32, original: bool },
+    Configure { generation: u64, fps: u32, bitrate: u32 },
+    KeyFrame { generation: u64 },
+    Focus { generation: u64 },
+    Stop { generation: u64 },
 }
 
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]

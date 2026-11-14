@@ -69,6 +69,7 @@ final class Preferences {
         static let allowApproval = "allowApproval"
         static let allowShell = "allowShell"
         static let voiceEnabled = "voiceEnabled"
+        static let displayEnabled = "displayEnabled"
         static let logLevel = "logLevel"
         static let onboarded = "onboarded"
         static let appFolders = "appFolders"
@@ -90,6 +91,7 @@ final class Preferences {
     var allowApproval: Bool { didSet { save(allowApproval, Key.allowApproval) } }
     var allowShell: Bool { didSet { save(allowShell, Key.allowShell) } }
     var voiceEnabled: Bool { didSet { save(voiceEnabled, Key.voiceEnabled) } }
+    var displayEnabled: Bool { didSet { save(displayEnabled, Key.displayEnabled) } }
     var logLevel: LogLevel { didSet { save(logLevel.rawValue, Key.logLevel, notify: false) } }
     var onboarded: Bool { didSet { save(onboarded, Key.onboarded, notify: false) } }
     /// Extra folders to look for apps in, such as one on an external drive.
@@ -110,6 +112,7 @@ final class Preferences {
             Key.allowApproval: true,
             Key.allowShell: false,
             Key.voiceEnabled: true,
+            Key.displayEnabled: false,
             Key.logLevel: LogLevel.info.rawValue,
             Key.onboarded: false,
         ])
@@ -121,6 +124,7 @@ final class Preferences {
         allowApproval = defaults.bool(forKey: Key.allowApproval)
         allowShell = defaults.bool(forKey: Key.allowShell)
         voiceEnabled = defaults.bool(forKey: Key.voiceEnabled)
+        displayEnabled = defaults.bool(forKey: Key.displayEnabled)
         logLevel = Self.storedLogLevel(in: defaults)
         onboarded = defaults.bool(forKey: Key.onboarded)
         appFolders = Self.uniqueFolders(defaults.stringArray(forKey: Key.appFolders) ?? [])

@@ -19,6 +19,7 @@ final class HostController {
     private(set) var connected: [ConnectedDevice] = []
     private(set) var trusted: [TrustedDevice] = []
     private(set) var approvals: [ApprovalRequest] = []
+    private(set) var displayApprovals: [DisplayApprovalRequest] = []
     private(set) var paused = false
     private(set) var preferredPortTaken = false
     private(set) var layoutName = ""
@@ -62,7 +63,7 @@ final class HostController {
         let speech = SpeechService { session, update in
             reference.host?.voiceUpdate(session: session, update: update)
         }
-        bridge = HostBridge(apps: AppCatalog(), volume: volume, pasteboard: Pasteboard(), speech: speech) { [weak self] event in
+        bridge = HostBridge(apps: AppCatalog(), volume: volume, pasteboard: Pasteboard(), speech: speech, display: DisplayService(reference: reference)) { [weak self] event in
             DispatchQueue.main.async {
                 MainActor.assumeIsolated { self?.handle(event) }
             }
@@ -189,6 +190,16 @@ final class HostController {
         removeApproval(request.id)
     }
 
+    func respond(to request: DisplayApprovalRequest, allow: Bool) {
+        let valid = host.respondDisplayApproval(id: request.id, allow: allow)
+        displayApprovals.removeAll { $0.id == request.id }
+        onApprovalsChanged?()
+        if valid && allow {
+            preferences.displayEnabled = true
+            if !permissions.canView { permissions.requestViewing() }
+        }
+    }
+
     func disconnect(_ device: ConnectedDevice) {
         host.disconnect(session: device.session)
     }
@@ -199,6 +210,14 @@ final class HostController {
 
     func forgetAllDevices() {
         enqueue { host in host.forgetAllDevices() }
+    }
+
+    func setDisplayAllowed(_ id: String, allowed: Bool) {
+        enqueue { host in host.setDisplayAllowed(id: id, allowed: allowed) }
+    }
+
+    func setTemporaryDisplayAllowed(_ session: UInt64, allowed: Bool) {
+        enqueue { host in host.setSessionDisplayAllowed(session: session, allowed: allowed) }
     }
 
     func rename(_ device: TrustedDevice, to name: String) {
@@ -235,6 +254,8 @@ final class HostController {
         case .stopped:
             status = pendingRestarts > 0 ? .starting : .stopped
             connected = []
+            displayApprovals = []
+            onApprovalsChanged?()
             if !approvals.isEmpty {
                 approvals = []
                 onApprovalsChanged?()
@@ -256,6 +277,11 @@ final class HostController {
             onApprovalsChanged?()
         case let .approvalEnded(id):
             removeApproval(id)
+        case .displayApprovalRequested, .displayApprovalEnded:
+            // Cross-thread notifications can arrive after cancellation. Never
+            // recreate a prompt from an event whose request is already gone.
+            displayApprovals = host.pendingDisplayApprovals()
+            onApprovalsChanged?()
         case let .paired(name):
             lastPaired = name
             trusted = host.trustedDevices()
@@ -285,6 +311,7 @@ final class HostController {
     private func permissionsChanged() {
         host.permissionChanged()
         host.updateConfig(config: makeConfig())
+        if !permissions.canView { host.suspendDisplay() }
         if permissions.canControl, notice?.contains("Accessibility") == true { notice = nil }
     }
 
@@ -301,7 +328,8 @@ final class HostController {
             allowPin: preferences.allowPin,
             allowApproval: preferences.allowApproval,
             allowShell: preferences.allowShell,
-            voiceAvailable: preferences.voiceEnabled && SpeechService.mayBeAvailable
+            voiceAvailable: preferences.voiceEnabled && SpeechService.mayBeAvailable,
+            displayEnabled: preferences.displayEnabled
         )
     }
 
@@ -340,6 +368,19 @@ final class HostController {
         observers.append(KeyboardLayouts.observe { [weak self] in self?.sendLayout() })
 
         let workspace = NSWorkspace.shared.notificationCenter
+        let display = bridge.display
+        let availability: [(Notification.Name, Bool, String)] = [
+            (NSWorkspace.willSleepNotification, true, "sleep"), (NSWorkspace.didWakeNotification, false, "sleep"),
+            (NSWorkspace.screensDidSleepNotification, true, "screens"), (NSWorkspace.screensDidWakeNotification, false, "screens"),
+            (NSWorkspace.sessionDidResignActiveNotification, true, "session"), (NSWorkspace.sessionDidBecomeActiveNotification, false, "session"),
+        ]
+        for (name, unavailable, reason) in availability {
+            observers.append(workspace.addObserver(forName: name, object: nil, queue: .main) { _ in display.suspend(unavailable, reason: reason) })
+        }
+        for (name, locked) in [("com.apple.screenIsLocked", true), ("com.apple.screenIsUnlocked", false)] {
+            observers.append(DistributedNotificationCenter.default().addObserver(forName: Notification.Name(name), object: nil, queue: .main) { _ in display.suspend(locked, reason: "lock") })
+        }
+        observers.append(NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { _ in display.displaysChanged() })
         let appNotifications: [Notification.Name] = [
             NSWorkspace.didLaunchApplicationNotification, NSWorkspace.didTerminateApplicationNotification,
             NSWorkspace.didActivateApplicationNotification, NSWorkspace.didHideApplicationNotification,
