@@ -17,11 +17,12 @@ import TrackpadView from '@/views/TrackpadView.vue'
 
 // Less-used sections load on first visit to keep startup fast on phones.
 const KeyboardView = lazy(() => import('@/views/KeyboardView.vue'))
+const DisplayView = lazy(() => import('@/views/DisplayView.vue'))
 const DeckView = lazy(() => import('@/views/DeckView.vue'))
 const AppsView = lazy(() => import('@/views/AppsView.vue'))
 const MediaView = lazy(() => import('@/views/MediaView.vue'))
 
-const views = { trackpad: TrackpadView, keyboard: KeyboardView, deck: DeckView, apps: AppsView, media: MediaView }
+const views = { trackpad: TrackpadView, keyboard: KeyboardView, display: DisplayView, deck: DeckView, apps: AppsView, media: MediaView }
 
 const showSettings = ref(false)
 
