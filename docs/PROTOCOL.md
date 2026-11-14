@@ -1,6 +1,7 @@
 # Wire protocol
 
-The phone app and the Mac talk over one WebSocket. This page describes
+The phone app and the Mac use a control WebSocket. Screen video uses a
+separate local WebRTC connection. This page describes
 protocol version **1**. The definitions live in
 [`core/src/protocol.rs`](../core/src/protocol.rs) and are mirrored in
 [`web/src/lib/protocol.ts`](../web/src/lib/protocol.ts).
@@ -92,7 +93,7 @@ On success the Mac sends `welcome`:
 | `host` | `{name, version, os}`. |
 | `sessionKey` | Short-lived key for `/api/icon`. |
 | `token` | Present after a new pairing with `remember: true`. Store it and use it for `token` auth. |
-| `features` | `{voice, shell, secure, permission}`: voice typing available, shell commands allowed, connection is TLS, Mac has Accessibility permission. |
+| `features` | `{voice, shell, secure, permission, display, displayRequests, displayOriginal}`: voice typing available, shell commands allowed, connection is TLS, Mac has Accessibility permission, screen viewing enabled globally, native screen-access requests supported, lossless HD text supported. Display fields are absent on older hosts. They do not themselves grant this device screen access. |
 | `deck` | The current deck (see below). |
 | `deckRevision` | The revision of the current deck during this host run. Missing on older hosts. Send it with `deckSave` to avoid overwriting newer changes. |
 | `layout` | The Mac's keyboard layout, if known. |
@@ -290,6 +291,82 @@ URL or shell command per action. App IDs and shortcut names are limited to
 and a symbol name to 128. `color` is `#rgb`, `#rgba`, `#rrggbb` or
 `#rrggbbaa`. The Mac rejects a deck that breaks these limits, and the sender
 gets a `notice` explaining why.
+
+## Screen viewing
+
+Screen viewing is additive to protocol version 1. Only send its requests to a
+host that advertises `features.display` (false means it is supported but off).
+It works on HTTP and HTTPS; the browser only receives video and never needs
+`getUserMedia`, `getDisplayMedia`, or WebCodecs. The native Mac app captures
+through ScreenCaptureKit and hardware-encodes H.264, or lossless PNG for HD
+text. Pictures and video never enter the
+control socket or a recording file.
+
+The Mac's global Display setting, native screen-capture permission, and a
+separate native device grant are required. Stored device grants default to
+false, survive token reconnects, and reset on re-pairing. Temporary pairings
+have a grant for that session only and cannot inherit a remembered device's
+grant by claiming its ID. No phone message grants screen access.
+When `features.displayRequests` is true, a connected phone may ask for native
+approval, even if the global setting is off. Only the Mac owner's native
+Allow action grants access. Requests expire after 60 seconds, are limited to
+one pending request per session and eight overall, and have per-device/address
+and global cooldowns. Revocation, pause, lock/sleep, re-pairing, cancellation,
+and disconnect invalidate them. A request never starts capture automatically.
+
+| Phone request | Fields | Meaning |
+| --- | --- | --- |
+| `displays` | `id` | Request the current authorized display list. Requests are bounded and rate limited. |
+| `displayAccessRequest` | `id` | Request native approval when `features.displayRequests` is true. |
+| `displayAccessCancel` | `id` | Cancel this session's matching pending request. |
+| `displayStart` | `id`, `displayId`, `quality`, `sdp` | Start a WebRTC offer with exactly one media section; SDP is limited to 64 KiB. `auto`, `battery`, and `sharp` use a receive-only video transceiver. `original` requires `features.displayOriginal` and uses only a data section. The display must have appeared in this session's latest list. |
+| `displayAlive` | `id` | Renew the active viewing lease every second while visible. The Mac ends it after four seconds without a renewal. |
+| `displayStop` | `id` | Stop only the matching viewer owned by this session. |
+| `displayFocus` | `id` | Move the pointer to the active display. Also requires Accessibility. Selecting a display does not move the pointer. |
+
+| Mac message | Fields | Meaning |
+| --- | --- | --- |
+| `displays` | `id`, `displays`, `canRequest`, optional `message` | A source is `{id, name, width, height, main}`. IDs are display UUIDs; dimensions describe the source, not the scaled video. A failure has an empty list and a useful message. `canRequest` permits showing the approval request button. |
+| `displayAccess` | `allowed` | The Mac changed this device's viewing grant. Refresh the list; do not automatically start a viewer. |
+| `displayRequest` | `id`, `state`, optional `message` | `pending`, `allowed`, `denied`, `expired`, `cancelled`, or `error`. IDs match the phone's access request. Approval enables listing, not automatic viewing. |
+| `displayState` | `id`, `state`, optional `sdp`, optional `message` | `connecting`, `answer` with SDP, `streaming`, `stopped`, or `error`. `streaming` means native capture was requested; the phone must wait for actual video playback before showing it as live. |
+
+The phone gathers local ICE candidates and sends its completed offer, then
+applies the answer. There are no external STUN/TURN servers or cloud relays.
+The Mac binds available IPv4/IPv6 interfaces explicitly so ICE retains the
+correct local destination, including on VPN interfaces. A TCP-only reverse
+proxy does not provide a media path. WebRTC encrypts media automatically, but
+HTTP signaling remains vulnerable to on-path modification.
+
+Only one viewer may be active. Every start has a unique host generation,
+independent of client request IDs. Revocation, pause, lock, sleep, disconnect,
+expired lease, and native capture failure cancel that generation. Late
+native frames cannot revive a cancelled stream. The phone ignores answers and
+stop messages for another request; a stale Stop cannot end a newer viewer.
+Monitor removal stops the selected view instead of choosing another source.
+Native source resolution/rotation changes rebuild capture with a new keyframe.
+
+Capture buffers and encoded-frame queues are bounded. Capture is scaled to
+the requested quality and negotiated H.264 level; bandwidth feedback adjusts
+bitrate and frame rate. The sender begins at an IDR, and drops before encoding
+or recovers at an IDR after an encoded queue discontinuity. The phone tears
+down its peer and clears the video on deactivation, hiding, or disconnect,
+including when Vue keeps the page cached. Resuming requires another View tap.
+
+HD text (`original`) uses an ordered reliable data channel named
+`cmdpalm.original`, protected by DTLS. The host captures RGB pictures at up to
+one update per second, preserves source pixels up to a 3840 × 2160 pixel budget
+(rotated for portrait), and encodes PNG without video compression. This avoids
+H.264 level, bitrate, and chroma-subsampling limits when reading tiny text.
+It does not upscale the source. Each PNG is limited to 16 MiB and carried in
+binary messages of at most 16 KiB. A 16-byte header contains `CPNG`, a u32
+sequence, u32 total PNG length, and u32 byte offset, all integers little-endian.
+The receiver validates order, bounds, PNG signature, and IHDR dimensions before
+decoding. The sender holds one in-flight and one queued picture with at most
+128 KiB SCTP buffering, yields between chunk batches, and ends a transfer
+that takes more than 12 seconds. Stale queued pictures are dropped. Unexpected
+channels or application messages from the phone end the viewer. The same
+single-viewer grants, stop controls, and visible lease apply to both modes.
 
 ## Phone settings
 
