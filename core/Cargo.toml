@@ -31,6 +31,7 @@ if-addrs = "0.15"
 time = "0.3"
 socket2 = "0.6"
 libc = "0.2"
+str0m = { version = "0.25", default-features = false, features = ["aws-lc-rs"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2-core-foundation = "0.3"
