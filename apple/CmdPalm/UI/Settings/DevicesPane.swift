@@ -2,10 +2,39 @@ import SwiftUI
 
 struct DevicesPane: View {
     @Environment(HostController.self) private var host
+    @Environment(Preferences.self) private var preferences
+    @Environment(Permissions.self) private var permissions
     @State private var confirmForgetAll = false
 
     var body: some View {
         Form {
+            Section("Screen Viewing") {
+                VStack(alignment: .leading, spacing: 8) {
+                    if !preferences.displayEnabled {
+                        Label("Screen viewing is off on this Mac", systemImage: "display")
+                    } else if !permissions.canView {
+                        Label("Screen Recording permission is needed", systemImage: "exclamationmark.circle")
+                            .foregroundStyle(.orange)
+                    } else {
+                        Label("Ready to share a display", systemImage: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                    }
+                    Text("Turn on Allow screen viewing for each device below. Devices without this access can still use the trackpad and keyboard.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    HStack {
+                        if preferences.displayEnabled && !permissions.canView {
+                            Button("Allow Screen Recording…") { permissions.requestViewing() }
+                                .fixedSize()
+                        }
+                        Button("Display Settings…") { SettingsNavigation.shared.selection = .general }
+                            .fixedSize()
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 4)
+            }
             Section("Connected Now") {
                 if host.connected.isEmpty {
                     Text("No devices are connected right now.")
@@ -24,7 +53,7 @@ struct DevicesPane: View {
                         .fixedSize(horizontal: false, vertical: true)
                 } else {
                     ForEach(host.trusted, id: \.id) { device in
-                        TrustedDeviceRow(device: device, session: host.connected.first { $0.deviceId == device.id })
+                        TrustedDeviceRow(device: device, session: host.connected.first { $0.remembered && $0.deviceId == device.id })
                     }
                 }
             } header: {
@@ -58,13 +87,27 @@ private struct ConnectedSettingsRow: View {
     let device: ConnectedDevice
 
     var body: some View {
-        HStack(spacing: 10) {
-            ConnectedDeviceLabel(device: device)
-                .accessibilityElement(children: .combine)
-            Spacer(minLength: 8)
-            Button("Disconnect") { host.disconnect(device) }
-                .help("Disconnect — the device can reconnect from the phone")
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 10) {
+                ConnectedDeviceLabel(device: device)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .layoutPriority(1)
+                    .accessibilityElement(children: .combine)
+                Button("Disconnect") { host.disconnect(device) }
+                    .fixedSize()
+                    .help("Disconnect this device; it can reconnect from the phone")
+            }
+            DeviceScreenAccessRow(name: device.name, temporary: !device.remembered, allowed: Binding(
+                get: { device.displayAllowed },
+                set: {
+                    if device.remembered { host.setDisplayAllowed(device.deviceId, allowed: $0) }
+                    else { host.setTemporaryDisplayAllowed(device.session, allowed: $0) }
+                }
+            ))
+            .padding(.leading, 38)
         }
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -78,19 +121,28 @@ private struct TrustedDeviceRow: View {
     @FocusState private var nameFocused: Bool
 
     var body: some View {
-        HStack(spacing: 10) {
-            DeviceIcon(model: device.model, online: session != nil)
-                .help(session != nil ? "Connected" : "Not connected")
-            VStack(alignment: .leading, spacing: 2) {
-                nameField
-                Text(detail)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 10) {
+                DeviceIcon(model: device.model, online: session != nil)
+                    .help(session != nil ? "Connected" : "Not connected")
+                VStack(alignment: .leading, spacing: 3) {
+                    nameField
+                    Text(detail)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .layoutPriority(1)
+                Button("Remove…") { confirmForget = true }
+                    .fixedSize()
             }
-            Spacer(minLength: 8)
-            Button("Remove…") { confirmForget = true }
+            DeviceScreenAccessRow(name: device.name, allowed: Binding(get: { device.displayAllowed }, set: { host.setDisplayAllowed(device.id, allowed: $0) }))
+                .padding(.leading, 38)
         }
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .contextMenu {
             Button("Rename") { startRenaming() }
             if let session {
@@ -128,6 +180,7 @@ private struct TrustedDeviceRow: View {
             HStack(spacing: 4) {
                 Text(device.name)
                     .lineLimit(1)
+                    .help(device.name)
                 Button(action: startRenaming) {
                     Image(systemName: "pencil")
                         .imageScale(.small)
@@ -163,5 +216,31 @@ private struct TrustedDeviceRow: View {
         let paired = Date(timeIntervalSince1970: TimeInterval(device.pairedAt))
         parts.append("Paired \(paired.formatted(date: .abbreviated, time: .omitted))")
         return parts.joined(separator: " · ")
+    }
+}
+
+/// A separate line keeps the form's toggle label sizing from squeezing the
+/// device name or destructive action, even at the minimum window width.
+private struct DeviceScreenAccessRow: View {
+    let name: String
+    var temporary = false
+    @Binding var allowed: Bool
+
+    var body: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Allow screen viewing")
+                Text(temporary ? "For this connection only" : (allowed ? "Allowed when screen viewing is on" : "Screen viewing is off for this device"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Toggle("Allow screen viewing for \(name)", isOn: $allowed)
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .fixedSize()
+                .accessibilityLabel("Allow screen viewing for \(name)")
+        }
     }
 }
