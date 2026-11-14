@@ -135,6 +135,40 @@ struct ConnectedDeviceLabel: View {
     }
 }
 
+struct DisplayApprovalRow: View {
+    @Environment(HostController.self) private var host
+    @Environment(Preferences.self) private var preferences
+    let request: DisplayApprovalRequest
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label("Allow “\(request.deviceName)” to view your Mac screen?", systemImage: "display")
+                .font(.headline)
+                .fixedSize(horizontal: false, vertical: true)
+            Text("\(request.model.isEmpty ? "Device" : request.model) at \(request.address). Only approve a device you recognize.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(request.remembered ? "This paired device stays allowed until you revoke access in Devices." : "Access lasts for this connection only.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if !preferences.displayEnabled {
+                Text("Approving also turns on screen viewing on this Mac.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            HStack {
+                Spacer()
+                Button("Don’t Allow") { host.respond(to: request, allow: false) }
+                Button("Allow Screen Viewing") { host.respond(to: request, allow: true) }
+            }
+            .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
 struct ApprovalRow: View {
     @Environment(HostController.self) private var host
     let request: ApprovalRequest

@@ -10,7 +10,7 @@ struct MenuBarIcon: View {
     }
 
     private var symbol: String {
-        if !host.approvals.isEmpty { return "bell.badge" }
+        if !host.approvals.isEmpty || !host.displayApprovals.isEmpty { return "bell.badge" }
         switch host.status {
         case .failed: return "exclamationmark.triangle"
         case .stopped: return "command.square"
@@ -23,6 +23,7 @@ struct MenuBarIcon: View {
 
     private var accessibilityLabel: String {
         if !host.approvals.isEmpty { return "CmdPalm, a device is asking to pair" }
+        if !host.displayApprovals.isEmpty { return "CmdPalm, a device is asking to view the screen" }
         switch host.status {
         case .failed: return "CmdPalm, not running"
         case .stopped: return "CmdPalm, stopped"
@@ -52,6 +53,9 @@ struct MenuPanel: View {
                 alerts
                 ForEach(host.approvals, id: \.id) { request in
                     ApprovalRow(request: request)
+                }
+                ForEach(host.displayApprovals, id: \.id) { request in
+                    DisplayApprovalRow(request: request)
                 }
                 if !host.connected.isEmpty {
                     devices
@@ -102,8 +106,8 @@ struct MenuPanel: View {
                 .toggleStyle(.switch)
                 .labelsHidden()
                 .controlSize(.small)
-                .help(host.paused ? "Resume control from devices" : "Pause control from all devices")
-                .accessibilityLabel("Allow control from devices")
+                .help(host.paused ? "Resume control and viewing from devices" : "Pause control and viewing from all devices")
+                .accessibilityLabel("Allow control and screen viewing from devices")
             }
         }
     }

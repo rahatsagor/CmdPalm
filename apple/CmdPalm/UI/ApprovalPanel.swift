@@ -9,7 +9,7 @@ enum ApprovalPanel {
 
     static func update() {
         let host = AppModel.shared.host
-        guard !host.approvals.isEmpty else {
+        guard !host.approvals.isEmpty || !host.displayApprovals.isEmpty else {
             guard let closing = panel else { return }
             panel = nil
             closing.orderOut(nil)
@@ -92,6 +92,10 @@ private struct ApprovalPrompt: View {
             }
             .padding(16)
             .frame(width: 340)
+        } else if let request = host.displayApprovals.first {
+            DisplayApprovalRow(request: request)
+                .padding(16)
+                .frame(width: 340)
         }
     }
 
