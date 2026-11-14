@@ -114,11 +114,39 @@ that:
   clipboard managers skip both.
 - macOS **Secure Input** (password fields, for example) blocks typed text.
   CmdPalm tells the phone when that happens instead of working around it.
+- **Screen viewing** is off by default and needs both Screen Recording
+  permission and a separate grant for the device in Mac Settings → Devices.
+  Existing pairings do not receive that grant automatically. Remembered
+  device grants reset on re-pairing; temporary grants end with the connection.
+  A phone can request access but cannot grant it. The Mac owner must approve
+  the named device in the native panel; approval can also enable the global
+  screen-viewing setting. Requests are bound to the authenticated connection,
+  expire after one minute, and are rate limited across token reconnects.
+  Disconnect, cancellation, revocation, pause, lock, and sleep invalidate them.
+  One allowed device can view one selected display at a time. No video is
+  written to disk or sent through an external server.
+
+Screen video uses WebRTC's encrypted media transport on both HTTP and HTTPS.
+HD text uses lossless PNG pictures over a DTLS-encrypted WebRTC data channel,
+with the same grants, cancellation, and viewing lease. It sends up to one
+picture per second at up to 4K, with a 16 MiB picture limit, 16 KiB chunks,
+and bounded queues. Pictures never use an HTTP endpoint or the control socket.
+This does not secure an HTTP page, token, or signaling exchange: an on-path
+attacker could modify signaling or steal a pairing token. The existing HTTPS
+connection is recommended. Direct local UDP connectivity is required; no
+public STUN/TURN service or cloud relay is contacted.
+
+Screen viewing stops when the phone leaves Display, is backgrounded, or loses
+its connection, and when the Mac pauses, locks, sleeps, revokes access, loses
+the selected display, or stops capture. The Mac also expires a viewing lease
+after four seconds without a visible phone's renewal. Stop and revocation
+invalidate the stream generation before native capture cleanup, so late
+callbacks cannot send frames into a replacement session.
 
 **Pause** in the menu bar panel stops all input immediately, including text
 still being typed, deck buttons that are still running and shell commands
 they started. While paused, a device can't run actions, read or set the
-clipboard, or start voice input. Active dictation is cancelled, connected
+clipboard, start voice input, or view the screen. Active dictation is cancelled, connected
 phones release their microphones, and late results from cancelled dictation
 are discarded. Turning off dictation also cancels every active stream.
 Apps and Shortcuts that a button already
@@ -126,7 +154,8 @@ opened keep running, as if you had opened them yourself.
 
 Device backup files contain the phone's settings and custom keyboard
 definitions. Pairing tokens and device identity are excluded; restoring a
-backup preserves the destination device's name and pairing choice.
+backup preserves the destination device's name and pairing choice. Screen
+viewing grants stay on the Mac and are never included in device backups.
 
 ## Updates
 
