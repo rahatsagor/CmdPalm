@@ -42,6 +42,10 @@ export const COPY_CATEGORIES = [
   },
   { id: 'deck', label: 'Deck button size', hint: 'Button size on this device', keys: ['deckButtonSize'] },
   {
+    id: 'display', label: 'Display', hint: 'Viewing controls, quality and preview space',
+    keys: ['displayControls', 'displayQuality', 'displaySplit', 'displayId'],
+  },
+  {
     id: 'appearance', label: 'Appearance and feedback', hint: 'Theme, haptics, screen and advanced options',
     keys: ['theme', 'haptics', 'keyHaptics', 'keepAwake', 'showTouches', 'showAdvanced'],
   },
