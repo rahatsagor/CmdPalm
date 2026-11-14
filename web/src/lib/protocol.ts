@@ -189,12 +189,33 @@ export type ClientMessage =
   | ({ t: 'settingsSave' } & SavedSettings)
   | { t: 'settingsList' }
   | { t: 'settingsCopy'; from: string; id?: number }
+  | { t: 'displays'; id: number }
+  | { t: 'displayAccessRequest'; id: number }
+  | { t: 'displayAccessCancel'; id: number }
+  | { t: 'displayStart'; id: number; displayId: string; sdp: string; quality: DisplayQuality }
+  | { t: 'displayStop'; id: number }
+  | { t: 'displayAlive'; id: number }
+  | { t: 'displayFocus'; id: number }
+
+export type DisplayQuality = 'auto' | 'battery' | 'sharp' | 'original'
+
+export interface DisplayInfo {
+  id: string
+  name: string
+  width: number
+  height: number
+  main: boolean
+}
 
 export interface Features {
   voice: boolean
   shell: boolean
   secure: boolean
   permission: boolean
+  /** Missing from older hosts that do not support screen viewing. */
+  display?: boolean
+  displayRequests?: boolean
+  displayOriginal?: boolean
 }
 
 export interface KeyCap {
@@ -253,6 +274,10 @@ export type ServerMessage =
   | { t: 'pong'; id: number }
   | { t: 'apps'; apps: AppEntry[] }
   | { t: 'appsChanged' }
+  | { t: 'displayAccess'; allowed: boolean }
+  | { t: 'displayRequest'; id: number; state: string; message?: string }
+  | { t: 'displays'; id: number; displays: DisplayInfo[]; message?: string; canRequest?: boolean }
+  | { t: 'displayState'; id: number; state: string; sdp?: string; message?: string }
   | { t: 'deck'; deck: Deck; revision?: number }
   | { t: 'deckSaved'; id: number; ok: boolean; revision: number; message?: string }
   | { t: 'layout'; layout: KeyboardLayout }
