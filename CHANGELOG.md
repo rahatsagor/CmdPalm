@@ -9,8 +9,31 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Mac app
+
+- Optional screen viewing streams one selected display to an explicitly allowed
+  device using hardware H.264 encoding. Enable it in General, grant Screen
+  Recording permission, then allow a device in Devices.
+- Screen viewing works with HTTP and HTTPS. It stops when paused, locked,
+  asleep, disconnected, revoked, or no longer active on the phone.
+- Device names and actions have more space in Settings, with a separate screen
+  access row for each device and a direct link from Display setup.
+- Screen viewing limits bandwidth bursts, avoids unnecessary capture updates,
+  and keeps the latest frame ready when the hardware encoder is busy.
+- Approve a phone's screen-access request directly in the Mac's native panel.
+  Requests expire after one minute and never grant access automatically.
+
 ### Phone client
 
+- A Display tab shows the Mac screen on its own, above a trackpad or keyboard,
+  or beside the controls on a wide screen. Choose a monitor, zoom the preview,
+  move the Mac pointer to that display, and choose motion, battery, or text
+  quality. Display preferences can be backed up and copied between devices.
+- Preview controls stay below the image, move into Display options when space
+  is tight, and zoom follows the point you pinch.
+- Fullscreen viewing hides the input controls and fills the app viewport.
+- HD text preserves lossless picture detail up to 4K for reading small text,
+  with up to one update per second over an encrypted WebRTC connection.
 - Both scroll-strip lengths now use matching up/down chevrons at every width,
   with more space between the chevrons on the short handle.
 
