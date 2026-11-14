@@ -14,7 +14,7 @@ struct GeneralPane: View {
             Section {
                 DescribedToggle(
                     "Allow control from devices",
-                    detail: "Turn off to ignore input from all devices without disconnecting them.",
+                    detail: "Turn off to stop input and screen viewing from all devices without disconnecting them.",
                     isOn: Binding(get: { !host.paused }, set: { host.setPaused(!$0) })
                 )
                 .disabled(!host.isRunning)
@@ -61,6 +61,29 @@ struct GeneralPane: View {
                     detail: "Your phone streams microphone audio to this Mac, which transcribes it on the Mac. Speech is never sent anywhere else. Needs the encrypted connection from Phone Setup.",
                     isOn: $preferences.voiceEnabled
                 )
+            }
+
+            Section {
+                DescribedToggle(
+                    "Allow screen viewing",
+                    detail: "Show a Mac display on devices you allow. Capture stops when you leave the Display tab on your phone.",
+                    isOn: $preferences.displayEnabled
+                )
+                PermissionRow(
+                    title: "Screen Recording",
+                    detail: "Required for viewing a display. macOS may ask you to reopen CmdPalm after granting access.",
+                    granted: permissions.canView,
+                    action: "Allow / Open Settings…"
+                ) { permissions.requestViewing() }
+                Button("Manage Device Access…") { SettingsNavigation.shared.selection = .devices }
+                    .help("Choose which paired or connected devices can view the screen")
+            } header: {
+                Text("Display")
+            } footer: {
+                Text("Video is encrypted over HTTP and HTTPS. Use HTTPS to also protect the page and connection setup.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             AppFoldersSection()
