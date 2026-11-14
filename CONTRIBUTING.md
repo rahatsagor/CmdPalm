@@ -116,6 +116,52 @@ xcodebuild test -project CmdPalm.xcodeproj -scheme CmdPalm -destination "platfor
 The canonical `CARGO_HOME` path also works when `~/.cargo` is a symlink.
 UniFFI's binding generator needs its template paths to match Cargo's paths.
 
+### Screen viewing checks
+
+The Rust suite includes a real local WebRTC handshake, encrypted media, and
+late-frame rejection over a plain control WebSocket. Phone tests cover a
+receive-only client without a secure context or microphone APIs, stale
+answers, backgrounding, cached-page deactivation, revocation, and reconnects.
+Approval tests cover remembered and temporary grants, expiry, cancellation,
+re-pairing, lock/sleep, pause, and reconnect rate limits. HD checks include a
+real encrypted data-channel transfer with backpressure and ordered bounded
+picture reconstruction. The native suite round-trips one-pixel RGB detail
+through the production PNG encoder.
+
+The optional hardware test verifies the production encoder using a generated
+gray pixel buffer. It checks first-frame output without feeding a second
+frame, constrained-baseline H.264, and receiver level limits. It does not
+capture a display or request screen permission. Run it on an Apple-silicon Mac:
+
+```sh
+cd apple
+CMDPALM_TEST_HARDWARE_VIDEO=1 TEST_RUNNER_CMDPALM_TEST_HARDWARE_VIDEO=1 \
+  xcodebuild test -project CmdPalm.xcodeproj -scheme CmdPalm \
+  -destination "platform=macOS,arch=arm64" \
+  -only-testing:CmdPalmTests/DisplayHardwareEncoderSmokeTests
+```
+
+For manual browser transport checks without real screen content, build the
+web client and use a synthetic all-IDR H.264 fixture with AUDs:
+
+```sh
+ffmpeg -f lavfi -i 'testsrc2=size=640x360:rate=60' -t 2 -an \
+  -c:v h264_videotoolbox -profile:v baseline -bf 0 -g 1 -b:v 3M \
+  -pix_fmt nv12 -bsf:v h264_metadata=aud=insert -f h264 /tmp/display-test.h264
+CMDPALM_DISPLAY_FIXTURE=/tmp/display-test.h264 CMDPALM_DISPLAY_FPS=60 \
+  cargo run -p cmdpalm-core --example display-smoke
+```
+
+This temporary host prints a pairing URL and grants its paired devices access
+to its synthetic display automatically. It never captures the Mac or posts
+real input. Test through a LAN IP address rather than `localhost` to exercise
+an actual insecure HTTP origin. Browser and synthetic tests do not replace
+hands-on iPhone/iPad/Android, multiple-monitor, lock/sleep, and power testing.
+For HD text checks, set `CMDPALM_DISPLAY_IMAGE` to a PNG fixture up to 4K and
+16 MiB before starting the helper. It sends that generated picture at one
+update per second when HD text is selected. Check readability while zoomed,
+fullscreen entry/exit, stopping, switching modes, and background cleanup.
+
 ## App icon
 
 The icon combines a phone, the Mac Command key and a touch point. The Mac
