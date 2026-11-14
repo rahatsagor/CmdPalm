@@ -16,6 +16,8 @@ import { haptic } from '@/lib/haptics'
 import { layout } from '@/lib/layout'
 import { settings } from '@/lib/settings'
 
+const props = withDefaults(defineProps<{ embedded?: boolean; compact?: boolean }>(), { embedded: false, compact: false })
+
 const root = ref<HTMLElement>()
 const size = ref({ width: 0, height: 0 })
 let observer: ResizeObserver | undefined
@@ -34,11 +36,11 @@ type Mode = 'mac' | 'custom' | 'phone'
 // phones) and the phone's own keyboard on narrow screens.
 const mode = computed<Mode>(() => {
   if (settings.keyboard !== 'auto') return settings.keyboard
-  return isTablet() || settings.sidewaysKeyboard || size.value.width >= 560 ? 'mac' : 'phone'
+  return isTablet() || (!props.embedded && settings.sidewaysKeyboard) || size.value.width >= 560 ? 'mac' : 'phone'
 })
 
 const upright = computed(() => size.value.height > size.value.width)
-const sideways = computed(() => settings.sidewaysKeyboard && upright.value)
+const sideways = computed(() => !props.embedded && settings.sidewaysKeyboard && upright.value)
 // Laid out at the screen's height and width, then turned to fill it. Touches
 // still find their keys: hit testing follows the turn.
 const sidewaysStyle = computed(() => ({
@@ -55,6 +57,7 @@ const choice = computed({
 // Rows about 1.6 key-widths tall (capped), so portrait phones get keys that
 // can actually be hit; what is left goes to a trackpad above, like a laptop.
 const macLayout = computed(() => {
+  if (props.embedded) return { pad: false, height: 'auto' }
   const { width, height } = size.value
   const usable = Math.min(width, 1100)
   const unit = usable / 15.5
@@ -110,7 +113,8 @@ function remove() {
 // Keys and trackpad share the space; keys keep roughly square cells.
 const customLayout = computed(() => {
   const { width, height } = size.value
-  const { cols, rows, trackpad } = board.value
+  const { cols, rows } = board.value
+  const trackpad = board.value.trackpad && !props.embedded
   if (!trackpad) return { direction: 'col' as const, style: { flex: '1 1 0%' } }
   if (width > height * 1.2) {
     const keys = Math.min(width * 0.6, (height / rows) * cols)
@@ -122,7 +126,7 @@ const customLayout = computed(() => {
 </script>
 
 <template>
-  <div class="flex h-full flex-col gap-2 px-2 pb-2" :class="layout.compact ? 'pt-0' : 'pt-1'">
+  <div class="flex h-full flex-col gap-2 px-2 pb-2" :class="[layout.compact ? 'pt-0' : 'pt-1', { 'overflow-y-auto': props.embedded }]">
     <div class="flex flex-wrap items-center justify-center gap-x-3 gap-y-1">
       <div class="flex w-full max-w-xs items-center gap-2">
         <Segmented
@@ -135,7 +139,7 @@ const customLayout = computed(() => {
           ]"
         />
         <button
-          v-if="mode === 'mac' && upright"
+          v-if="!props.embedded && mode === 'mac' && upright"
           type="button"
           class="grid size-8 shrink-0 place-items-center rounded-full transition-colors"
           :class="settings.sidewaysKeyboard ? 'bg-accent text-accent-text' : 'bg-surface-3 text-muted'"
@@ -179,10 +183,10 @@ const customLayout = computed(() => {
         </div>
       </div>
       <template v-else-if="mode === 'mac'">
-        <TrackpadSurface v-if="macLayout.pad" class="min-h-0 flex-1">
+        <TrackpadSurface v-if="macLayout.pad && !props.embedded" class="min-h-0 flex-1">
           <ScrollRail v-if="settings.scrollStrip !== 'off'" />
         </TrackpadSurface>
-        <div class="mx-auto w-full max-w-[1100px] shrink-0" :style="{ height: macLayout.height }">
+        <div class="mx-auto w-full max-w-[1100px]" :class="props.embedded ? 'min-h-0 flex-1' : 'shrink-0'" :style="{ height: macLayout.height }">
           <VirtualKeyboard />
         </div>
       </template>
@@ -190,7 +194,7 @@ const customLayout = computed(() => {
       <template v-else-if="mode === 'custom'">
         <div class="flex min-h-0 flex-1 gap-2" :class="customLayout.direction === 'row' ? 'flex-row' : 'flex-col'">
           <TrackpadSurface
-            v-if="board.trackpad"
+            v-if="board.trackpad && !props.embedded"
             class="min-h-0 min-w-0 flex-1"
             :edge="customLayout.direction === 'col' || settings.scrollStripSide === 'left'"
           >
@@ -205,11 +209,11 @@ const customLayout = computed(() => {
         </p>
       </template>
 
-      <div v-else class="flex min-h-0 flex-1 flex-col justify-end">
-        <TrackpadSurface class="mb-2 min-h-24 flex-1">
+      <div v-else class="flex min-h-0 flex-1 flex-col" :class="props.embedded ? 'justify-start' : 'justify-end'">
+        <TrackpadSurface v-if="!props.embedded" class="mb-2 min-h-24 flex-1">
           <ScrollRail v-if="settings.scrollStrip !== 'off'" />
         </TrackpadSurface>
-        <Composer />
+        <Composer :compact="props.embedded && props.compact" />
       </div>
     </div>
 

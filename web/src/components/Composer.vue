@@ -12,7 +12,7 @@ import { startVoice, stopVoice, voice, voiceSupported } from '@/lib/voice'
 import HapticSwitch from './HapticSwitch.vue'
 import ModifierStrip from './ModifierStrip.vue'
 
-withDefaults(defineProps<{ autofocus?: boolean }>(), { autofocus: false })
+withDefaults(defineProps<{ autofocus?: boolean; compact?: boolean }>(), { autofocus: false, compact: false })
 
 const field = ref<HTMLTextAreaElement>()
 const text = ref('')
@@ -197,8 +197,8 @@ defineExpose({ focus: () => field.value?.focus() })
 
 <template>
   <div class="flex flex-col gap-2">
-    <ModifierStrip />
-    <div class="flex h-11 gap-1.5">
+    <ModifierStrip v-if="!compact" />
+    <div v-if="!compact" class="flex h-11 gap-1.5">
       <label
         v-for="key in arrows"
         :key="key.code"
