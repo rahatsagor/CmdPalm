@@ -133,6 +133,7 @@ export function refreshDisplays() {
   const id = ++request
   listId = id
   if (!send({ t: 'displays', id })) {
+    listId = null
     fail('The Mac is not connected.')
     return
   }
@@ -295,6 +296,9 @@ onMessage(message => {
     clearTimeout(listTimeout)
     listId = null
     screen.displays = message.displays
+    // A feature update can finish this refresh before the approval fallback
+    // timer fires. Never replace a usable list or interrupt its new viewer.
+    if (message.displays.length) clearTimeout(approvalRefresh)
     screen.canRequest = message.canRequest === true && connection.features.displayRequests === true
     screen.message = message.message ?? ''
     if (!settings.displayId && message.displays.length) settings.displayId = (message.displays.find(display => display.main) ?? message.displays[0]!).id
@@ -302,7 +306,7 @@ onMessage(message => {
     screen.status = message.displays.length ? 'ready' : 'error'
   } else if (message.t === 'displayAccess') {
     if (!message.allowed) stopViewing('Screen viewing permission was removed on the Mac.')
-    if (canView() && accessId === null) refreshDisplays()
+    if (canView() && accessId === null && streamId === null) refreshDisplays()
   } else if (message.t === 'displayRequest' && message.id === accessId) {
     screen.accessState = message.state
     screen.accessMessage = message.message ?? ''
@@ -312,7 +316,7 @@ onMessage(message => {
       if (message.state === 'allowed' && canView()) {
         screen.canRequest = false
         clearTimeout(approvalRefresh)
-        approvalRefresh = setTimeout(refreshDisplays, 350)
+        approvalRefresh = setTimeout(() => { if (canView() && !screen.displays.length) refreshDisplays() }, 350)
       }
     }
   } else if (message.t === 'displayState' && message.id === streamId) {
@@ -327,7 +331,7 @@ onMessage(message => {
   }
 })
 
-watch(() => [connection.status, connection.paused, connection.features.display] as const, ([status, paused]) => {
+watch([() => connection.status, () => connection.paused, () => connection.features.display], ([status, paused]) => {
   if (status !== 'connected' || paused) {
     cancelAccessRequest()
     listId = null

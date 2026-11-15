@@ -180,6 +180,50 @@ describe('receive-only display viewing', () => {
     expect(socket.sent.some(message => message.t === 'displays')).toBe(false)
   })
 
+  it('keeps viewing when unrelated Mac capabilities change', async () => {
+    const socket = connect()
+    library.activateScreen(video); list(socket); await library.startViewing()
+    const rtc = FakePeer.all[0]!
+    socket.receive({ t: 'features', features: { ...connection.state.features, permission: false, shell: true } })
+    expect(rtc.closed).toBe(false)
+    expect(socket.sent.filter(message => message.t === 'displays')).toHaveLength(1)
+    expect(connection.state.features.permission).toBe(false)
+  })
+
+  it('keeps an active view when its existing grant is reported again', async () => {
+    const socket = connect()
+    library.activateScreen(video); list(socket); await library.startViewing()
+    socket.receive({ t: 'displayAccess', allowed: true })
+    expect(FakePeer.all[0]!.closed).toBe(false)
+    expect(socket.sent.filter(message => message.t === 'displays')).toHaveLength(1)
+  })
+
+  it('can retry a display list whose control message could not be sent', () => {
+    const socket = connect()
+    socket.readyState = FakeSocket.CLOSING
+    library.activateScreen(video)
+    expect(library.screen.message).toContain('not connected')
+    socket.readyState = FakeSocket.OPEN
+    library.refreshDisplays()
+    expect(socket.sent.filter(message => message.t === 'displays')).toHaveLength(1)
+  })
+
+  it('does not refresh again after approval has already produced a usable list', async () => {
+    const socket = connect(false)
+    library.activateScreen(video)
+    const sourceRequest = socket.sent.find(message => message.t === 'displays')!
+    socket.receive({ t: 'displays', id: sourceRequest.id, displays: [], canRequest: true })
+    library.requestScreenAccess()
+    const request = socket.sent.find(message => message.t === 'displayAccessRequest')!
+    socket.receive({ t: 'displayRequest', id: request.id, state: 'allowed' })
+    socket.receive({ t: 'features', features: { ...connection.state.features, display: true } })
+    list(socket)
+    await library.startViewing()
+    vi.advanceTimersByTime(400)
+    expect(FakePeer.all[0]!.closed).toBe(false)
+    expect(socket.sent.filter(message => message.t === 'displays')).toHaveLength(2)
+  })
+
   it('requests native approval once and waits for approval without starting a viewer', async () => {
     const socket = connect(false)
     library.activateScreen(video)
