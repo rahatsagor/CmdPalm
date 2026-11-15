@@ -20,6 +20,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
   access row for each device and a direct link from Display setup.
 - Screen viewing limits bandwidth bursts, avoids unnecessary capture updates,
   and keeps the latest frame ready when the hardware encoder is busy.
+- Monitor refreshes can overlap without interrupting a live view. Stopped
+  captures ignore late callbacks and clean up delayed startup work.
 - Approve a phone's screen-access request directly in the Mac's native panel.
   Requests expire after one minute and never grant access automatically.
 
@@ -32,6 +34,10 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - Preview controls stay below the image, move into Display options when space
   is tight, and zoom follows the point you pinch.
 - Fullscreen viewing hides the input controls and fills the app viewport.
+  Hidden controls stay out of keyboard and assistive navigation after rotation,
+  and focus returns to the app when viewing ends.
+- Viewing stays active when unrelated Mac settings change or an existing
+  permission is reported again. Approval refreshes preserve newly started views.
 - HD text preserves lossless picture detail up to 4K for reading small text,
   with up to one update per second over an encrypted WebRTC connection.
 - Both scroll-strip lengths now use matching up/down chevrons at every width,
