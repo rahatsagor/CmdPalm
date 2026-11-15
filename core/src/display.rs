@@ -387,12 +387,24 @@ impl DisplayHub {
     }
 
     pub(crate) fn cancel(&self, shared: &Shared, session: Option<u64>, request: Option<u32>, message: &str) {
+        self.cancel_matching(shared, session, request, None, message);
+    }
+
+    fn cancel_matching(
+        &self,
+        shared: &Shared,
+        session: Option<u64>,
+        request: Option<u32>,
+        generation: Option<u64>,
+        message: &str,
+    ) {
         let active = {
             let mut guard = self.active.lock().unwrap_or_else(|p| p.into_inner());
-            if guard
-                .as_ref()
-                .is_some_and(|a| session.is_none_or(|s| s == a.session) && request.is_none_or(|r| r == a.request))
-            {
+            if guard.as_ref().is_some_and(|a| {
+                session.is_none_or(|s| s == a.session)
+                    && request.is_none_or(|r| r == a.request)
+                    && generation.is_none_or(|g| g == a.generation)
+            }) {
                 guard.take()
             } else {
                 None
@@ -451,16 +463,9 @@ impl DisplayHub {
     }
 
     pub(crate) fn failed(&self, shared: &Shared, session: u64, generation: u64, message: &str) {
-        let request = self
-            .active
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .as_ref()
-            .filter(|a| a.session == session && a.generation == generation)
-            .map(|a| a.request);
-        if let Some(request) = request {
-            self.cancel(shared, Some(session), Some(request), message);
-        }
+        // Match and remove under one lock: a replacement viewer can reuse
+        // its client's request ID between a generation lookup and a cancel.
+        self.cancel_matching(shared, Some(session), None, Some(generation), message);
     }
 }
 

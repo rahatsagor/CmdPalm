@@ -431,6 +431,26 @@ fn screen_video_negotiates_over_plain_websocket_and_stops_before_accepting_late_
         assert!(!f.host.display_frame(session, generation, vec![1], timestamp, true));
         assert!(f.delegate.display_commands.lock().unwrap().contains(&(session, DisplayCommand::Stop { generation })));
 
+        // A client may reuse its own request ID. Late native failures and
+        // cleanup from the prior worker must not cancel that replacement.
+        send(&mut ws, json!({"t":"displayStart", "id":2, "displayId":"test", "quality":"auto", "sdp":offer.to_sdp_string()})).await;
+        loop {
+            let message = recv_kind(&mut ws, "displayState").await;
+            if message["id"] == 2 && message["state"] == "connecting" { break; }
+        }
+        f.host.display_failed(session, generation, "Late failure from the prior capture".into());
+        send(&mut ws, json!({"t":"displayStart", "id":99, "displayId":"test", "quality":"auto", "sdp":offer.to_sdp_string()})).await;
+        loop {
+            let message = recv_kind(&mut ws, "displayState").await;
+            if message["id"] == 99 {
+                assert_eq!(message["state"], "error");
+                assert!(message["message"].as_str().unwrap().contains("already viewing"), "the replacement lost its viewer slot: {message}");
+                break;
+            }
+        }
+        send(&mut ws, json!({"t":"displayStop", "id":2})).await;
+        loop { if recv_kind(&mut ws, "displayState").await["state"] == "stopped" { break; } }
+
         // A suspended phone may never deliver Stop. Its lease must still
         // release the viewer slot, even before media negotiation finishes.
         send(&mut ws, json!({"t":"displayStart", "id":3, "displayId":"test", "quality":"auto", "sdp":offer.to_sdp_string()})).await;
