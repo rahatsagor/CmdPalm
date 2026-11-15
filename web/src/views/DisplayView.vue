@@ -25,6 +25,9 @@ const pan = reactive({ x: 0, y: 0 })
 let observer: ResizeObserver | undefined
 const pointers = new Map<number, { x: number; y: number }>()
 let gesture: { distance: number; zoom: number; x: number; y: number } | undefined
+let fullscreenOpener: HTMLElement | null = null
+let fullscreenObserver: MutationObserver | undefined
+const outsideFullscreen = new Map<HTMLElement, string | null>()
 
 const streaming = computed(() => screen.status === 'connecting' || screen.status === 'live')
 const live = computed(() => screen.status === 'live')
@@ -56,11 +59,44 @@ const placeholder = computed(() => {
 })
 
 function activate() { if (video.value) activateScreen(video.value, picture.value) }
+function restoreInert(element: HTMLElement, previous: string | null) {
+  if (previous === null) element.removeAttribute('inert')
+  else element.setAttribute('inert', previous)
+}
+function isolateFullscreen() {
+  if (!fullView.value || !displayArea.value || !screen.active) return
+  // Responsive navigation can be replaced while rotating. Do not retain
+  // detached controls or leave cached elements inert when they return.
+  for (const [element, previous] of outsideFullscreen) {
+    if (!element.isConnected) { restoreInert(element, previous); outsideFullscreen.delete(element) }
+  }
+  let branch: HTMLElement = displayArea.value
+  while (branch.parentElement && branch !== document.body) {
+    for (const sibling of branch.parentElement.children) {
+      if (sibling instanceof HTMLElement && sibling !== branch && !outsideFullscreen.has(sibling)) {
+        outsideFullscreen.set(sibling, sibling.getAttribute('inert'))
+        sibling.setAttribute('inert', '')
+      }
+    }
+    branch = branch.parentElement
+  }
+}
 function enterFullscreen() {
+  if (fullView.value) return
   releaseAll()
+  fullscreenOpener = document.activeElement instanceof HTMLElement ? document.activeElement : null
   fullView.value = true
   options.value = false
   const element = displayArea.value
+  // Also dismiss a phone keyboard and keep focus out of controls hidden by
+  // the viewport fallback, where the browser does not isolate fullscreen.
+  element?.focus({ preventScroll: true })
+  void nextTick(() => {
+    if (!fullView.value || !element || !screen.active) return
+    isolateFullscreen()
+    fullscreenObserver = new MutationObserver(isolateFullscreen)
+    fullscreenObserver.observe(document.body, { childList: true, subtree: true })
+  })
   if (element?.requestFullscreen && document.fullscreenEnabled) {
     void element.requestFullscreen().then(() => {
       if (!fullView.value || !screen.active || !streaming.value) {
@@ -69,13 +105,25 @@ function enterFullscreen() {
     }).catch(() => {})
   }
 }
-function leaveFullscreen() {
+function leaveFullscreen(restoreFocus = true) {
+  const wasFull = fullView.value
   fullView.value = false
+  fullscreenObserver?.disconnect(); fullscreenObserver = undefined
+  for (const [element, previous] of outsideFullscreen) restoreInert(element, previous)
+  outsideFullscreen.clear()
   if (document.fullscreenElement === displayArea.value) void document.exitFullscreen().catch(() => {})
+  if (wasFull && restoreFocus && fullscreenOpener?.isConnected) fullscreenOpener.focus({ preventScroll: true })
+  fullscreenOpener = null
 }
-function fullscreenChanged() { if (!document.fullscreenElement) fullView.value = false }
-function escape(event: KeyboardEvent) {
-  if (event.key === 'Escape' && fullView.value) { event.preventDefault(); event.stopPropagation(); leaveFullscreen() }
+function fullscreenChanged() { if (!document.fullscreenElement) leaveFullscreen() }
+function fullscreenKeys(event: KeyboardEvent) {
+  if (!fullView.value) return
+  if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); leaveFullscreen() }
+  else if (['Enter', ' ', 'Tab'].includes(event.key) && !event.altKey && !event.ctrlKey && !event.metaKey && event.target instanceof Element && displayArea.value?.contains(event.target) && event.target.closest('button')) {
+    // Explicitly focused viewer buttons use the browser's keyboard actions.
+    // Other hardware keyboard input can still be sent to the Mac.
+    event.stopPropagation()
+  }
 }
 onMounted(() => {
   observer = new ResizeObserver(([entry]) => {
@@ -83,15 +131,15 @@ onMounted(() => {
   })
   if (body.value) observer.observe(body.value)
   document.addEventListener('fullscreenchange', fullscreenChanged)
-  addEventListener('keydown', escape, true)
+  addEventListener('keydown', fullscreenKeys, true)
   activate()
 })
 onActivated(activate)
-onDeactivated(() => { leaveFullscreen(); deactivateScreen() })
+onDeactivated(() => { options.value = false; leaveFullscreen(false); deactivateScreen() })
 onBeforeUnmount(() => {
-  leaveFullscreen(); observer?.disconnect(); deactivateScreen()
+  leaveFullscreen(false); observer?.disconnect(); deactivateScreen()
   document.removeEventListener('fullscreenchange', fullscreenChanged)
-  removeEventListener('keydown', escape, true)
+  removeEventListener('keydown', fullscreenKeys, true)
 })
 
 function resetZoom() { zoom.value = 1; pan.x = 0; pan.y = 0; pointers.clear(); gesture = undefined }
@@ -211,13 +259,16 @@ function up(event: PointerEvent) { pointers.delete(event.pointerId); beginGestur
         :options="[{ value: 'view', label: 'View' }, { value: 'trackpad', label: 'Trackpad' }, { value: 'keyboard', label: 'Keyboard' }]"
         aria-label="Controls below the display"
       />
-      <button v-if="live" type="button" class="grid size-11 shrink-0 place-items-center rounded-xl text-muted active:bg-surface-3" aria-label="Fullscreen display" @click="enterFullscreen"><Maximize :size="19" /></button>
+      <button v-if="live" type="button" class="grid size-11 shrink-0 place-items-center rounded-xl text-muted active:bg-surface-3" aria-label="Fullscreen display" @click="enterFullscreen" @keydown.enter.prevent="enterFullscreen" @keydown.space.prevent="enterFullscreen"><Maximize :size="19" /></button>
       <button type="button" class="grid size-11 shrink-0 place-items-center rounded-xl text-muted active:bg-surface-3" aria-label="Display options" @click="options = true"><Settings2 :size="19" /></button>
     </div>
 
     <div ref="body" class="flex min-h-0 flex-1 gap-2" :class="wide ? 'flex-row' : 'flex-col'">
       <div
         ref="displayArea"
+        tabindex="-1"
+        role="region"
+        :aria-label="fullView ? 'Fullscreen Mac display' : 'Mac display preview'"
         class="display-preview relative flex min-h-0 min-w-0 flex-col overflow-hidden bg-black"
         :class="fullView ? 'fixed! inset-0 z-[100] px-2 pt-[calc(env(safe-area-inset-top)+52px)] pb-[env(safe-area-inset-bottom)]' : 'rounded-2xl'"
         :style="fullView ? undefined : previewStyle"
@@ -225,7 +276,7 @@ function up(event: PointerEvent) { pointers.delete(event.pointerId); beginGestur
         <div v-if="fullView" class="absolute inset-x-2 top-[env(safe-area-inset-top)] flex h-12 items-center justify-between gap-2 text-white">
           <span class="min-w-0 truncate px-2 text-[13px]">{{ display?.name }}{{ screen.original ? ' · HD text · 1/sec' : '' }}</span>
           <button type="button" class="flex min-h-11 items-center gap-1.5 rounded-xl px-3 text-[13px]" @click="stopViewing()"><Square :size="15" />Stop</button>
-          <button type="button" class="flex min-h-11 items-center gap-1.5 rounded-xl px-3 text-[13px]" @click="leaveFullscreen"><Minimize :size="17" />Exit</button>
+          <button type="button" class="flex min-h-11 items-center gap-1.5 rounded-xl px-3 text-[13px]" @click="leaveFullscreen()"><Minimize :size="17" />Exit</button>
         </div>
         <div
           ref="preview"
