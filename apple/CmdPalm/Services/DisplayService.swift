@@ -82,6 +82,7 @@ private actor DisplayController {
     private var settings: DisplaySettings?
     private var revision: UInt64 = 0
     private var querying = false
+    private var refreshRequested = false
 
     init(reference: HostReference, gate: DisplayGate) {
         self.reference = reference
@@ -156,6 +157,9 @@ private actor DisplayController {
 
     func refreshDisplay() async {
         guard let config = settings, gate.contains(config.generation), let active else { return }
+        // Monitor changes can arrive together or during another device's
+        // source query. Coalesce them instead of ending a healthy viewer.
+        guard !querying else { refreshRequested = true; return }
         do {
             let content = try await shareableContent()
             guard gate.contains(config.generation) else { return }
@@ -182,7 +186,13 @@ private actor DisplayController {
         // collection of simultaneous queries from refresh/start requests.
         guard !querying else { throw DisplayError.busy }
         querying = true
-        defer { querying = false }
+        defer {
+            querying = false
+            if refreshRequested {
+                refreshRequested = false
+                Task { await refreshDisplay() }
+            }
+        }
         return try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
     }
 
@@ -398,14 +408,19 @@ final class DisplayCapture: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
                 catch { continuation.resume(throwing: error) }
             }
         } }
-        guard gate.contains(generation) else { await stop(); return }
+        guard gate.contains(generation), !flags.withLock({ $0.stopped }) else { await stop(); return }
         let fps = flags.withLock { $0.fps }
         let stream = SCStream(filter: SCContentFilter(display: display, excludingWindows: []), configuration: configuration(fps: fps), delegate: self)
         self.stream = stream
         configuredFPS = fps
         try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: queue)
         try await stream.startCapture()
-        if !gate.contains(generation) { try? await stream.stopCapture(); await stop() }
+        // A display reconfiguration can replace this capture without
+        // changing the viewer's generation while startCapture is awaiting.
+        if !gate.contains(generation) || flags.withLock({ $0.stopped }) || self.stream !== stream {
+            try? await stream.stopCapture()
+            await stop()
+        }
     }
 
     @MainActor func stop() async {
@@ -491,7 +506,7 @@ final class DisplayCapture: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
     }
 
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
-        guard type == .screen, gate.contains(generation), (settings.original || encoder != nil),
+        guard type == .screen, gate.contains(generation), !flags.withLock({ $0.stopped }), (settings.original || encoder != nil),
               let attachments = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: false) as? [[SCStreamFrameInfo: Any]],
               let value = attachments.first?[.status] as? Int, let status = SCFrameStatus(rawValue: value) else { return }
         switch status {
@@ -602,6 +617,12 @@ final class DisplayCapture: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
     }
 
     private func fail(_ message: String) {
+        let firstFailure = flags.withLock {
+            guard !$0.stopped else { return false }
+            $0.stopped = true
+            return true
+        }
+        guard firstFailure else { return }
         gate.end(generation)
         onFailure(message)
     }

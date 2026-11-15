@@ -161,6 +161,15 @@ For HD text checks, set `CMDPALM_DISPLAY_IMAGE` to a PNG fixture up to 4K and
 16 MiB before starting the helper. It sends that generated picture at one
 update per second when HD text is selected. Check readability while zoomed,
 fullscreen entry/exit, stopping, switching modes, and background cleanup.
+Check fullscreen keyboard entry and exit, then rotate between portrait and
+landscape while viewing. Hidden navigation must remain inaccessible, and
+normal controls must work again after Exit or Stop.
+
+For capture lifecycle changes, overlap display-list refreshes with monitor
+change notifications while a view is active. Also stop a capture while it is
+starting and verify that late frames or stopped-status callbacks cannot end
+the replacement view. These checks require an explicitly authorized local
+capture session; the synthetic transport host does not exercise ScreenCaptureKit.
 
 ## App icon
 
