@@ -6,8 +6,8 @@
 
 ### Your Mac, in your palm.
 
-Turn your iPhone, iPad or Android phone into a trackpad, keyboard, button
-deck and live screen viewer for your Mac.<br />
+Turn your iPhone, iPad or Android phone into a trackpad, keyboard and button
+deck for your Mac.<br />
 **No app to install on the phone. No account. Nothing leaves your network.**
 
 <br />
@@ -338,47 +338,6 @@ Dictation in **System Settings → Keyboard** so macOS downloads it, or pick
 another language.
 
 ## Gestures
-
-### View your Mac screen
-
-The phone's **Display** tab can show one Mac display on its own, above the
-trackpad or keyboard, or beside the controls when there is enough width.
-
-1. On the Mac, enable **Settings → General → Display → Allow screen viewing**.
-2. Allow **Screen Recording** under General → Display. Reopen CmdPalm if
-   macOS asks you to after granting access.
-3. In **Settings → Devices**, turn on **Allow screen viewing** for the phone you want
-   to use. Temporary devices receive permission for their current connection.
-4. Open **Display** on the phone, choose a display, and tap **View**.
-
-You can also tap **Ask Mac to allow viewing** on the phone. Someone at the Mac must
-choose **Allow Screen Viewing**. This enables screen viewing and grants that
-device access; macOS Screen Recording permission is still required. Requests
-expire after one minute. A temporary device's grant lasts only for its connection.
-
-Pinch or drag a zoomed preview to look around without moving anything on the
-Mac. Use **Pointer here** to move the Mac pointer to the selected display.
-Use the fullscreen button to fill the app viewport and hide the input controls.
-Where supported, it also enters the browser's fullscreen mode.
-Display options include Auto, Save battery, Sharper text, HD text, and preview space.
-**HD text · lossless** preserves RGB picture detail up to 4K for reading small
-text. It updates up to once a second and uses more bandwidth and memory.
-Use Auto or Sharper text for motion; zoom cannot recover detail that was
-removed by downscaling or video compression.
-Changing the selected display or quality while viewing starts a fresh stream.
-One device can view at a time; other paired devices can still send input.
-
-Screen viewing works over HTTP and HTTPS without a phone app or certificate
-installation for video. HTTPS is recommended for protecting the page,
-authentication, and signaling as well. Video and HD pictures travel directly over WebRTC,
-so your network or VPN must allow a direct UDP connection to the Mac; a web
-reverse proxy alone does not carry the video.
-
-Leaving Display, backgrounding the phone, or pausing, locking, or sleeping
-the Mac stops viewing. Start again when ready. Capture and encoding are
-inactive when nobody is viewing, and no video is saved to disk.
-
-### Trackpad gestures
 
 | On the trackpad | Does |
 | --- | --- |
