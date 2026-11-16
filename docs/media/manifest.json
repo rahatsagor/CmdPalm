@@ -1,0 +1,178 @@
+{
+  "source": {
+    "masterRelativePath": "../cmdpalm-promo-video/cmdpalm-launch/renders/cmdpalm-launch-display-v2.mp4",
+    "masterPathRelativeToLandingRepoRoot": true,
+    "masterPathFromCmdPalmRepoRoot": "../cmdpalm-dev/cmdpalm-promo-video/cmdpalm-launch/renders/cmdpalm-launch-display-v2.mp4",
+    "masterSha256": "78ded87864ee221e4c2ef7850c00a36a2fd08949abe418fe66ab3858764ef184",
+    "videoSourceCommit": "0632a78",
+    "appSourceCommit": "7c11550b4c26fb64a193de068064e32b032f367e",
+    "launchMediaDirectoryRelativeToCmdPalmRepoRoot": "../cmdpalm-dev/cmdpalm-landing-page/public/media/launch-0632a78",
+    "sourceLandingManifestPathFromCmdPalmRepoRoot": "../cmdpalm-dev/cmdpalm-landing-page/public/media/launch-0632a78/manifest.json",
+    "inputFilmProbe": {
+      "path": "../cmdpalm-dev/cmdpalm-landing-page/public/media/launch-0632a78/film-1080.mp4",
+      "sizeBytes": 20587518,
+      "durationSeconds": 99.0,
+      "sha256": "f8bc9d7e30d065d8865a442e5f85cdb1d6992ca161490530ba8553bd98c1f210",
+      "video": {
+        "codec_name": "h264",
+        "width": 1920,
+        "height": 1080,
+        "r_frame_rate": "30/1"
+      },
+      "audioCodec": "aac",
+      "probe": "ffprobe"
+    }
+  },
+  "recipe": {
+    "heroSegments": [
+      {
+        "clip": "trackpad",
+        "startSeconds": 0.7,
+        "durationSeconds": 4.0
+      },
+      {
+        "clip": "keyboard",
+        "startSeconds": 0.3,
+        "durationSeconds": 3.2
+      },
+      {
+        "clip": "display",
+        "startSeconds": 2.0,
+        "durationSeconds": 4.5
+      },
+      {
+        "clip": "deck",
+        "startSeconds": 0.8,
+        "durationSeconds": 3.2
+      },
+      {
+        "clip": "voice",
+        "startSeconds": 0.6,
+        "durationSeconds": 3.4
+      }
+    ],
+    "animatedWebP": {
+      "fps": 12,
+      "heroWidth": 800,
+      "featureWidth": 480,
+      "heroQuality": 52,
+      "featureQuality": 55
+    },
+    "filmPoster": {
+      "sourceFrameSeconds": 97.8,
+      "width": 1280,
+      "jpegQuality": 84
+    }
+  },
+  "assets": [
+    {
+      "path": "docs/media/hero.webp",
+      "sizeBytes": 1849172,
+      "sha256": "f8e659627c11c020f6652a1606489c9b3590369e2913934f22ad4f97d09a1746",
+      "mediaType": "image/webp",
+      "width": 800,
+      "height": 450,
+      "animated": true,
+      "frameCount": 215,
+      "durationMilliseconds": 18260,
+      "probe": "webpmux -info"
+    },
+    {
+      "path": "docs/media/trackpad.webp",
+      "sizeBytes": 439880,
+      "sha256": "c41661411a8a4abfeb08f4de87ee2c2f6f23989cd8d070808b9ba655e7f85114",
+      "mediaType": "image/webp",
+      "width": 480,
+      "height": 270,
+      "animated": true,
+      "frameCount": 119,
+      "durationMilliseconds": 9960,
+      "probe": "webpmux -info"
+    },
+    {
+      "path": "docs/media/keyboard.webp",
+      "sizeBytes": 473994,
+      "sha256": "0e991508e0cfa75f8fbe64744f50b2fe48a067055794d06875540254409c1715",
+      "mediaType": "image/webp",
+      "width": 480,
+      "height": 270,
+      "animated": true,
+      "frameCount": 95,
+      "durationMilliseconds": 7968,
+      "probe": "webpmux -info"
+    },
+    {
+      "path": "docs/media/display.webp",
+      "sizeBytes": 98670,
+      "sha256": "1db61e2e61c68df07843a0614fb47c21cdfe67678857706243fb23cd4eaac76f",
+      "mediaType": "image/webp",
+      "width": 480,
+      "height": 270,
+      "animated": true,
+      "frameCount": 80,
+      "durationMilliseconds": 7968,
+      "probe": "webpmux -info"
+    },
+    {
+      "path": "docs/media/custom.webp",
+      "sizeBytes": 404806,
+      "sha256": "f2161411b95cdb7757e2a44a599d6ec7941f969875efd3329c7ec82c5721a51d",
+      "mediaType": "image/webp",
+      "width": 480,
+      "height": 270,
+      "animated": true,
+      "frameCount": 72,
+      "durationMilliseconds": 5976,
+      "probe": "webpmux -info"
+    },
+    {
+      "path": "docs/media/deck.webp",
+      "sizeBytes": 507646,
+      "sha256": "6b7fe47184c2b3c70f57cfe28a2bf275609a0afe190386469f8c68875b2f965b",
+      "mediaType": "image/webp",
+      "width": 480,
+      "height": 270,
+      "animated": true,
+      "frameCount": 96,
+      "durationMilliseconds": 7968,
+      "probe": "webpmux -info"
+    },
+    {
+      "path": "docs/media/apps-media.webp",
+      "sizeBytes": 322404,
+      "sha256": "c2e516943b2dc9a1417cf7e7a17bf257b8c0291b38b1c21d37934b6142c2dbc9",
+      "mediaType": "image/webp",
+      "width": 480,
+      "height": 270,
+      "animated": true,
+      "frameCount": 67,
+      "durationMilliseconds": 5976,
+      "probe": "webpmux -info"
+    },
+    {
+      "path": "docs/media/voice.webp",
+      "sizeBytes": 230116,
+      "sha256": "ecf12b9bfb95bb28af5c399e08276dc5406a8f3f4f1038749e2d07a537de09af",
+      "mediaType": "image/webp",
+      "width": 480,
+      "height": 270,
+      "animated": true,
+      "frameCount": 72,
+      "durationMilliseconds": 5976,
+      "probe": "webpmux -info"
+    },
+    {
+      "path": "docs/media/film.jpg",
+      "sizeBytes": 65745,
+      "sha256": "837db028642cc34e9c121cf0f39d65ec969ab29cbe580f413c5ee39cdd1921b7",
+      "mediaType": "image/jpeg",
+      "width": 1280,
+      "height": 720,
+      "animated": false,
+      "frameCount": 1,
+      "durationMilliseconds": 0,
+      "sourceFrameSeconds": 97.8,
+      "probe": "magick identify"
+    }
+  ]
+}

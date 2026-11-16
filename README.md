@@ -6,9 +6,9 @@
 
 ### Your Mac, in your palm.
 
-Turn your iPhone, iPad or Android phone into a trackpad, keyboard and button
-deck for your Mac.<br />
-**No app to install on the phone. No account. Nothing leaves your network.**
+See and control your Mac from your iPhone, iPad or Android phone.
+Screen mirroring, trackpad, keyboard and shortcut deck, together in your browser.<br />
+**No app to install on the phone. No CmdPalm account. Free and open source.**
 
 <br />
 
@@ -29,7 +29,7 @@ deck for your Mac.<br />
 
 <br />
 
-<a href="https://cmdpalm.app"><img src="docs/media/hero.webp" width="800" alt="A phone moves the Mac's pointer as a trackpad, types as a keyboard, runs buttons from a deck and types what you say" /></a>
+<a href="https://cmdpalm.app"><img src="docs/media/hero.webp" width="800" alt="CmdPalm mirrors the Mac screen to a phone with trackpad and keyboard controls, alongside shortcut decks and voice typing" /></a>
 
 </div>
 
@@ -78,6 +78,26 @@ deck for your Mac.<br />
 </td>
 </tr>
 </table>
+
+## See your Mac. Stay where you are.
+
+<a href="https://cmdpalm.app/guides/mac-screen-on-phone/"><img src="docs/media/display.webp" width="800" alt="A portrait phone mirrors the Mac display, moves the same pointer, and types the same words on both screens" /></a>
+
+**Screen mirroring** puts a selected Mac display on your phone, with a trackpad
+or keyboard beneath the live preview. Choose View or fullscreen for more space,
+pinch to zoom, pan, and bring the pointer onto the selected display. Auto,
+Save battery and Sharper text tune the stream; **HD text · lossless** preserves
+picture detail up to 4K with up to one update per second for reading.
+
+Screen viewing is **off by default**. Enable **Allow screen viewing** in the Mac’s
+General settings, grant macOS **Screen Recording** permission, and allow screen
+access for the device under **Devices**. Pairing for control does not grant viewing.
+A phone can ask, but you approve on the Mac. One allowed device can view one
+selected display at a time. Media is encrypted over WebRTC; HTTPS also protects
+the browser page, controls and pairing. Leaving Display or pausing, locking or
+sleeping the Mac ends viewing. Audio continues to play on the Mac.
+
+[Screen mirroring setup →](https://cmdpalm.app/docs/screen-mirroring/)
 
 ## Everything you need from the couch
 
@@ -177,7 +197,7 @@ Deck** on the Mac.
 
 <a href="https://cmdpalm.app/#film"><img src="docs/media/film.jpg" width="640" alt="Watch the CmdPalm film" /></a>
 
-<sub><a href="https://cmdpalm.app/#film">▶ Watch the 86-second film on cmdpalm.app</a></sub>
+<sub><a href="https://cmdpalm.app/#film">▶ Watch the 99-second film on cmdpalm.app</a></sub>
 
 </div>
 
@@ -220,12 +240,26 @@ Walk the stage.</sub>
 </td>
 <td valign="top">
 
-**Quick replies**<br />
-<sub>Tap the mic, say it, and your Mac types every word.</sub>
+**See and reply**<br />
+<sub>Read a message in Display, then type or dictate a reply without walking back to the Mac.</sub>
 
 </td>
 </tr>
 </table>
+
+## Away from home, too
+
+CmdPalm works on your local network and can also be reached from another
+network through a private VPN such as **Tailscale**. Connect the Mac and phone
+to your tailnet, then choose the Mac’s Tailscale address in
+**Settings → Phone Setup → Address in the QR code → Custom**. Open that link
+and pair your phone. Keep the Mac awake and CmdPalm running.
+
+The screen stream also needs a working direct UDP path. Controls may connect
+while Display cannot; video is not guaranteed on every VPN or relayed route.
+CmdPalm does not provide a hosted screen relay. Follow the
+[remote-access guide](https://cmdpalm.app/docs/remote-access/) for setup and
+connection requirements.
 
 ## Private by design
 
@@ -233,10 +267,10 @@ Walk the stage.</sub>
 <tr>
 <td width="50%" valign="top">
 
-**Local only**<br />
-CmdPalm talks to your phone over your own network. There are no accounts,
-no analytics and no cloud service. The only outside connection is the
-update check.
+**Your own connection**<br />
+Connect over your local network or a private VPN you configure. There is
+no CmdPalm account, analytics or hosted control/screen-streaming service.
+Optional third-party networking services have their own policies.
 
 </td>
 <td width="50%" valign="top">
@@ -253,13 +287,15 @@ the Mac. You can remove a device at any time.
 **One switch to stop everything**<br />
 Pause in the menu bar stops all input instantly, including text that is
 still being typed and shell commands left running in the background.
+It also stops screen viewing.
 
 </td>
 <td valign="top">
 
 **Encrypted when you want it**<br />
-CmdPalm creates its own certificate for an encrypted connection, and
-nothing you type ever appears in its logs.
+CmdPalm can create its own certificate for HTTPS, protecting the browser
+page, controls and pairing. Screen media is encrypted over WebRTC.
+Nothing you type ever appears in its logs.
 
 </td>
 </tr>
@@ -271,7 +307,8 @@ Read [SECURITY.md](SECURITY.md) for the full details.
 
 - A Mac with Apple silicon, running macOS 15 Sequoia or later.
 - An iPhone or iPad with iOS 17 or later, or an Android phone, on the same
-  network as the Mac. CmdPalm works in Safari, Chrome, Firefox and Samsung
+  local network as the Mac, or connected through your private VPN. CmdPalm
+  works in Safari, Chrome, Firefox and Samsung
   Internet.
 
 ## Install
@@ -372,7 +409,7 @@ lets go of every held key and button at once.
 <summary><strong>The phone can't reach the Mac</strong></summary>
 <br />
 
-Both need to be on the same network. Guest networks and some office or hotel
+For ordinary LAN use, both devices need to be on the same network. For VPN connections, check your private network and the [remote-access guide](https://cmdpalm.app/docs/remote-access/). Guest networks and some office or hotel
 Wi-Fi block devices from talking to each other. If scanning the QR code
 doesn't open CmdPalm, set **QR link uses** to **IP Address** under the QR code.
 Check that the macOS firewall allows incoming connections for CmdPalm.
@@ -414,10 +451,14 @@ CmdPalm can go along with it:
 - **A name from your own DNS**, such as `studio.home.arpa`: type it in
   **Custom**. CmdPalm accepts connections that use that name.
 - **A reverse proxy on the Mac** (Caddy, nginx, or a VPN's HTTPS sharing):
-  point it at `http://localhost:8790`, type its `https://` address in
+  point the web/control connection at `http://localhost:8790`, type its `https://` address in
   **Custom**, and turn on **Accept connections through a proxy on this Mac**
   under **Settings → Advanced**. The phone then gets an encrypted connection
   from the proxy's certificate.
+
+A web reverse proxy does not carry Display’s separate UDP media stream.
+See the [remote-access guide](https://cmdpalm.app/docs/remote-access/) for
+screen-stream requirements.
 
 Each address is a separate site to the phone's browser, so pair once for
 each address you use.
