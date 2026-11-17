@@ -18,6 +18,13 @@ and versions follow [Semantic Versioning](https://semver.org/).
   permission step before pairing. Screen mirroring can be set up later in General.
 - Screen mirroring works with HTTP and HTTPS. It stops when paused, locked,
   asleep, disconnected, revoked, or no longer active on the phone.
+- The Mac's display stays awake while a device is viewing it, so reading
+  without touching anything no longer ends the view when the display would
+  have gone to sleep. Locking or sleeping the Mac still stops viewing.
+- A brief network interruption, such as a phone moving between Wi-Fi access
+  points, no longer ends the view immediately.
+- Asking for Screen Recording shows the macOS prompt on its own the first
+  time. Later requests open System Settings directly.
 - Device names and actions have more space in Settings, with a separate screen
   access row for each device and a direct link from Display setup.
 - Screen mirroring limits bandwidth bursts, avoids unnecessary capture updates,
@@ -41,7 +48,11 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - Viewing stays active when unrelated Mac settings change or an existing
   permission is reported again. Approval refreshes preserve newly started views.
 - HD text preserves lossless picture detail up to 4K for reading small text,
-  with up to one update per second over an encrypted WebRTC connection.
+  with up to one update per second over an encrypted WebRTC connection. On a
+  slow connection it skips to the newest picture, so the phone always ends on
+  what the Mac is showing.
+- Refreshing the display list keeps a live view running, and tapping Refresh
+  twice no longer clears the list.
 - Both scroll-strip lengths now use matching up/down chevrons at every width,
   with more space between the chevrons on the short handle.
 

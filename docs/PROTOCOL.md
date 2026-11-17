@@ -316,7 +316,7 @@ and disconnect invalidate them. A request never starts capture automatically.
 
 | Phone request | Fields | Meaning |
 | --- | --- | --- |
-| `displays` | `id` | Request the current authorized display list. Requests are bounded and rate limited. |
+| `displays` | `id` | Request the current authorized display list. Requests are bounded and rate limited: one sent while the Mac is still listing receives that list under the newest `id`, and one sent within 300 ms of an answer receives the same list again. A list request does not affect an active viewer. |
 | `displayAccessRequest` | `id` | Request native approval when `features.displayRequests` is true. |
 | `displayAccessCancel` | `id` | Cancel this session's matching pending request. |
 | `displayStart` | `id`, `displayId`, `quality`, `sdp` | Start a WebRTC offer with exactly one media section; SDP is limited to 64 KiB. `auto`, `battery`, and `sharp` use a receive-only video transceiver. `original` requires `features.displayOriginal` and uses only a data section. The display must have appeared in this session's latest list. |
@@ -346,6 +346,10 @@ stop messages for another request; a stale Stop cannot end a newer viewer.
 Monitor removal stops the selected view instead of choosing another source.
 Native source resolution/rotation changes rebuild capture with a new keyframe.
 
+A failed UDP send is treated as packet loss. The Mac ends the viewer only when
+sends keep failing for five seconds. While a viewer is active the Mac holds a
+power assertion that keeps its displays from idle sleeping.
+
 Capture buffers and encoded-frame queues are bounded. Capture is scaled to
 the requested quality and negotiated H.264 level; bandwidth feedback adjusts
 bitrate and frame rate. The sender begins at an IDR, and drops before encoding
@@ -362,9 +366,11 @@ It does not upscale the source. Each PNG is limited to 16 MiB and carried in
 binary messages of at most 16 KiB. A 16-byte header contains `CPNG`, a u32
 sequence, u32 total PNG length, and u32 byte offset, all integers little-endian.
 The receiver validates order, bounds, PNG signature, and IHDR dimensions before
-decoding. The sender holds one in-flight and one queued picture with at most
+decoding. The sender holds one in-flight and one waiting picture with at most
 128 KiB SCTP buffering, yields between chunk batches, and ends a transfer
-that takes more than 12 seconds. Stale queued pictures are dropped. Unexpected
+that takes more than 12 seconds. A newer picture replaces the waiting one, so
+the picture sent last is always the newest: a still screen produces no further
+updates that could correct an older one. Unexpected
 channels or application messages from the phone end the viewer. The same
 single-viewer grants, stop controls, and visible lease apply to both modes.
 

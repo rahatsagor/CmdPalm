@@ -139,7 +139,9 @@ public STUN/TURN service or cloud relay is contacted.
 Screen mirroring stops when the phone leaves Display, is backgrounded, or loses
 its connection, and when the Mac pauses, locks, sleeps, revokes access, loses
 the selected display, or stops capture. The Mac also expires a viewing lease
-after four seconds without a visible phone's renewal. Stop and revocation
+after four seconds without a visible phone's renewal. While a device is
+viewing, the Mac's displays do not idle to sleep; locking or sleeping the Mac
+still ends the view. Stop and revocation
 invalidate the stream generation before native capture cleanup, so late
 callbacks cannot send frames into a replacement session.
 
