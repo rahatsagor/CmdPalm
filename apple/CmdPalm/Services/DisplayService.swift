@@ -78,7 +78,10 @@ final class DisplayService: Sendable {
 private actor DisplayController {
     let reference: HostReference
     let gate: DisplayGate
-    private var active: DisplayCapture?
+    private var active: DisplayCapture? { didSet { keepDisplayAwake(active != nil) } }
+    /// Held while a display is being watched. An idle display would otherwise
+    /// sleep and end the view for someone who is only reading.
+    private var wake: NSObjectProtocol?
     private var settings: DisplaySettings?
     private var revision: UInt64 = 0
     private var querying = false
@@ -152,6 +155,15 @@ private actor DisplayController {
         } catch {
             guard ticket == revision, gate.contains(config.generation) else { return }
             reference.host?.displayFailed(session: config.session, generation: config.generation, message: (error as? DisplayError)?.message ?? "Screen capture stopped. Check Screen Recording permission and the selected display, then try again.")
+        }
+    }
+
+    private func keepDisplayAwake(_ awake: Bool) {
+        if awake, wake == nil {
+            wake = ProcessInfo.processInfo.beginActivity(options: .idleDisplaySleepDisabled, reason: "A device is viewing this Mac’s display")
+        } else if !awake, let wake {
+            ProcessInfo.processInfo.endActivity(wake)
+            self.wake = nil
         }
     }
 
