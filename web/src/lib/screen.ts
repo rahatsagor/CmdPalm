@@ -116,7 +116,10 @@ function fail(message: string) {
 
 export function refreshDisplays() {
   if (listId !== null) return
-  stopViewing()
+  // Refreshing the list keeps a healthy view. The Mac ends the view itself
+  // when the display being watched goes away.
+  const viewing = streamId !== null && canView()
+  if (!viewing) stopViewing()
   screen.canRequest = false
   clearTimeout(listTimeout)
   listId = null
@@ -129,7 +132,7 @@ export function refreshDisplays() {
     fail('Update CmdPalm on the Mac to use screen mirroring.')
     return
   }
-  screen.status = 'loading'
+  if (!viewing) screen.status = 'loading'
   const id = ++request
   listId = id
   if (!send({ t: 'displays', id })) {
@@ -140,7 +143,7 @@ export function refreshDisplays() {
   listTimeout = setTimeout(() => {
     if (listId !== id) return
     listId = null
-    fail('The Mac did not answer. Check its connection, then refresh the display list.')
+    if (streamId === null) fail('The Mac did not answer. Check its connection, then refresh the display list.')
   }, 8_000)
 }
 
@@ -295,11 +298,16 @@ onMessage(message => {
     if (!visible() || message.id !== listId) return
     clearTimeout(listTimeout)
     listId = null
+    // A refresh during a view only updates the choices. It never replaces
+    // them with a failed list or changes what the live view is showing.
+    const viewing = streamId !== null
+    if (viewing && !message.displays.length) return
     screen.displays = message.displays
     // A feature update can finish this refresh before the approval fallback
     // timer fires. Never replace a usable list or interrupt its new viewer.
     if (message.displays.length) clearTimeout(approvalRefresh)
     screen.canRequest = message.canRequest === true && connection.features.displayRequests === true
+    if (viewing) return
     screen.message = message.message ?? ''
     if (!settings.displayId && message.displays.length) settings.displayId = (message.displays.find(display => display.main) ?? message.displays[0]!).id
     if (settings.displayId && message.displays.length && !selectedDisplay()) screen.message = 'The selected display is unavailable. Choose another display above.'

@@ -198,6 +198,24 @@ describe('receive-only display viewing', () => {
     expect(socket.sent.filter(message => message.t === 'displays')).toHaveLength(1)
   })
 
+  it('keeps an active view when the display list is refreshed', async () => {
+    const socket = connect()
+    library.activateScreen(video); list(socket); await library.startViewing()
+    const rtc = FakePeer.all[0]!
+    const second = { id: 'side', name: 'Side display', width: 1920, height: 1080, main: false }
+    library.refreshDisplays()
+    expect(rtc.closed).toBe(false)
+    expect(socket.sent.some(message => message.t === 'displayStop')).toBe(false)
+    list(socket, [{ id: 'main', name: 'Built-in display', width: 2560, height: 1600, main: true }, second])
+    expect(library.screen.displays).toHaveLength(2)
+    expect(library.screen.status).toBe('connecting')
+    // A failed list must not hide the display being watched.
+    library.refreshDisplays()
+    list(socket, [])
+    expect(library.screen.displays).toHaveLength(2)
+    expect(rtc.closed).toBe(false)
+  })
+
   it('can retry a display list whose control message could not be sent', () => {
     const socket = connect()
     socket.readyState = FakeSocket.CLOSING

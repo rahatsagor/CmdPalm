@@ -26,6 +26,8 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(12);
 const MAX_FRAME: usize = 1024 * 1024;
 const MAX_IMAGE: usize = 16 * 1024 * 1024;
 const ACCESS_TIMEOUT: Duration = Duration::from_secs(60);
+const LIST_REPEAT: Duration = Duration::from_millis(300);
+const LIST_TIMEOUT: Duration = Duration::from_secs(8);
 
 struct AccessRequest {
     native: DisplayApprovalRequest,
@@ -81,8 +83,13 @@ struct Active {
 }
 
 struct Sources {
+    /// The phone's newest request, which receives the answer.
     request: u32,
+    /// The request the Mac app is answering.
+    native: u32,
     ids: HashSet<String>,
+    displays: Vec<DisplayInfo>,
+    message: Option<String>,
     requested: Instant,
     pending: bool,
 }
@@ -335,23 +342,37 @@ impl DisplayHub {
             return;
         }
         let mut sources = self.sources.lock().unwrap_or_else(|p| p.into_inner());
-        if sources.get(&session).is_some_and(|s| {
-            s.requested.elapsed() < Duration::from_millis(300)
-                || s.pending && s.requested.elapsed() < Duration::from_secs(8)
-        }) {
-            drop(sources);
-            shared.send_to(
-                session,
-                ServerMessage::Displays {
+        // Repeated requests never start overlapping native queries, and never
+        // answer with an empty list that would hide the displays on the phone.
+        if let Some(source) = sources.get_mut(&session) {
+            if source.pending && source.requested.elapsed() < LIST_TIMEOUT {
+                source.request = request;
+                return;
+            }
+            if !source.pending && source.requested.elapsed() < LIST_REPEAT {
+                let reply = ServerMessage::Displays {
                     id: request,
-                    displays: vec![],
+                    displays: source.displays.clone(),
                     can_request: false,
-                    message: Some("The Mac is still refreshing its displays. Try again in a moment.".into()),
-                },
-            );
-            return;
+                    message: source.message.clone(),
+                };
+                drop(sources);
+                shared.send_to(session, reply);
+                return;
+            }
         }
-        sources.insert(session, Sources { request, ids: HashSet::new(), requested: Instant::now(), pending: true });
+        sources.insert(
+            session,
+            Sources {
+                request,
+                native: request,
+                ids: HashSet::new(),
+                displays: vec![],
+                message: None,
+                requested: Instant::now(),
+                pending: true,
+            },
+        );
         drop(sources);
         shared.delegate.display_command(session, DisplayCommand::List { request_id: request });
     }
@@ -369,7 +390,7 @@ impl DisplayHub {
         }
         let mut sources = self.sources.lock().unwrap_or_else(|p| p.into_inner());
         let Some(source) = sources.get_mut(&session) else { return };
-        if source.request != request {
+        if source.native != request || !source.pending {
             return;
         }
         let displays: Vec<_> = displays
@@ -378,9 +399,12 @@ impl DisplayHub {
             .take(32)
             .collect();
         source.ids = displays.iter().map(|d| d.id.clone()).collect();
+        source.displays = displays.clone();
+        source.message = message.clone();
         source.pending = false;
+        let id = source.request;
         drop(sources);
-        shared.send_to(session, ServerMessage::Displays { id: request, displays, can_request: false, message });
+        shared.send_to(session, ServerMessage::Displays { id, displays, can_request: false, message });
     }
 
     pub(crate) fn alive(&self, session: u64, request: u32) {

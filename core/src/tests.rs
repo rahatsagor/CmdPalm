@@ -721,6 +721,58 @@ fn original_pictures_cross_encrypted_data_channels_with_bounded_chunks_and_stop_
 }
 
 #[test]
+fn repeated_display_list_requests_share_one_answer_instead_of_failing() {
+    let f = fixture();
+    let mut config = f.config.clone();
+    config.display_enabled = true;
+    f.host.update_config(config);
+    f.host.set_pin_shown(true);
+    f.rt.block_on(async {
+        let mut ws = connect(f.port).await;
+        send(&mut ws, hello("lister", json!({"method":"pin", "pin":f.host.pairing_info().pin}))).await;
+        recv_kind(&mut ws, "welcome").await;
+        f.host.set_display_allowed("lister".into(), true);
+        recv_kind(&mut ws, "displayAccess").await;
+        let session = f.host.connected_devices()[0].session;
+        let lists = |f: &Fixture| {
+            let commands = f.delegate.display_commands.lock().unwrap();
+            commands.iter().filter(|(_, command)| matches!(command, DisplayCommand::List { .. })).count()
+        };
+        let display = crate::protocol::DisplayInfo {
+            id: "monitor".into(),
+            name: "Test".into(),
+            width: 1920,
+            height: 1080,
+            main: true,
+        };
+
+        // A second request during the native query receives that query's answer.
+        send(&mut ws, json!({"t":"displays", "id":1})).await;
+        send(&mut ws, json!({"t":"displays", "id":2})).await;
+        send(&mut ws, json!({"t":"ping", "id":1})).await;
+        recv_kind(&mut ws, "pong").await;
+        assert_eq!(lists(&f), 1, "overlapping requests must not start overlapping native queries");
+        f.host.display_sources(session, 1, vec![display.clone()], None);
+        let sources = recv_kind(&mut ws, "displays").await;
+        assert_eq!(sources["id"], 2, "the answer belongs to the phone's newest request");
+        assert_eq!(sources["displays"][0]["id"], "monitor");
+        f.host.display_sources(session, 1, vec![], None);
+
+        // A double tap right after an answer still shows the displays.
+        send(&mut ws, json!({"t":"displays", "id":3})).await;
+        send(&mut ws, json!({"t":"ping", "id":2})).await;
+        recv_kind(&mut ws, "pong").await;
+        // A slow test machine can outlast the repeat window and query again.
+        if lists(&f) == 2 {
+            f.host.display_sources(session, 3, vec![display], None);
+        }
+        let repeated = recv_kind(&mut ws, "displays").await;
+        assert_eq!(repeated["id"], 3);
+        assert_eq!(repeated["displays"][0]["id"], "monitor", "a repeated request must never hide the displays");
+    });
+}
+
+#[test]
 fn pin_pairing_then_token_reconnect() {
     let f = fixture();
     let pin = f.host.pairing_info().pin;
