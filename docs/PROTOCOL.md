@@ -112,7 +112,7 @@ Otherwise the Mac sends `denied` and closes the connection:
 | `expiredCode` | The QR code is wrong, expired or already used. |
 | `rejected` | The person at the Mac declined or didn't answer in time, or this pairing method is turned off. |
 | `blocked` | Too many wrong PINs, or too many approval requests declined, unanswered or abandoned. `retryAfter` gives seconds to wait. |
-| `busy` | Too many approval requests are already waiting. |
+| `busy` | Too many approval requests are waiting, or the Mac cannot safely load its saved device list. Keep a saved token and offer retry. `retryAfter`, when present, gives seconds to wait. |
 | `incompatible` | Unsupported protocol version or invalid device info. |
 
 The phone sends `ping` (`{"t":"ping","id":n}`) every two seconds and the Mac
@@ -285,12 +285,14 @@ Mac never uses them to type a character.
 ```
 
 Limits: 1 to 24 pages, 1 to 8 columns and up to 64 tiles per page,
-80-character labels, IDs of up to 128 bytes, and 4 096 bytes (UTF-8) of text,
+80-character labels, nonempty IDs of up to 128 bytes, and 4 096 bytes (UTF-8) of text,
 URL or shell command per action. App IDs and shortcut names are limited to
 512 bytes, a `keys` action's `char` to 16 bytes, an emoji icon to 64 bytes
 and a symbol name to 128. `color` is `#rgb`, `#rgba`, `#rrggbb` or
 `#rrggbbaa`. The Mac rejects a deck that breaks these limits, and the sender
 gets a `notice` explaining why.
+
+Page IDs must be unique, and button IDs must be unique within their page.
 
 ## Screen mirroring
 

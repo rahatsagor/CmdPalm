@@ -11,6 +11,15 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ### Mac app
 
+- A paired phone keeps its token if the Mac cannot read the device list. New
+  remembered pairings also leave an unreadable or newer-format list untouched.
+- HTTPS recovers when a saved certificate authority and its key no longer
+  match. Devices need the replacement certificate if the old authority cannot
+  be recovered.
+- Disconnecting one device no longer releases a media key another device holds.
+- Deck imports and saves reject empty or duplicate page and button IDs.
+- App and dependency license notices ship in the bundle and can be opened
+  from About. Builds collect notices from their resolved dependency versions.
 - Optional screen mirroring streams one selected display to an explicitly allowed
   device using hardware H.264 encoding. Enable it in General, grant Screen
   Recording permission, then allow a device in Devices.
@@ -36,6 +45,11 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ### Phone client
 
+- Reconnecting after a retryable refusal keeps the saved pairing and offers
+  a Reconnect button with recovery instructions.
+- Shared mouse buttons and seeking keys stay held until the last finger lifts.
+- Stored custom keyboards reject invalid media names and keep shortened key
+  IDs distinct.
 - A Display tab shows the Mac screen on its own, above a trackpad or keyboard,
   or beside the controls on a wide screen. Choose a monitor, zoom the preview,
   move the Mac pointer to that display, and choose motion, battery, or text
