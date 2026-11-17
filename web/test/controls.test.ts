@@ -35,6 +35,35 @@ const readerClick = (el: Element) => el.dispatchEvent(new MouseEvent('click', { 
 const enter = (el: Element) => el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true, cancelable: true }))
 
 describe('controls used without touch', () => {
+  it('keeps shared mouse and seeking keys held until the last finger lifts', async () => {
+    const socket = connect()
+    const input = await import('../src/lib/input')
+    input.buttonDown('left')
+    input.buttonDown('left')
+    input.buttonUp('left')
+    expect(socket.sent.filter((m) => m.t === 'button')).toMatchObject([{ button: 'left', op: 'down' }])
+    input.buttonUp('left')
+    expect(socket.sent.filter((m) => m.t === 'button')).toMatchObject([{ op: 'down' }, { op: 'up' }])
+
+    const first = input.pressMedia('rewind')
+    const second = input.pressMedia('rewind')
+    first()
+    first()
+    expect(socket.sent.filter((m) => m.t === 'media')).toMatchObject([{ key: 'rewind', op: 'down' }])
+    second()
+    expect(socket.sent.filter((m) => m.t === 'media')).toMatchObject([{ op: 'down' }, { op: 'up' }])
+
+    input.buttonDown('left')
+    input.pressMedia('rewind')
+    input.releaseAll()
+    const before = socket.sent.length
+    input.buttonUp('left')
+    input.media('rewind', 'up')
+    expect(socket.sent).toHaveLength(before)
+    input.buttonDown('left')
+    expect(socket.sent.at(-1)).toMatchObject({ t: 'button', op: 'down' })
+  })
+
   it('click the Mac from the click bar', async () => {
     const socket = connect()
     const { default: ClickBar } = await import('../src/components/ClickBar.vue')

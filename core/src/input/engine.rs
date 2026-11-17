@@ -331,6 +331,7 @@ pub(crate) struct Engine<S: EventSink> {
     paused: bool,
     os_keys: BTreeMap<KeyCode, u32>,
     os_buttons: HashMap<MouseButton, u32>,
+    os_media: HashMap<MediaKey, u32>,
     sessions: HashMap<SessionId, Session>,
     repeat: Option<Repeat>,
     clicks: ClickTracker,
@@ -362,6 +363,7 @@ impl<S: EventSink> Engine<S> {
             paused: false,
             os_keys: BTreeMap::new(),
             os_buttons: HashMap::new(),
+            os_media: HashMap::new(),
             sessions: HashMap::new(),
             repeat: None,
             clicks: ClickTracker::default(),
@@ -1149,20 +1151,33 @@ impl<S: EventSink> Engine<S> {
         match op {
             PressOp::Down => {
                 if state.media.insert(key) {
-                    self.sink.post(Synth::Media { key, down: true });
+                    let count = self.os_media.entry(key).or_default();
+                    *count += 1;
+                    if *count == 1 {
+                        self.sink.post(Synth::Media { key, down: true });
+                    }
                 }
             }
             PressOp::Up => {
                 if state.media.remove(&key) {
-                    self.sink.post(Synth::Media { key, down: false });
+                    self.release_media(key);
                 }
             }
             PressOp::Click => {
-                if !state.media.contains(&key) {
+                if !self.os_media.contains_key(&key) {
                     self.sink.post(Synth::Media { key, down: true });
                     self.sink.post(Synth::Media { key, down: false });
                 }
             }
+        }
+    }
+
+    fn release_media(&mut self, key: MediaKey) {
+        let Some(count) = self.os_media.get_mut(&key) else { return };
+        *count -= 1;
+        if *count == 0 {
+            self.os_media.remove(&key);
+            self.sink.post(Synth::Media { key, down: false });
         }
     }
 
@@ -1210,7 +1225,7 @@ impl<S: EventSink> Engine<S> {
             self.release_temp_mods(temp);
         }
         for key in media {
-            self.sink.post(Synth::Media { key, down: false });
+            self.release_media(key);
         }
         for code in keys.iter().rev().copied().filter(|c| keycodes::is_modifier(*c)) {
             self.release(code);
@@ -2196,6 +2211,26 @@ mod tests {
                 Synth::Media { key: MediaKey::VolumeUp, down: false }
             ]
         );
+    }
+
+    #[test]
+    fn one_device_cannot_release_another_devices_held_media_key() {
+        let mut h = Harness::new();
+        let key = MediaKey::Rewind;
+        for session in [A, B] {
+            h.input(session, Input::Media { key, op: PressOp::Down });
+        }
+        assert_eq!(h.take(), vec![Synth::Media { key, down: true }]);
+        h.cmd(Command::EndSession(A));
+        h.input(B, Input::Media { key, op: PressOp::Click });
+        assert!(h.take().is_empty(), "disconnects and clicks must leave the remaining hold alone");
+        h.input(B, Input::Media { key, op: PressOp::Up });
+        assert_eq!(h.take(), vec![Synth::Media { key, down: false }]);
+
+        h.input(B, Input::Media { key, op: PressOp::Down });
+        h.take();
+        h.cmd(Command::SetPaused(true));
+        assert_eq!(h.take(), vec![Synth::Media { key, down: false }]);
     }
 
     #[test]

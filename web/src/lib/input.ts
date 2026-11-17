@@ -16,6 +16,8 @@ export const modifiers = new Modifiers({
 const heldKeys = new Map<number, number>()
 /** Fingers holding each key code: the Mac has one key, released by the last. */
 const keyCount = new Map<number, number>()
+const buttonCount = new Map<MouseButton, number>()
+const mediaCount = new Map<MediaKey, number>()
 
 /** Stepping keys still repeating, so Release all can stop them. */
 const repeating = new Set<() => void>()
@@ -29,6 +31,8 @@ function macReleased(restore: boolean) {
   stopRepeating()
   heldKeys.clear()
   keyCount.clear()
+  buttonCount.clear()
+  mediaCount.clear()
   if (!restore) modifiers.dropTouches()
   if (restore) modifiers.restoreLocks()
 }
@@ -101,10 +105,16 @@ export function click(button: MouseButton = 'left') {
 
 export function buttonDown(button: MouseButton = 'left') {
   const mods = modifiers.use()
-  send({ t: 'button', button, op: 'down', mods })
+  const count = buttonCount.get(button) ?? 0
+  buttonCount.set(button, count + 1)
+  if (count === 0) send({ t: 'button', button, op: 'down', mods })
 }
 
 export function buttonUp(button: MouseButton = 'left') {
+  const count = buttonCount.get(button)
+  if (count === undefined) return
+  if (count > 1) { buttonCount.set(button, count - 1); return }
+  buttonCount.delete(button)
   send({ t: 'button', button, op: 'up' })
 }
 
@@ -114,6 +124,16 @@ export function beginPointerGesture() {
 }
 
 export function media(key: MediaKey, op: 'down' | 'up' | 'click' = 'click') {
+  if (op === 'down') {
+    const count = mediaCount.get(key) ?? 0
+    mediaCount.set(key, count + 1)
+    if (count > 0) return
+  } else if (op === 'up') {
+    const count = mediaCount.get(key)
+    if (count === undefined) return
+    if (count > 1) { mediaCount.set(key, count - 1); return }
+    mediaCount.delete(key)
+  }
   send({ t: 'media', key, op })
 }
 
@@ -134,7 +154,8 @@ if (typeof document !== 'undefined') {
 export function pressMedia(key: MediaKey): () => void {
   if (SEEKING.has(key)) {
     media(key, 'down')
-    return () => media(key, 'up')
+    let released = false
+    return () => { if (!released) { released = true; media(key, 'up') } }
   }
   media(key, 'click')
   if (!STEPPING.has(key)) return () => {}
@@ -189,6 +210,8 @@ export function releaseAll() {
   stopRepeating()
   heldKeys.clear()
   keyCount.clear()
+  buttonCount.clear()
+  mediaCount.clear()
   modifiers.reset(false)
   pointer.reset()
   send({ t: 'release' })
