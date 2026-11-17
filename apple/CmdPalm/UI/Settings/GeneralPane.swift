@@ -80,7 +80,7 @@ struct GeneralPane: View {
             } header: {
                 Text("Display")
             } footer: {
-                Text("Video is encrypted over HTTP and HTTPS. Use HTTPS to also protect the page and connection setup.")
+                Text("The Mac display stays awake while a device is viewing it. Locking or sleeping the Mac stops mirroring. Video is encrypted over HTTP and HTTPS. Use HTTPS to also protect the page and connection setup.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

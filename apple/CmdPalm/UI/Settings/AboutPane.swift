@@ -28,7 +28,7 @@ struct AboutPane: View {
                             NSPasteboard.general.setString("CmdPalm \(versionText)", forType: .string)
                         }
                     }
-                Text("Your phone as a trackpad, keyboard and button deck for your Mac.")
+                Text("Your phone as a trackpad, keyboard, button deck and screen mirror for your Mac.")
                     .font(.title3)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
