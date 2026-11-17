@@ -26,7 +26,7 @@ pub struct HostConfig {
     pub allow_shell: bool,
     /// Whether the Mac can transcribe speech streamed from the phone.
     pub voice_available: bool,
-    /// Screen viewing is an explicit opt-in on the Mac.
+    /// Screen mirroring is an explicit opt-in on the Mac.
     pub display_enabled: bool,
 }
 

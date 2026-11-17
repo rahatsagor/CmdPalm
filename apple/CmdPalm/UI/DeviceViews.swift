@@ -154,7 +154,7 @@ struct DisplayApprovalRow: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             if !preferences.displayEnabled {
-                Text("Approving also turns on screen viewing on this Mac.")
+                Text("Approving also turns on screen mirroring on this Mac.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -162,7 +162,7 @@ struct DisplayApprovalRow: View {
             HStack {
                 Spacer()
                 Button("Don’t Allow") { host.respond(to: request, allow: false) }
-                Button("Allow Screen Viewing") { host.respond(to: request, allow: true) }
+                Button("Allow Screen Mirroring") { host.respond(to: request, allow: true) }
             }
             .fixedSize(horizontal: false, vertical: true)
         }

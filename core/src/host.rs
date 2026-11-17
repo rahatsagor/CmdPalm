@@ -627,9 +627,9 @@ impl CoreHost {
                 None,
                 None,
                 "cancelled",
-                "Screen viewing was turned off on the Mac.",
+                "Screen mirroring was turned off on the Mac.",
             );
-            self.shared.displays.cancel(&self.shared, None, None, "Screen viewing was turned off on the Mac.");
+            self.shared.displays.cancel(&self.shared, None, None, "Screen mirroring was turned off on the Mac.");
         }
         if previous.allow_shell != config.allow_shell
             || previous.voice_available != config.voice_available
@@ -797,10 +797,10 @@ impl CoreHost {
                 None,
                 None,
                 "cancelled",
-                "Screen viewing is paused on the Mac.",
+                "Screen mirroring is paused on the Mac.",
             );
             self.shared.cancel_voices();
-            self.shared.displays.cancel(&self.shared, None, None, "Screen viewing is paused on the Mac.");
+            self.shared.displays.cancel(&self.shared, None, None, "Screen mirroring is paused on the Mac.");
         }
         self.shared.engine(Command::SetPaused(paused));
         self.shared.broadcast(ServerMessage::Paused { paused });
@@ -901,7 +901,7 @@ impl CoreHost {
                     Some(session),
                     None,
                     "allowed",
-                    "Screen viewing was allowed on the Mac.",
+                    "Screen mirroring was allowed on the Mac.",
                 );
             }
             self.shared.send_to(session, ServerMessage::DisplayAccess { allowed });
@@ -936,7 +936,7 @@ impl CoreHost {
                 Some(session),
                 None,
                 "allowed",
-                "Screen viewing was allowed on the Mac.",
+                "Screen mirroring was allowed on the Mac.",
             );
         }
         self.shared.emit(HostEvent::SessionsChanged);
@@ -982,12 +982,18 @@ impl CoreHost {
     /// Lock, sleep, or native permission revocation ends viewing without
     /// preventing the existing input controls from reconnecting afterward.
     pub fn suspend_display(&self) {
-        self.shared.displays.cancel_access(&self.shared, None, None, "cancelled", "Screen viewing stopped on the Mac.");
+        self.shared.displays.cancel_access(
+            &self.shared,
+            None,
+            None,
+            "cancelled",
+            "Screen mirroring stopped on the Mac.",
+        );
         self.shared.displays.cancel(
             &self.shared,
             None,
             None,
-            "Screen viewing stopped on the Mac. Unlock or wake the Mac, then start viewing again.",
+            "Screen mirroring stopped on the Mac. Unlock or wake the Mac, then start viewing again.",
         );
     }
 

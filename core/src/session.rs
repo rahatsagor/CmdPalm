@@ -672,7 +672,7 @@ impl Connection {
                 None
             }
             ClientMessage::DisplayStop { id } => {
-                self.shared.displays.cancel(&self.shared, Some(self.id), Some(id), "Screen viewing stopped.");
+                self.shared.displays.cancel(&self.shared, Some(self.id), Some(id), "Screen mirroring stopped.");
                 None
             }
             ClientMessage::DisplayAlive { id } => {

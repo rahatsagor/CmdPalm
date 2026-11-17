@@ -8,10 +8,10 @@ struct DevicesPane: View {
 
     var body: some View {
         Form {
-            Section("Screen Viewing") {
+            Section("Screen Mirroring") {
                 VStack(alignment: .leading, spacing: 8) {
                     if !preferences.displayEnabled {
-                        Label("Screen viewing is off on this Mac", systemImage: "display")
+                        Label("Screen mirroring is off on this Mac", systemImage: "display")
                     } else if !permissions.canView {
                         Label("Screen Recording permission is needed", systemImage: "exclamationmark.circle")
                             .foregroundStyle(.orange)
@@ -19,7 +19,7 @@ struct DevicesPane: View {
                         Label("Ready to share a display", systemImage: "checkmark.circle.fill")
                             .foregroundStyle(.green)
                     }
-                    Text("Turn on Allow screen viewing for each device below. Devices without this access can still use the trackpad and keyboard.")
+                    Text("Turn on Allow screen mirroring for each device below. Devices without this access can still use the trackpad and keyboard.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -229,18 +229,18 @@ private struct DeviceScreenAccessRow: View {
     var body: some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Allow screen viewing")
-                Text(temporary ? "For this connection only" : (allowed ? "Allowed when screen viewing is on" : "Screen viewing is off for this device"))
+                Text("Allow screen mirroring")
+                Text(temporary ? "For this connection only" : (allowed ? "Allowed when screen mirroring is on" : "Screen mirroring is off for this device"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            Toggle("Allow screen viewing for \(name)", isOn: $allowed)
+            Toggle("Allow screen mirroring for \(name)", isOn: $allowed)
                 .labelsHidden()
                 .toggleStyle(.switch)
                 .fixedSize()
-                .accessibilityLabel("Allow screen viewing for \(name)")
+                .accessibilityLabel("Allow screen mirroring for \(name)")
         }
     }
 }

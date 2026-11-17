@@ -14,7 +14,7 @@ struct GeneralPane: View {
             Section {
                 DescribedToggle(
                     "Allow control from devices",
-                    detail: "Turn off to stop input and screen viewing from all devices without disconnecting them.",
+                    detail: "Turn off to stop input and screen mirroring from all devices without disconnecting them.",
                     isOn: Binding(get: { !host.paused }, set: { host.setPaused(!$0) })
                 )
                 .disabled(!host.isRunning)
@@ -65,7 +65,7 @@ struct GeneralPane: View {
 
             Section {
                 DescribedToggle(
-                    "Allow screen viewing",
+                    "Allow screen mirroring",
                     detail: "Show a Mac display on devices you allow. Capture stops when you leave the Display tab on your phone.",
                     isOn: $preferences.displayEnabled
                 )

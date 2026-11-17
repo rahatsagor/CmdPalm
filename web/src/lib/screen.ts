@@ -51,7 +51,7 @@ export function requestScreenAccess() {
   const id = ++request
   accessId = id
   screen.accessState = 'pending'
-  screen.accessMessage = 'Approve screen viewing on the Mac. This request expires in one minute.'
+  screen.accessMessage = 'Approve screen mirroring on the Mac. This request expires in one minute.'
   if (!send({ t: 'displayAccessRequest', id })) { cancelAccessRequest(); screen.accessState = 'error'; return }
   accessTimeout = setTimeout(() => {
     if (accessId !== id) return
@@ -126,7 +126,7 @@ export function refreshDisplays() {
     return
   }
   if (connection.features.display === undefined) {
-    fail('Update CmdPalm on the Mac to use screen viewing.')
+    fail('Update CmdPalm on the Mac to use screen mirroring.')
     return
   }
   screen.status = 'loading'
@@ -305,7 +305,7 @@ onMessage(message => {
     if (settings.displayId && message.displays.length && !selectedDisplay()) screen.message = 'The selected display is unavailable. Choose another display above.'
     screen.status = message.displays.length ? 'ready' : 'error'
   } else if (message.t === 'displayAccess') {
-    if (!message.allowed) stopViewing('Screen viewing permission was removed on the Mac.')
+    if (!message.allowed) stopViewing('Screen mirroring permission was removed on the Mac.')
     if (canView() && accessId === null && streamId === null) refreshDisplays()
   } else if (message.t === 'displayRequest' && message.id === accessId) {
     screen.accessState = message.state
@@ -326,7 +326,7 @@ onMessage(message => {
         if (current === generation) fail('The browser could not accept the video connection. Try again.')
       })
     } else if (message.state === 'error' || message.state === 'stopped') {
-      stopViewing(message.message ?? 'Screen viewing stopped.', false)
+      stopViewing(message.message ?? 'Screen mirroring stopped.', false)
     }
   }
 })
@@ -336,7 +336,7 @@ watch([() => connection.status, () => connection.paused, () => connection.featur
     cancelAccessRequest()
     listId = null
     clearTimeout(listTimeout)
-    stopViewing(paused ? 'Screen viewing is paused on the Mac.' : 'Reconnect to the Mac, then start viewing again.')
+    stopViewing(paused ? 'Screen mirroring is paused on the Mac.' : 'Reconnect to the Mac, then start viewing again.')
     screen.displays = []
     screen.canRequest = false
   } else if (visible() && accessId === null) refreshDisplays()

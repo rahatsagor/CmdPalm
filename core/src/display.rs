@@ -99,11 +99,11 @@ pub(crate) fn access(shared: &Shared, session: u64) -> Result<(), &'static str> 
         return Err("Unlock or wake the Mac, then try again.");
     }
     if !shared.config().display_enabled {
-        return Err("Screen viewing is off. On the Mac, open CmdPalm Settings → General → Display.");
+        return Err("Screen mirroring is off. On the Mac, open CmdPalm Settings → General → Display.");
     }
     let state = shared.state();
     if state.paused {
-        return Err("Screen viewing is paused on the Mac.");
+        return Err("Screen mirroring is paused on the Mac.");
     }
     match state.sessions.get(&session) {
         Some(live)
@@ -112,7 +112,7 @@ pub(crate) fn access(shared: &Shared, session: u64) -> Result<(), &'static str> 
         {
             Ok(())
         }
-        Some(_) => Err("Allow screen viewing for this device in CmdPalm Settings → Devices on the Mac."),
+        Some(_) => Err("Allow screen mirroring for this device in CmdPalm Settings → Devices on the Mac."),
         None => Err("The device is no longer connected."),
     }
 }
@@ -127,7 +127,7 @@ impl DisplayHub {
         let state = shared.state();
         if state.paused {
             drop(state);
-            refuse("Screen viewing is paused on the Mac.");
+            refuse("Screen mirroring is paused on the Mac.");
             return;
         }
         let Some(live) = state.sessions.get(&session) else { return };
@@ -176,7 +176,7 @@ impl DisplayHub {
         let _ = live.tx.send(Outgoing::Message(access_state(
             client,
             "pending",
-            "Approve screen viewing on the Mac. This request expires in one minute.",
+            "Approve screen mirroring on the Mac. This request expires in one minute.",
         )));
         drop(requests);
         drop(state);
@@ -285,9 +285,9 @@ impl DisplayHub {
         let (status, message) = if !valid {
             ("expired", "This access request is no longer valid. Ask again from the phone.")
         } else if allow {
-            ("allowed", "Screen viewing was approved on the Mac. Refresh the display list when ready.")
+            ("allowed", "Screen mirroring was approved on the Mac. Refresh the display list when ready.")
         } else {
-            ("denied", "Screen viewing was declined on the Mac.")
+            ("denied", "Screen mirroring was declined on the Mac.")
         };
         shared.send_to(session, access_state(request.client, status, message));
         if valid && allow {
@@ -300,7 +300,7 @@ impl DisplayHub {
     pub(crate) fn set_awake(&self, shared: &Shared, awake: bool) {
         self.awake.store(awake, Ordering::Release);
         if !awake {
-            self.cancel(shared, None, None, "Screen viewing stopped. Unlock or wake the Mac to continue.");
+            self.cancel(shared, None, None, "Screen mirroring stopped. Unlock or wake the Mac to continue.");
             self.cancel_access(shared, None, None, "cancelled", "Unlock or wake the Mac, then ask again.");
         }
     }
@@ -420,7 +420,7 @@ impl DisplayHub {
 
     pub(crate) fn forget(&self, shared: &Shared, session: u64) {
         self.cancel_access(shared, Some(session), None, "cancelled", "This device's access request was cancelled.");
-        self.cancel(shared, Some(session), None, "Screen viewing stopped.");
+        self.cancel(shared, Some(session), None, "Screen mirroring stopped.");
         self.sources.lock().unwrap_or_else(|p| p.into_inner()).remove(&session);
     }
 
@@ -543,7 +543,7 @@ pub(crate) fn start(
             &needs_keyframe,
         )
         .await;
-        let message = result.err().unwrap_or_else(|| "Screen viewing stopped.".into());
+        let message = result.err().unwrap_or_else(|| "Screen mirroring stopped.".into());
         shared.displays.failed(&shared, session, generation, &message);
     });
 }

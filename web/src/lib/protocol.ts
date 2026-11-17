@@ -212,7 +212,7 @@ export interface Features {
   shell: boolean
   secure: boolean
   permission: boolean
-  /** Missing from older hosts that do not support screen viewing. */
+  /** Missing from older hosts that do not support screen mirroring. */
   display?: boolean
   displayRequests?: boolean
   displayOriginal?: boolean

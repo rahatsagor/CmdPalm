@@ -89,7 +89,7 @@ pinch to zoom, pan, and bring the pointer onto the selected display. Auto,
 Save battery and Sharper text tune the stream; **HD text · lossless** preserves
 picture detail up to 4K with up to one update per second for reading.
 
-Screen viewing is **off by default**. Enable **Allow screen viewing** in the Mac’s
+Screen mirroring is **off by default**. Enable **Allow screen mirroring** in the Mac’s
 General settings, grant macOS **Screen Recording** permission, and allow screen
 access for the device under **Devices**. Pairing for control does not grant viewing.
 A phone can ask, but you approve on the Mac. One allowed device can view one
@@ -287,7 +287,7 @@ the Mac. You can remove a device at any time.
 **One switch to stop everything**<br />
 Pause in the menu bar stops all input instantly, including text that is
 still being typed and shell commands left running in the background.
-It also stops screen viewing.
+It also stops screen mirroring.
 
 </td>
 <td valign="top">

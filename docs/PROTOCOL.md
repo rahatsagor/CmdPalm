@@ -93,7 +93,7 @@ On success the Mac sends `welcome`:
 | `host` | `{name, version, os}`. |
 | `sessionKey` | Short-lived key for `/api/icon`. |
 | `token` | Present after a new pairing with `remember: true`. Store it and use it for `token` auth. |
-| `features` | `{voice, shell, secure, permission, display, displayRequests, displayOriginal}`: voice typing available, shell commands allowed, connection is TLS, Mac has Accessibility permission, screen viewing enabled globally, native screen-access requests supported, lossless HD text supported. Display fields are absent on older hosts. They do not themselves grant this device screen access. |
+| `features` | `{voice, shell, secure, permission, display, displayRequests, displayOriginal}`: voice typing available, shell commands allowed, connection is TLS, Mac has Accessibility permission, screen mirroring enabled globally, native screen-access requests supported, lossless HD text supported. Display fields are absent on older hosts. They do not themselves grant this device screen access. |
 | `deck` | The current deck (see below). |
 | `deckRevision` | The revision of the current deck during this host run. Missing on older hosts. Send it with `deckSave` to avoid overwriting newer changes. |
 | `layout` | The Mac's keyboard layout, if known. |
@@ -292,9 +292,9 @@ and a symbol name to 128. `color` is `#rgb`, `#rgba`, `#rrggbb` or
 `#rrggbbaa`. The Mac rejects a deck that breaks these limits, and the sender
 gets a `notice` explaining why.
 
-## Screen viewing
+## Screen mirroring
 
-Screen viewing is additive to protocol version 1. Only send its requests to a
+Screen mirroring is additive to protocol version 1. Only send its requests to a
 host that advertises `features.display` (false means it is supported but off).
 It works on HTTP and HTTPS; the browser only receives video and never needs
 `getUserMedia`, `getDisplayMedia`, or WebCodecs. The native Mac app captures

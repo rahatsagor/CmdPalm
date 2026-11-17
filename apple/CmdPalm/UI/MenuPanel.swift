@@ -107,7 +107,7 @@ struct MenuPanel: View {
                 .labelsHidden()
                 .controlSize(.small)
                 .help(host.paused ? "Resume control and viewing from devices" : "Pause control and viewing from all devices")
-                .accessibilityLabel("Allow control and screen viewing from devices")
+                .accessibilityLabel("Allow control and screen mirroring from devices")
             }
         }
     }

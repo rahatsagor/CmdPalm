@@ -108,7 +108,7 @@ struct WelcomeView: View {
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
             }
-            Text("To start viewing, enable Allow screen viewing in General and grant your phone screen access in Devices. CmdPalm saves no screen recordings.")
+            Text("To start viewing, enable Allow screen mirroring in General and grant your phone screen access in Devices. CmdPalm saves no screen recordings.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)

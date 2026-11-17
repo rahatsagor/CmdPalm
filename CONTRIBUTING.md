@@ -116,7 +116,7 @@ xcodebuild test -project CmdPalm.xcodeproj -scheme CmdPalm -destination "platfor
 The canonical `CARGO_HOME` path also works when `~/.cargo` is a symlink.
 UniFFI's binding generator needs its template paths to match Cargo's paths.
 
-### Screen viewing checks
+### Screen mirroring checks
 
 The Rust suite includes a real local WebRTC handshake, encrypted media, and
 late-frame rejection over a plain control WebSocket. Phone tests cover a
