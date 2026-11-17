@@ -3,7 +3,7 @@
 # versioned launch media directory (clips/ and film-1080.mp4).
 # Needs ffmpeg, ImageMagick, WebP tools, ffprobe and Python 3.
 #
-#   scripts/readme-media.sh path/to/landing-page/public/media/launch-0632a78
+#   scripts/readme-media.sh path/to/landing-page/public/media/launch-055350f
 set -euo pipefail
 
 if [[ $# -ne 1 || ! -d "$1/clips" || ! -f "$1/film-1080.mp4" ]]; then

@@ -85,7 +85,7 @@ Screen mirroring, trackpad, keyboard and shortcut deck, together in your browser
 
 **Screen mirroring** puts a selected Mac display on your phone, with a trackpad
 or keyboard beneath the live preview. Choose View or fullscreen for more space,
-pinch to zoom, pan, and bring the pointer onto the selected display. Auto,
+pinch to zoom, pan, and bring the pointer onto the selected display. Automatic,
 Save battery and Sharper text tune the stream; **HD text · lossless** preserves
 picture detail up to 4K with up to one update per second for reading.
 
@@ -191,6 +191,12 @@ Phone settings use tabs for Trackpad, Gestures, Keyboard, Display and Deck.
 Device preferences, backups and connection actions stay below the feature
 settings. Changes save automatically, and every section is visible within its
 tab. Dictation setup is in Keyboard.
+
+<p align="center">
+<img src="docs/media/phone-settings-trackpad.webp" width="260" alt="Phone Settings with the Mac connection card, five feature tabs and Trackpad preferences" />
+&nbsp;
+<img src="docs/media/phone-settings-keyboard.webp" width="260" alt="Keyboard preferences grouped in the phone Settings Keyboard tab" />
+</p>
 
 Use **Settings → Back up or restore this device** on the phone to export
 your settings and custom keyboards as a file, or review and restore a saved

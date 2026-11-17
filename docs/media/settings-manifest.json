@@ -1,0 +1,21 @@
+{
+  "appSourceCommit": "e849c51a5f445fd37e8f764c486e0c12500bf29a",
+  "captureMethod": "Browser-native screenshots of the compiled phone UI with a synthetic Mac connection. No physical-device testing claimed.",
+  "source": "../cmdpalm-dev/cmdpalm-landing-page/public/media/guides/ui-e849c51/capture-manifest.json",
+  "assets": [
+    {
+      "path": "docs/media/phone-settings-trackpad.webp",
+      "width": 393,
+      "height": 804,
+      "sha256": "e912aa8ea35fecf535e309d32b25d719251949cf253d5de358d63b07060314e2",
+      "sizeBytes": 22882
+    },
+    {
+      "path": "docs/media/phone-settings-keyboard.webp",
+      "width": 393,
+      "height": 804,
+      "sha256": "c0a2cd5073e6c781cb0f11674606660603c1b5dd68455797a7d376fcdf2eef1e",
+      "sizeBytes": 28522
+    }
+  ]
+}
