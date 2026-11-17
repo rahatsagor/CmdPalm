@@ -6,7 +6,7 @@ cask "cmdpalm" do
 
   url "https://github.com/rahatsagor/CmdPalm/releases/download/v#{version}/CmdPalm-#{version}.zip"
   name "CmdPalm"
-  desc "Use your phone as a trackpad, keyboard and button deck"
+  desc "Use your phone as a screen mirror, trackpad, keyboard and button deck"
   homepage "https://cmdpalm.app/"
 
   livecheck do
@@ -40,5 +40,8 @@ cask "cmdpalm" do
     CmdPalm needs Accessibility permission to move the pointer and type.
     Open CmdPalm and follow the setup steps, or allow it in
     System Settings → Privacy & Security → Accessibility.
+
+    Screen mirroring is optional and off by default. Turn it on and allow
+    Screen Recording in CmdPalm Settings → General → Display.
   EOS
 end
