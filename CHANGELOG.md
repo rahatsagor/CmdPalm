@@ -14,6 +14,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - Optional screen viewing streams one selected display to an explicitly allowed
   device using hardware H.264 encoding. Enable it in General, grant Screen
   Recording permission, then allow a device in Devices.
+- The welcome guide introduces Display and includes a skippable Screen Recording
+  permission step before pairing. Screen viewing can be set up later in General.
 - Screen viewing works with HTTP and HTTPS. It stops when paused, locked,
   asleep, disconnected, revoked, or no longer active on the phone.
 - Device names and actions have more space in Settings, with a separate screen
