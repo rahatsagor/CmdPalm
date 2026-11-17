@@ -73,11 +73,21 @@ final class Permissions {
         }
     }
 
+    /// Shows the system prompt the first time. macOS shows it only once, and
+    /// it has its own button for System Settings, so the list is opened here
+    /// only for later requests.
     func requestViewing() {
+        guard !CGPreflightScreenCaptureAccess() else { refresh(); return }
+        let defaults = UserDefaults.standard
+        let asked = defaults.bool(forKey: Self.askedToViewKey)
+        // Also adds CmdPalm to the Screen Recording list.
         _ = CGRequestScreenCaptureAccess()
-        if !CGPreflightScreenCaptureAccess() { Self.openSettings("Privacy_ScreenCapture") }
+        defaults.set(true, forKey: Self.askedToViewKey)
+        if asked, !CGPreflightScreenCaptureAccess() { Self.openSettings("Privacy_ScreenCapture") }
         refresh()
     }
+
+    private static let askedToViewKey = "screenRecordingRequested"
 
     static func openSettings(_ anchor: String) {
         guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(anchor)") else { return }
