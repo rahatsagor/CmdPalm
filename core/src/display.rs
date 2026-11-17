@@ -26,6 +26,7 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(12);
 const MAX_FRAME: usize = 1024 * 1024;
 const MAX_IMAGE: usize = 16 * 1024 * 1024;
 const ACCESS_TIMEOUT: Duration = Duration::from_secs(60);
+const SEND_FAILURE_LIMIT: Duration = Duration::from_secs(5);
 const LIST_REPEAT: Duration = Duration::from_millis(300);
 const LIST_TIMEOUT: Duration = Duration::from_secs(8);
 
@@ -751,6 +752,7 @@ async fn run(
     let mut last_config = Instant::now();
     let mut last_keyframe = Instant::now() - Duration::from_secs(1);
     let mut waiting_for_keyframe = true;
+    let mut send_failing: Option<Instant> = None;
     let mut tick = tokio::time::interval(Duration::from_millis(250));
     loop {
         if stopped.load(Ordering::Acquire) {
@@ -820,8 +822,15 @@ async fn run(
                     tokio::select! {
                         _ = cancelled.changed() => return Ok(()),
                         result = tokio::time::timeout(Duration::from_millis(500), endpoint.socket.send_to(&packet.contents, packet.destination)) => {
-                            result.map_err(|_| "The video connection stalled. Try Save battery or a faster network.")?
-                                .map_err(|_| "The video connection was interrupted.")?;
+                            // A roaming phone or a full interface queue fails single sends.
+                            // WebRTC recovers from loss; only a lasting failure ends the view.
+                            match result.map_err(|_| "The video connection stalled. Try Save battery or a faster network.")? {
+                                Ok(_) => send_failing = None,
+                                Err(_) if send_failing.get_or_insert_with(Instant::now).elapsed() > SEND_FAILURE_LIMIT => {
+                                    return Err("The video connection was interrupted.".into());
+                                }
+                                Err(_) => {}
+                            }
                         }
                     }
                 }
