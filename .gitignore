@@ -4,6 +4,8 @@
 /dist/
 /web/dist/
 /web/node_modules/
+/vendor/askama_derive/target/
+/vendor/askama_derive/Cargo.lock
 /apple/Generated/
 /apple/*.xcodeproj/
 DerivedData/

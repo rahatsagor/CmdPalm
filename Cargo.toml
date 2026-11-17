@@ -1,6 +1,11 @@
 [workspace]
 resolver = "3"
 members = ["core", "tools/uniffi-bindgen"]
+exclude = ["vendor/askama_derive"]
+
+[patch.crates-io]
+# Remove the unmaintained config parser until Askama ships the replacement.
+askama_derive = { path = "vendor/askama_derive" }
 
 [workspace.package]
 version = "0.8.1"

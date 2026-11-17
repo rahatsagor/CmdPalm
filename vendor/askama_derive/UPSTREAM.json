@@ -1,0 +1,8 @@
+{
+  "package": "askama_derive",
+  "version": "0.16.1",
+  "repository": "https://github.com/askama-rs/askama",
+  "commit": "9ae4d5bdf4352b35e34106e38944c90d7a7ede3e",
+  "path_in_vcs": "askama_derive",
+  "registry_checksum": "071ee5ebf2138e3ad180e0aacf6940c2cab5e6d8333741d9925c7bee2b153f39"
+}

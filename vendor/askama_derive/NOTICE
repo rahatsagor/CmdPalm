@@ -1,0 +1,16 @@
+CmdPalm uses a modified copy of askama_derive 0.16.1.
+
+Upstream: https://github.com/askama-rs/askama
+Commit: 9ae4d5bdf4352b35e34106e38944c90d7a7ede3e
+Crate: https://crates.io/crates/askama_derive/0.16.1
+
+Local changes:
+- Cargo.toml and Cargo.toml.orig replace optional basic-toml with toml 1.1,
+  using only its parse, serde and std features.
+- src/config.rs uses toml::from_str for Askama configuration parsing.
+- This NOTICE and UPSTREAM.json record the patch and upstream provenance.
+
+The original MIT and Apache-2.0 licenses are included unchanged. The source
+is in vendor/askama_derive in https://github.com/rahatsagor/CmdPalm.
+Remove this patch when a compatible upstream Askama release removes
+basic-toml. Do not replace it with an advisory ignore rule.
