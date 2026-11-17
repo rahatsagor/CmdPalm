@@ -183,7 +183,7 @@ function sanitizeAction(raw: unknown): CustomAction | null {
     case 'mod':
       return ALL_MODS.some((m) => m.mod === a.mod) ? { kind: 'mod', mod: a.mod as number } : null
     case 'media':
-      return typeof a.key === 'string' && a.key in MEDIA ? { kind: 'media', key: a.key as MediaKey } : null
+      return typeof a.key === 'string' && Object.hasOwn(MEDIA, a.key) ? { kind: 'media', key: a.key as MediaKey } : null
     case 'mouse':
       return MOUSE_BUTTONS.includes(a.button as MouseButton) ? { kind: 'mouse', button: a.button as MouseButton } : null
     default:
@@ -215,7 +215,8 @@ export function sanitizeBoard(raw: unknown): CustomKeyboard | null {
     const h = int(r.h, 1, rows)
     if (!action || x === null || y === null || w === null || h === null) continue
     const label = typeof r.label === 'string' ? r.label.trim().slice(0, LIMITS.label) : ''
-    const keyId = typeof r.id === 'string' && r.id && board.keys.every((other) => other.id !== r.id) ? r.id.slice(0, 32) : newId()
+    const storedId = typeof r.id === 'string' ? r.id.slice(0, 32) : ''
+    const keyId = storedId && board.keys.every((other) => other.id !== storedId) ? storedId : newId()
     const candidate: CustomKey = { id: keyId, x, y, w, h, action, ...(label ? { label } : {}) }
     // Drop keys that fall off the grid or cover another one.
     if (fits(board, candidate)) board.keys.push(candidate)

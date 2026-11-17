@@ -4,6 +4,7 @@
 //! iPad also appears on the phone. Clients edit it and send it back whole.
 
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 
 use crate::keycodes::{self, mods};
 use crate::protocol::{Action, AppOp, MediaKey, SystemAction};
@@ -91,8 +92,12 @@ impl Deck {
         if self.pages.len() > MAX_PAGES {
             return Err(DeckError::TooLarge);
         }
+        let mut pages = HashSet::new();
         for page in &self.pages {
             check_id(&page.id)?;
+            if !pages.insert(&page.id) {
+                return Err(DeckError::Invalid("page IDs must be unique".into()));
+            }
             check_label(&page.name)?;
             if !(1..=8).contains(&page.columns) {
                 return Err(DeckError::Invalid("columns must be between 1 and 8".into()));
@@ -100,8 +105,12 @@ impl Deck {
             if page.tiles.len() > MAX_TILES {
                 return Err(DeckError::TooLarge);
             }
+            let mut tiles = HashSet::new();
             for tile in &page.tiles {
                 check_id(&tile.id)?;
+                if !tiles.insert(&tile.id) {
+                    return Err(DeckError::Invalid("button IDs must be unique within a page".into()));
+                }
                 check_label(&tile.label)?;
                 if let Some(icon) = &tile.icon {
                     check_icon(icon)?;
@@ -126,6 +135,9 @@ fn check_label(label: &str) -> Result<(), DeckError> {
 }
 
 fn check_id(id: &str) -> Result<(), DeckError> {
+    if id.is_empty() {
+        return Err(DeckError::Invalid("id must not be empty".into()));
+    }
     if id.len() > MAX_ID {
         return Err(DeckError::Invalid("id is too long".into()));
     }
@@ -299,5 +311,23 @@ mod tests {
 
         let deck = Deck { version: DECK_VERSION, pages: vec![] };
         assert_eq!(deck.validate(), Err(DeckError::Invalid("the deck needs at least one page".into())));
+    }
+
+    #[test]
+    fn rejects_ambiguous_page_and_button_ids() {
+        let mut deck = Deck::default();
+        deck.pages[1].id = deck.pages[0].id.clone();
+        assert!(deck.validate().is_err());
+
+        let mut deck = Deck::default();
+        deck.pages[0].tiles[1].id = deck.pages[0].tiles[0].id.clone();
+        assert!(deck.validate().is_err());
+
+        let mut deck = Deck::default();
+        deck.pages[0].id.clear();
+        assert!(deck.validate().is_err());
+        let mut deck = Deck::default();
+        deck.pages[0].tiles[0].id.clear();
+        assert!(deck.validate().is_err());
     }
 }

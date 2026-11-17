@@ -34,6 +34,19 @@ describe('geometry', () => {
 })
 
 describe('sanitizing stored keyboards', () => {
+  it('rejects inherited object names as media keys', () => {
+    for (const name of ['toString', 'constructor', '__proto__']) {
+      const b = sanitizeBoard({ ...board(), keys: [{ ...key('a', 0, 0), action: { kind: 'media', key: name } }] })
+      expect(b?.keys).toEqual([])
+    }
+  })
+
+  it('keeps key IDs distinct after shortening stored IDs', () => {
+    const prefix = 'a'.repeat(32)
+    const b = sanitizeBoard(board([key(`${prefix}1`, 0, 0), key(`${prefix}2`, 1, 0)]))!
+    expect(new Set(b.keys.map((key) => key.id)).size).toBe(2)
+  })
+
   it('drops overlapping, off-grid and malformed keys', () => {
     const b = sanitizeBoard({
       id: 'x',
