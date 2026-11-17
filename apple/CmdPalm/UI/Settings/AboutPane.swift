@@ -47,6 +47,12 @@ struct AboutPane: View {
                     .foregroundStyle(.tertiary)
                     .multilineTextAlignment(.center)
                     .padding(.top, 24)
+                if let licenses = Bundle.main.url(forResource: "ThirdPartyNotices", withExtension: "txt") {
+                    Button("Licenses and third-party notices") { openURL(licenses) }
+                        .buttonStyle(.link)
+                        .font(.caption)
+                        .padding(.top, 6)
+                }
             }
             .padding(.horizontal, 32)
             .padding(.vertical, 24)

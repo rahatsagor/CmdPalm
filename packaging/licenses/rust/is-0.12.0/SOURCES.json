@@ -1,0 +1,22 @@
+{
+  "name": "is",
+  "version": "0.12.0",
+  "license": "MIT OR Apache-2.0",
+  "repository": "https://github.com/algesten/str0m",
+  "commit": "5f2183ce7c67117cd1960dfeb11bed11fc188b66",
+  "path_in_vcs": "crates/is",
+  "files": [
+    {
+      "file": "LICENSE-MIT.txt",
+      "source_path": "LICENSE-MIT.txt",
+      "source_url": "https://github.com/algesten/str0m/blob/5f2183ce7c67117cd1960dfeb11bed11fc188b66/LICENSE-MIT.txt",
+      "sha256": "5b460f37be48ac4cf2181596181cc6cae432fc2caae05944873f380730829a4b"
+    },
+    {
+      "file": "LICENSE-APACHE.txt",
+      "source_path": "src/packet/LICENSE-APACHE.txt",
+      "source_url": "https://github.com/algesten/str0m/blob/5f2183ce7c67117cd1960dfeb11bed11fc188b66/src/packet/LICENSE-APACHE.txt",
+      "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+    }
+  ]
+}

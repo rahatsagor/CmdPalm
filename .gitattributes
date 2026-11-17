@@ -4,3 +4,6 @@
 *.icns binary
 *.webp binary
 *.jpg binary
+
+# Keep upstream notice bytes unchanged for their recorded hashes.
+packaging/licenses/** -text -whitespace

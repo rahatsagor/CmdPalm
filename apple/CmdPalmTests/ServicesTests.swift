@@ -2,6 +2,17 @@ import AppKit
 import Testing
 @testable import CmdPalm
 
+@Suite struct BundleLicenseTests {
+    @Test func shipsAppAndDependencyLicenses() throws {
+        let url = try #require(Bundle.main.url(forResource: "ThirdPartyNotices", withExtension: "txt"))
+        let notices = try String(contentsOf: url, encoding: .utf8)
+        for component in ["GNU AFFERO GENERAL PUBLIC LICENSE", "Sparkle", "str0m", "uniffi", "@lucide/vue", "vue", "tailwindcss"] {
+            #expect(notices.contains(component), "Missing bundled license: \(component)")
+        }
+        #expect(!notices.contains("/Users/"), "Build-machine paths must not enter shipped notices")
+    }
+}
+
 @Suite struct AppCatalogTests {
     let catalog = AppCatalog()
 

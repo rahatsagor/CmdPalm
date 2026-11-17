@@ -5,7 +5,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd -P)"
 WEB="$ROOT/web"
-export PATH="$HOME/.bun/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+export PATH="$HOME/.bun/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
 
 if [[ "${CMDPALM_SKIP_WEB:-0}" != "1" || ! -f "$WEB/dist/index.html" ]]; then
   if ! command -v bun >/dev/null; then
@@ -23,4 +23,7 @@ if [[ -n "${TARGET_BUILD_DIR:-}" && -n "${UNLOCALIZED_RESOURCES_FOLDER_PATH:-}" 
   rm -rf "$DEST"
   mkdir -p "$DEST"
   cp -R "$WEB/dist/." "$DEST/"
+  # Generated from the resolved package sources, so dependency updates cannot
+  # silently leave the app shipping stale or missing license notices.
+  bun "$ROOT/scripts/license-notices.ts" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/ThirdPartyNotices.txt"
 fi

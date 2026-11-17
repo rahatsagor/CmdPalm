@@ -1,0 +1,22 @@
+{
+  "name": "asn1-rs-impl",
+  "version": "0.2.0",
+  "license": "MIT/Apache-2.0",
+  "repository": "https://github.com/rusticata/asn1-rs",
+  "commit": "a20e5f7319c896737ad0f2557037817b91ad854f",
+  "path_in_vcs": "impl",
+  "files": [
+    {
+      "file": "LICENSE-APACHE",
+      "source_path": "LICENSE-APACHE",
+      "source_url": "https://github.com/rusticata/asn1-rs/blob/a20e5f7319c896737ad0f2557037817b91ad854f/LICENSE-APACHE",
+      "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+    },
+    {
+      "file": "LICENSE-MIT",
+      "source_path": "LICENSE-MIT",
+      "source_url": "https://github.com/rusticata/asn1-rs/blob/a20e5f7319c896737ad0f2557037817b91ad854f/LICENSE-MIT",
+      "sha256": "a5c61b93b6ee1d104af9920cf020ff3c7efe818e31fe562c72261847a728f513"
+    }
+  ]
+}

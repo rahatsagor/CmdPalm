@@ -1,0 +1,17 @@
+{
+  "name": "block2",
+  "version": "0.6.2",
+  "license": "MIT",
+  "repository": "https://github.com/madsmtm/objc2",
+  "commit": "b4167b582b2f75f9a1be75495c41b765344fd03c",
+  "path_in_vcs": "crates/block2",
+  "files": [
+    {
+      "file": "LICENSE.md",
+      "source_path": "LICENSE.md",
+      "source_url": "https://github.com/madsmtm/objc2/blob/b4167b582b2f75f9a1be75495c41b765344fd03c/LICENSE.md",
+      "sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54"
+    }
+  ],
+  "note": "The immutable upstream LICENSE.md documents this crate licensing policy and links to the standard license texts. The commit contains no separate full MIT, Apache, or Zlib license files."
+}

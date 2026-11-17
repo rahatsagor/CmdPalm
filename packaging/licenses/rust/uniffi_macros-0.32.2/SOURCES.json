@@ -1,0 +1,16 @@
+{
+  "name": "uniffi_macros",
+  "version": "0.32.2",
+  "license": "MPL-2.0",
+  "repository": "https://github.com/mozilla/uniffi-rs",
+  "commit": "7bc621ee9d0d15371d792612707ba5ed4111f950",
+  "path_in_vcs": "uniffi_macros",
+  "files": [
+    {
+      "file": "LICENSE",
+      "source_path": "LICENSE",
+      "source_url": "https://github.com/mozilla/uniffi-rs/blob/7bc621ee9d0d15371d792612707ba5ed4111f950/LICENSE",
+      "sha256": "1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5"
+    }
+  ]
+}

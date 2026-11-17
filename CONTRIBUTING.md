@@ -37,6 +37,15 @@ scripts/build-app.sh --debug    # build/Debug/CmdPalm.app
 scripts/build-app.sh            # build/Release/CmdPalm.app
 ```
 
+The app build also generates `Contents/Resources/ThirdPartyNotices.txt` from
+the resolved Rust and phone dependencies. Rust sources must be fetched first;
+notice generation itself runs offline. A dependency without notice text stops
+the build. For crates whose published archive omits their license, keep a
+versioned copy from the exact upstream VCS commit in `packaging/licenses/rust/`,
+with its source URLs and hashes in `SOURCES.json`. Sparkle's pinned release
+license is kept in `packaging/licenses/`. The About pane opens the bundled
+notices, and packaging refuses an app without them.
+
 To work in Xcode, generate the project once and open it. The build runs the
 Rust and web steps for you.
 

@@ -9,6 +9,7 @@ APP="$ROOT/build/Release/CmdPalm.app"
 DIST="$ROOT/dist"
 
 [[ -d "$APP" ]] || { echo "error: build the app first (scripts/build-app.sh)" >&2; exit 1; }
+[[ -s "$APP/Contents/Resources/ThirdPartyNotices.txt" ]] || { echo "error: rebuild the app with bundled license notices before packaging" >&2; exit 1; }
 VERSION="$(defaults read "$APP/Contents/Info.plist" CFBundleShortVersionString)"
 mkdir -p "$DIST"
 

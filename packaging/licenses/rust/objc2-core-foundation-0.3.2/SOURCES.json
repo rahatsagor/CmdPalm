@@ -1,0 +1,17 @@
+{
+  "name": "objc2-core-foundation",
+  "version": "0.3.2",
+  "license": "Zlib OR Apache-2.0 OR MIT",
+  "repository": "https://github.com/madsmtm/objc2",
+  "commit": "7b1abfd750a2cacaea71d6a56ecfb83cb7de560b",
+  "path_in_vcs": "framework-crates/objc2-core-foundation",
+  "files": [
+    {
+      "file": "LICENSE.md",
+      "source_path": "LICENSE.md",
+      "source_url": "https://github.com/madsmtm/objc2/blob/7b1abfd750a2cacaea71d6a56ecfb83cb7de560b/LICENSE.md",
+      "sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54"
+    }
+  ],
+  "note": "The immutable upstream LICENSE.md documents this crate licensing policy and links to the standard license texts. The commit contains no separate full MIT, Apache, or Zlib license files."
+}
