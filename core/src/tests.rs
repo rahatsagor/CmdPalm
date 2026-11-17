@@ -784,12 +784,25 @@ fn repeated_display_list_requests_share_one_answer_instead_of_failing() {
         // A double tap right after an answer still shows the displays.
         send(&mut ws, json!({"t":"displays", "id":3})).await;
         send(&mut ws, json!({"t":"ping", "id":2})).await;
-        recv_kind(&mut ws, "pong").await;
+        // A cached list is sent before the pong. Keep it rather than letting
+        // recv_kind discard the very response this test is checking.
+        let mut cached = None;
+        loop {
+            let message = recv(&mut ws).await;
+            if message["t"] == "displays" {
+                cached = Some(message);
+            } else if message["t"] == "pong" {
+                break;
+            }
+        }
         // A slow test machine can outlast the repeat window and query again.
         if lists(&f) == 2 {
             f.host.display_sources(session, 3, vec![display], None);
         }
-        let repeated = recv_kind(&mut ws, "displays").await;
+        let repeated = match cached {
+            Some(message) => message,
+            None => recv_kind(&mut ws, "displays").await,
+        };
         assert_eq!(repeated["id"], 3);
         assert_eq!(repeated["displays"][0]["id"], "monitor", "a repeated request must never hide the displays");
     });
