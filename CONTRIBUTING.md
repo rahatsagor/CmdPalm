@@ -245,8 +245,8 @@ committed web assets, so they do not need librsvg or a separate icon export.
 - **Never log what people type**, say or copy. Log events and errors, not
   content.
 - **Write for the person using the app.** Messages say what happened and what
-  to do next, without jargon. Settings start simple, with detail behind
-  "advanced".
+  to do next, without jargon. Organize settings by feature, keep common options
+  first, and show each section without collapsible groups.
 - **Changelog.** Add user-facing changes to the `Unreleased` section of
   `CHANGELOG.md`.
 

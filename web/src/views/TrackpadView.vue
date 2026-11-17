@@ -45,11 +45,13 @@ async function toggleTyping() {
         <ScrollRail v-if="settings.scrollStrip !== 'off'" />
         <div
           v-if="!touched"
-          class="pointer-events-none absolute inset-0 grid place-items-center px-10 text-center text-[13px] leading-relaxed text-faint transition-opacity"
+          class="pointer-events-none absolute inset-0 grid place-items-center px-10 text-center text-[13px] leading-relaxed text-muted transition-opacity"
         >
           <p>
-            One finger points · Tap to click<br />
-            Two fingers scroll · Two-finger tap right-clicks
+            One finger moves the pointer · Two fingers scroll<br />
+            <template v-if="settings.tapToClick">Tap to click<span v-if="settings.twoFingerTapRightClick"> · </span></template>
+            <template v-if="settings.twoFingerTapRightClick">Two-finger tap to right-click</template>
+            <template v-if="!settings.tapToClick && !settings.twoFingerTapRightClick && settings.clickButtons">Use the Click and Right-click buttons</template>
           </p>
         </div>
       </TrackpadSurface>

@@ -16,6 +16,12 @@ const dialog = ref<HTMLElement>()
 const body = ref<HTMLElement>()
 const id = Symbol('sheet')
 
+/** A settings tab can reset its scroll without moving keyboard focus. */
+function resetScroll() {
+  if (body.value) body.value.scrollTop = 0
+}
+defineExpose({ resetScroll })
+
 // The sheet shrinks with the visible area when the on-screen keyboard opens;
 // keep the field being typed in on screen above it.
 function revealFocused() {
@@ -38,11 +44,13 @@ function revealSoon() {
 function onKey(event: KeyboardEvent) {
   if (stack.at(-1) !== id || !dialog.value) return
   if (event.key === 'Escape') {
+    event.preventDefault()
+    event.stopImmediatePropagation()
     if (props.closable) emit('close')
     return
   }
   if (event.key !== 'Tab') return
-  const items = Array.from(dialog.value.querySelectorAll<HTMLElement>(FOCUSABLE)).filter((el) => el.offsetParent !== null)
+  const items = Array.from(dialog.value.querySelectorAll<HTMLElement>(FOCUSABLE)).filter((el) => el.tabIndex >= 0 && el.offsetParent !== null)
   const first = items[0]
   const last = items.at(-1)
   const active = document.activeElement
@@ -93,13 +101,13 @@ onBeforeUnmount(() => {
         :class="full ? 'sheet-full' : 'sheet-fit'"
         @focusin="revealSoon"
       >
-        <header v-if="title || $slots.actions" class="flex shrink-0 items-center gap-3 px-5 pt-4 pb-3">
+        <header v-if="title || $slots.actions" class="flex min-h-16 shrink-0 items-center gap-2 px-5 py-2">
           <h2 class="flex-1 truncate text-[17px] font-semibold">{{ title }}</h2>
           <slot name="actions" />
           <button
             v-if="closable"
             type="button"
-            class="grid size-8 place-items-center rounded-full bg-surface-3 text-muted active:scale-95"
+            class="grid size-11 shrink-0 place-items-center rounded-full bg-surface-3 text-muted active:scale-95"
             aria-label="Close"
             @click="emit('close')"
           >

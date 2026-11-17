@@ -61,6 +61,27 @@ describe('ConnectView', () => {
 })
 
 describe('custom keyboard group order', () => {
+  it('forwards arrow keys from the main keyboard selector to the Mac without changing layouts', async () => {
+    const socket = connected()
+    const { installHardwareKeyboard } = await import('../src/lib/hardware')
+    const { Key } = await import('../src/lib/keys')
+    const { settings } = await import('../src/lib/settings')
+    const { default: KeyboardView } = await import('../src/views/KeyboardView.vue')
+    installHardwareKeyboard()
+    settings.keyboard = 'mac'
+    const view = mount(KeyboardView, { attachTo: document.body })
+    try {
+      const selector = view.get('[role="radiogroup"][aria-label="Keyboard layout"] [role="radio"]')
+      await selector.trigger('keydown', { key: 'ArrowRight', code: 'ArrowRight' })
+      await selector.trigger('keyup', { key: 'ArrowRight', code: 'ArrowRight' })
+      expect(settings.keyboard).toBe('mac')
+      expect(socket.sent.filter(message => message.t === 'key')).toMatchObject([
+        { code: Key.Right, down: true },
+        { code: Key.Right, down: false },
+      ])
+    } finally { view.unmount() }
+  })
+
   it('persists reordered tabs locally and in the Mac backup while keeping the active keyboard', async () => {
     const { settings } = await import('../src/lib/settings')
     const { keyboards } = await import('../src/lib/customKeyboards')

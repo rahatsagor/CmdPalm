@@ -53,7 +53,7 @@ const emit = defineEmits<{ settings: [] }>()
         :aria-selected="settings.tab === tab.id"
         :aria-label="tab.label"
         class="grid size-11 place-items-center rounded-xl transition-colors"
-        :class="settings.tab === tab.id ? 'bg-accent-soft text-accent' : 'text-faint'"
+        :class="settings.tab === tab.id ? 'bg-accent-soft text-accent' : 'text-muted'"
         @click="selectTab(tab.id)"
       >
         <component :is="tab.icon" :size="21" :stroke-width="settings.tab === tab.id ? 2.2 : 1.8" />

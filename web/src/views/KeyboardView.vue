@@ -132,6 +132,8 @@ const customLayout = computed(() => {
         <Segmented
           v-model="choice"
           class="min-w-0 flex-1 py-0!"
+          aria-label="Keyboard layout"
+          :keyboard-navigation="false"
           :options="[
             { value: 'mac', label: 'Mac' },
             { value: 'custom', label: 'Custom' },

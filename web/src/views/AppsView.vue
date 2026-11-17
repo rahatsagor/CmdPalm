@@ -72,13 +72,15 @@ function onClick(app: AppEntry) {
     <div class="flex flex-col gap-2 px-3 pt-1 pb-2">
       <label class="flex h-10 items-center gap-2 rounded-xl bg-surface-3 px-3 text-muted">
         <Search :size="16" />
-        <input v-model="query" type="search" class="min-w-0 flex-1 bg-transparent text-[15px] text-text outline-none" placeholder="Search apps on the Mac" />
+        <input v-model="query" type="search" class="min-w-0 flex-1 bg-transparent text-[16px] text-text outline-none" placeholder="Search apps on the Mac" aria-label="Search apps on the Mac" />
         <button type="button" class="grid size-7 place-items-center" aria-label="Refresh" @click="loadApps(true)"><RefreshCw :size="15" /></button>
       </label>
       <Segmented
         v-if="!query"
         v-model="filter"
         class="py-0!"
+        aria-label="Apps to show"
+        :keyboard-navigation="false"
         :options="[
           { value: 'running', label: 'Open' },
           { value: 'all', label: 'All apps' },
@@ -110,9 +112,10 @@ function onClick(app: AppEntry) {
           <span class="line-clamp-2 w-full text-center text-[12px] leading-tight">{{ app.name }}</span>
         </button>
       </div>
-      <p v-if="apps.length === 0" class="py-16 text-center text-[15px] text-muted">
-        {{ query ? `No apps match “${query}”.` : 'No apps are open.' }}
-      </p>
+      <div v-if="apps.length === 0" class="py-12 text-center">
+        <p class="text-[15px] text-muted">{{ query ? `No apps match “${query}”.` : 'No apps are open.' }}</p>
+        <button type="button" class="mt-3 min-h-11 rounded-xl bg-surface-2 px-4 text-[14px] font-medium text-accent" @click="query ? (query = '') : (filter = 'all')">{{ query ? 'Clear search' : 'Show all apps' }}</button>
+      </div>
       <p v-else class="pt-6 text-center text-[12px] text-faint">Tap to show or hide · Touch and hold for more</p>
     </div>
 

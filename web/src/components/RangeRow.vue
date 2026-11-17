@@ -18,6 +18,8 @@ const fill = computed(() => `${((model.value - props.min) / (props.max - props.m
       v-model.number="model"
       class="slider mt-1"
       type="range"
+      :aria-label="label"
+      :aria-valuetext="format ? format(model) : undefined"
       :min="min"
       :max="max"
       :step="step"

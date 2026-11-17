@@ -187,6 +187,11 @@ settings sections and custom keyboards. Only your selection is added or
 updated; the rest of your setup stays as it is. Deck pages and buttons are
 already shared by all devices paired with the same Mac.
 
+Phone settings use tabs for Trackpad, Gestures, Keyboard, Display and Deck.
+Device preferences, backups and connection actions stay below the feature
+settings. Changes save automatically, and every section is visible within its
+tab. Dictation setup is in Keyboard.
+
 Use **Settings → Back up or restore this device** on the phone to export
 your settings and custom keyboards as a file, or review and restore a saved
 setup. Device backups leave your name and pairing as they are and never
@@ -394,10 +399,12 @@ another language.
 | Four-finger swipe up / down | Apps (Launchpad on macOS 15) / Show Desktop |
 | Thumb and three fingers pinch / spread | Apps / Show Desktop |
 
-The scroll strip can be short, long or hidden under **Scrolling & zoom** in
-the phone's settings. It can also be wider, and sit right at the screen
-edge so a finger sliding along the side of the phone scrolls. Every gesture can be changed in the phone's settings. Turn on **Show advanced
-settings** for pointer acceleration, gesture mapping and text options.
+The scroll strip can be short, long or hidden under **Settings → Trackpad →
+Scrolling** on the phone. Use **Scroll strip options** to change its width
+and side, or put it at the screen edge so a finger sliding along the side of
+the phone scrolls. Open **Settings → Gestures** to change gesture actions,
+with separate tabs for three and four fingers. Pointer acceleration is under
+**Trackpad → Pointer & dragging**.
 
 **Modifiers** work three ways: tap for the next key only, double-tap to lock,
 or hold while you press another key or click. The hand button in the top bar
@@ -433,7 +440,7 @@ again.
 
 CmdPalm follows the Mac's current input source. For apps that ignore typed
 text, such as games, virtual machines and remote desktops, set **Send text
-as** to **Key presses** in the phone's advanced settings and turn **Live**
+as** to **Key presses** under **Settings → Keyboard → Text compatibility** and turn **Live**
 off in the typing panel. Live typing always sends characters.
 
 </details>

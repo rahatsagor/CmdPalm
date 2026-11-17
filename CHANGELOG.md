@@ -45,6 +45,24 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ### Phone client
 
+- Settings keep the Mac name, latency and connection details at the top, with
+  tabs for Trackpad, Gestures, Keyboard, Display and Deck. Device preferences
+  and backup, reset and connection actions stay below. All sections are visible
+  within their tab, dictation setup is in Keyboard, and changes save automatically.
+- Gesture shortcuts have separate three- and four-finger tabs. Display layout
+  and quality preferences are also available from Settings.
+- Run Shortcut, Mouse click, Sequence and Wait are available directly in
+  action editors. Shell commands still require the Mac owner’s permission.
+- Switches respond across the whole row, settings controls have larger touch
+  targets, and segmented choices in settings support arrow-key navigation.
+  Controls have clearer screen-reader names and descriptions.
+- Gesture editors keep keyboard focus inside the dialog, and Escape closes
+  only the top dialog. Main control surfaces keep forwarding the physical
+  keyboard to the Mac, and mouse-button labels fit on narrow phones.
+- Tab labels are easier to read, trackpad tips follow your enabled gestures,
+  and empty app searches offer a Clear search button.
+- Reset and Forget explain what happens and offer Cancel before applying the
+  change. Resetting settings also shows a confirmation message.
 - Reconnecting after a retryable refusal keeps the saved pairing and offers
   a Reconnect button with recovery instructions.
 - Shared mouse buttons and seeking keys stay held until the last finger lifts.

@@ -2,11 +2,15 @@ import { enableAutoUnmount, mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it } from 'vitest'
 import { defineComponent, h, nextTick, reactive, ref } from 'vue'
 import BoardEditor from '../src/components/BoardEditor.vue'
+import ActionEditor from '../src/components/ActionEditor.vue'
 import Sheet from '../src/components/Sheet.vue'
 import ShortcutField from '../src/components/ShortcutField.vue'
 import { blankBoard } from '../src/lib/customKeyboards'
 import { Key } from '../src/lib/keys'
 import { Mod } from '../src/lib/protocol'
+import { state } from '../src/lib/connection'
+import { settings } from '../src/lib/settings'
+import { LIMITS } from '../src/lib/deck'
 
 // A failed test must not leave its sheet behind for the next one to type into.
 enableAutoUnmount(afterEach)
@@ -80,5 +84,30 @@ describe('BoardEditor', () => {
       .click()
     expect(board.name).toBe('WASD')
     expect(view.emitted('duplicate')).toHaveLength(1)
+  })
+})
+
+describe('action choices', () => {
+  it('keeps shortcuts, sequences and waits available without the removed advanced toggle', () => {
+    settings.showAdvanced = false
+    const previous = state.features.shell
+    state.features.shell = false
+    try {
+      const view = mount(ActionEditor, { props: { modelValue: { kind: 'keys', code: Key.A, mods: 0 } } })
+      for (const label of ['Run Shortcut', 'Mouse click', 'Sequence', 'Wait']) expect(view.findAll('button').some(button => button.text() === label)).toBe(true)
+      expect(view.findAll('button').some(button => button.text() === 'Shell command')).toBe(false)
+    } finally { state.features.shell = previous }
+  })
+
+  it('preserves shell permission, explicit exclusions and the sequence depth limit', () => {
+    const previous = state.features.shell
+    state.features.shell = true
+    try {
+      const view = mount(ActionEditor, { props: { modelValue: { kind: 'keys', code: Key.A, mods: 0 }, depth: LIMITS.depth - 1, exclude: ['delay'] } })
+      const labels = view.findAll('button').map(button => button.text())
+      expect(labels).toContain('Shell command')
+      expect(labels).not.toContain('Sequence')
+      expect(labels).not.toContain('Wait')
+    } finally { state.features.shell = previous }
   })
 })

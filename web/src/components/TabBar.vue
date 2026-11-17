@@ -14,11 +14,11 @@ import { selectTab, TABS } from '@/lib/tabs'
         role="tab"
         :aria-selected="settings.tab === tab.id"
         class="flex flex-1 flex-col items-center justify-center gap-0.5 transition-colors"
-        :class="settings.tab === tab.id ? 'text-accent' : 'text-faint'"
+        :class="settings.tab === tab.id ? 'text-accent' : 'text-muted'"
         @click="selectTab(tab.id)"
       >
         <component :is="tab.icon" :size="22" :stroke-width="settings.tab === tab.id ? 2.2 : 1.8" />
-        <span class="text-[10px] font-medium">{{ tab.label }}</span>
+        <span class="text-[11px] font-medium" :class="settings.tab === tab.id && 'text-text'">{{ tab.label }}</span>
       </button>
     </div>
   </nav>

@@ -6,7 +6,6 @@ import { ACTION_KINDS, MEDIA, SYSTEM, defaultAction, describe } from '@/lib/acti
 import { labels, state } from '@/lib/connection'
 import { LIMITS } from '@/lib/deck'
 import type { Action, AppOp, MediaKey, MouseButton, SystemAction } from '@/lib/protocol'
-import { settings } from '@/lib/settings'
 import { symbol } from '@/lib/symbols'
 import { plainPunctuation } from '@/lib/text'
 import AppIcon from './AppIcon.vue'
@@ -24,7 +23,7 @@ const kinds = computed(() =>
     if (props.exclude.includes(k.kind)) return false
     if (k.kind === 'sequence' && props.depth >= LIMITS.depth - 1) return false
     if (k.kind === 'shell' && !state.features.shell) return false
-    return !k.advanced || settings.showAdvanced
+    return true
   }),
 )
 

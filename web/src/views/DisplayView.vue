@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { Check, LocateFixed, Maximize, Minimize, Monitor, Play, RefreshCw, RotateCcw, Settings2, Square, ZoomIn, ZoomOut } from '@lucide/vue'
+import { LocateFixed, Maximize, Minimize, Monitor, Play, RefreshCw, RotateCcw, Settings2, Square, ZoomIn, ZoomOut } from '@lucide/vue'
 import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, reactive, ref, watch } from 'vue'
-import RangeRow from '@/components/RangeRow.vue'
+import DisplayPreferences from '@/components/DisplayPreferences.vue'
 import ScrollRail from '@/components/ScrollRail.vue'
 import Segmented from '@/components/Segmented.vue'
 import Sheet from '@/components/Sheet.vue'
@@ -43,12 +43,6 @@ const controlsHeight = computed(() => wide.value ? size.height : Math.max(0, siz
 const compactPreview = computed(() => !fullView.value && settings.displayControls !== 'view' && (wide.value ? size.height : previewLength.value) < 140)
 const maxZoom = computed(() => screen.original ? 8 : 4)
 const mode = computed({ get: () => settings.displayControls, set: value => { releaseAll(); settings.displayControls = value } })
-const qualities = [
-  { value: 'auto' as const, label: 'Auto', detail: 'Prioritize smooth motion and adjust to the connection.' },
-  { value: 'battery' as const, label: 'Save battery', detail: 'Use less bandwidth and a lower frame rate.' },
-  { value: 'sharp' as const, label: 'Sharper text', detail: 'Favor detail for reading and typing.' },
-  { value: 'original' as const, label: 'HD text · lossless', detail: 'Preserve original detail up to 4K. Updates up to once a second and uses more bandwidth.' },
-]
 const placeholder = computed(() => {
   if (screen.status === 'loading') return 'Finding displays…'
   if (screen.needsPlay) return 'Tap to show the display'
@@ -258,6 +252,7 @@ function up(event: PointerEvent) { pointers.delete(event.pointerId); beginGestur
         label=""
         :options="[{ value: 'view', label: 'View' }, { value: 'trackpad', label: 'Trackpad' }, { value: 'keyboard', label: 'Keyboard' }]"
         aria-label="Controls below the display"
+        :keyboard-navigation="false"
       />
       <button v-if="live" type="button" class="grid size-11 shrink-0 place-items-center rounded-xl text-muted active:bg-surface-3" aria-label="Fullscreen display" @click="enterFullscreen" @keydown.enter.prevent="enterFullscreen" @keydown.space.prevent="enterFullscreen"><Maximize :size="19" /></button>
       <button type="button" class="grid size-11 shrink-0 place-items-center rounded-xl text-muted active:bg-surface-3" aria-label="Display options" @click="options = true"><Settings2 :size="19" /></button>
@@ -352,13 +347,7 @@ function up(event: PointerEvent) { pointers.delete(event.pointerId); beginGestur
           <button type="button" class="grid size-11 place-items-center disabled:opacity-30" aria-label="Zoom in preview" :disabled="zoom >= maxZoom" @click="changeZoom(zoom * 1.4)"><ZoomIn :size="17" /></button>
         </div>
       </div>
-      <p class="mb-2 text-[13px] text-muted">Viewing quality</p>
-      <button v-for="choice in qualities" :key="choice.value" type="button" class="mb-2 flex min-h-16 w-full items-center gap-3 rounded-2xl bg-surface-2 px-4 py-3 text-left disabled:opacity-40" :disabled="choice.value === 'original' && !connection.features.displayOriginal" :aria-pressed="settings.displayQuality === choice.value" @click="quality(choice.value)">
-        <span class="min-w-0 flex-1"><span class="block text-[15px]">{{ choice.label }}</span><span class="block text-[13px] text-muted">{{ choice.detail }}</span></span>
-        <Check v-if="settings.displayQuality === choice.value" :size="19" class="shrink-0 text-accent" />
-      </button>
-      <RangeRow v-if="settings.displayControls !== 'view'" v-model="settings.displaySplit" label="Preview space" :min="0.3" :max="0.7" :step="0.01" :format="value => `${Math.round(value * 100)}%`" />
-      <p class="mt-3 text-[13px] leading-relaxed text-muted">Pinch or drag a zoomed preview to look around. Preview gestures stay on your phone. Use the trackpad or keyboard to control the Mac.</p>
+      <DisplayPreferences :show-layout="false" @quality="quality" />
     </Sheet>
   </div>
 </template>

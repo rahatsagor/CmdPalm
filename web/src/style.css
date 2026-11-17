@@ -131,7 +131,7 @@
   input[type='range'].slider {
     -webkit-appearance: none;
     appearance: none;
-    height: 28px;
+    height: 44px;
     background: transparent;
     width: 100%;
   }

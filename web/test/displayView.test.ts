@@ -1,4 +1,4 @@
-import { mount, type VueWrapper } from '@vue/test-utils'
+import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { KeepAlive, h, nextTick, ref } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { FakeSocket, lastSocket, welcome } from './fakeSocket'
@@ -6,6 +6,7 @@ import { FakeSocket, lastSocket, welcome } from './fakeSocket'
 let connection: typeof import('../src/lib/connection')
 let viewing: typeof import('../src/lib/screen')
 let wrapper: VueWrapper | undefined
+let overlay: VueWrapper | undefined
 
 beforeEach(async () => {
   vi.useFakeTimers()
@@ -27,6 +28,7 @@ beforeEach(async () => {
 })
 
 afterEach(() => {
+  overlay?.unmount(); overlay = undefined
   wrapper?.unmount(); wrapper = undefined
   connection.disconnect(false)
   document.body.innerHTML = ''
@@ -34,6 +36,20 @@ afterEach(() => {
   vi.useRealTimers()
   vi.unstubAllGlobals()
 })
+
+/** Negotiation without native video or screen capture. */
+class PreviewPeer {
+  static all: PreviewPeer[] = []
+  iceGatheringState = 'complete'
+  connectionState = 'new'
+  localDescription: { sdp: string } | null = null
+  closed = false
+  constructor() { PreviewPeer.all.push(this) }
+  addTransceiver() { return { setCodecPreferences() {} } }
+  async createOffer() { return { type: 'offer', sdp: 'v=0\r\nm=video 9 UDP/TLS/RTP/SAVPF 108\r\n' } }
+  async setLocalDescription(description: { sdp: string }) { this.localDescription = description }
+  close() { this.closed = true }
+}
 
 async function mountViewer(cached = false) {
   const { default: DisplayView } = await import('../src/views/DisplayView.vue')
@@ -51,6 +67,55 @@ async function mountViewer(cached = false) {
 function button(view: VueWrapper, label: string) {
   return view.findAll('button').find(item => item.text() === label)!
 }
+
+describe('display preferences while viewing', () => {
+  it('restarts quality from either settings surface and keeps layout changes on the same stream', async () => {
+    PreviewPeer.all = []
+    vi.stubGlobal('RTCPeerConnection', PreviewPeer)
+    const { view } = await mountViewer()
+    await viewing.startViewing()
+    viewing.screen.status = 'live'
+    const { settings } = await import('../src/lib/settings')
+    const { default: SettingsSheet } = await import('../src/components/SettingsSheet.vue')
+    overlay = mount(SettingsSheet, { attachTo: document.body })
+    document.querySelector<HTMLButtonElement>('#settings-tab-display')!.click()
+    await nextTick()
+    await nextTick()
+    const dialog = document.querySelector('[role="dialog"][aria-label="Settings"]')!
+    const sharp = Array.from(dialog.querySelectorAll<HTMLButtonElement>('button')).find(item => item.textContent?.trim().startsWith('Sharper text'))!
+    sharp.click()
+    await flushPromises()
+    expect(PreviewPeer.all).toHaveLength(2)
+    expect(PreviewPeer.all[0]!.closed).toBe(true)
+    expect(lastSocket().sent.filter(message => message.t === 'displayStart').map(message => message.quality)).toEqual(['auto', 'sharp'])
+    sharp.click()
+    await flushPromises()
+    expect(PreviewPeer.all).toHaveLength(2)
+
+    viewing.screen.status = 'live'
+    const layout = dialog.querySelector('[role="radiogroup"][aria-label="Controls with the display"]')!
+    Array.from(layout.querySelectorAll<HTMLButtonElement>('button')).find(item => item.textContent?.trim() === 'Keyboard')!.click()
+    await nextTick()
+    const split = dialog.querySelector<HTMLInputElement>('input[aria-label="Preview space"]')!
+    split.value = '0.6'
+    split.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+    expect(settings.displayControls).toBe('keyboard')
+    expect(settings.displaySplit).toBe(0.6)
+    expect(PreviewPeer.all).toHaveLength(2)
+    expect(viewing.screen.status).toBe('live')
+    overlay.unmount(); overlay = undefined
+
+    await view.get('[aria-label="Display options"]').trigger('click')
+    const options = document.querySelector('[role="dialog"][aria-label="Display options"]')!
+    Array.from(options.querySelectorAll<HTMLButtonElement>('button')).find(item => item.textContent?.trim().startsWith('Save battery'))!.click()
+    await flushPromises()
+    expect(PreviewPeer.all).toHaveLength(3)
+    expect(PreviewPeer.all[1]!.closed).toBe(true)
+    expect(lastSocket().sent.filter(message => message.t === 'displayStart').map(message => message.quality)).toEqual(['auto', 'sharp', 'battery'])
+    expect(document.querySelector('[role="dialog"][aria-label="Display options"]')).toBeNull()
+  })
+})
 
 describe('fullscreen display accessibility', () => {
   it('isolates the viewport fallback and restores focus and existing inert state on exit', async () => {

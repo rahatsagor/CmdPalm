@@ -47,7 +47,7 @@ const emit = defineEmits<{ settings: [] }>()
 
       <button
         type="button"
-        class="grid size-9 place-items-center rounded-full transition-[color,background-color,scale] duration-150 active:scale-90 active:bg-surface-3"
+        class="grid size-11 shrink-0 place-items-center rounded-full transition-[color,background-color,scale] duration-150 active:scale-90 active:bg-surface-3"
         :class="released ? 'bg-good/15 text-good' : 'text-muted'"
         aria-label="Release all keys and buttons"
         title="Release all keys and buttons"
@@ -56,7 +56,7 @@ const emit = defineEmits<{ settings: [] }>()
         <Check v-if="released" :size="19" :stroke-width="2.4" />
         <Hand v-else :size="19" />
       </button>
-      <button type="button" class="grid size-9 place-items-center rounded-full text-muted transition-[scale] duration-150 active:scale-90 active:bg-surface-3" aria-label="Settings" @click="emit('settings')">
+      <button type="button" class="grid size-11 shrink-0 place-items-center rounded-full text-muted transition-[scale] duration-150 active:scale-90 active:bg-surface-3" aria-label="Settings" @click="emit('settings')">
         <Settings :size="19" />
       </button>
     </div>
