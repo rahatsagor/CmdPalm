@@ -86,16 +86,17 @@ jobs:
           brew update
           brew install xcodegen actionlint
           brew upgrade xcodegen actionlint
-      - name: Check release tooling and workflows
-        run: |
-          actionlint
-          bun test ./scripts/tests
       - name: Generate Swift bindings
         # XcodeGen must see the generated Swift file on a fresh checkout.
         run: scripts/build-core.sh
       - name: Build phone client
         working-directory: web
         run: bun install --frozen-lockfile && bun run build
+      - name: Check release tooling and workflows
+        # Dependency compatibility tests use the installed phone test utilities.
+        run: |
+          actionlint
+          bun test ./scripts/tests
       - name: Generate project
         working-directory: apple
         run: xcodegen generate
