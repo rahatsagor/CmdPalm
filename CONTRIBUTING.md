@@ -22,7 +22,7 @@ example in your own fork.
 
 - macOS 15 or later on Apple silicon, with the latest Xcode
 - [Rust](https://rustup.rs) (stable)
-- [Bun](https://bun.sh)
+- [Bun](https://bun.sh) 1.4.4 or later (for the scoped dependency overrides)
 - [XcodeGen](https://github.com/yonaskolb/XcodeGen): `brew install xcodegen`
 
 CI and releases use Rust stable, Bun's latest stable release, and the newest
@@ -45,6 +45,27 @@ versioned copy from the exact upstream VCS commit in `packaging/licenses/rust/`,
 with its source URLs and hashes in `SOURCES.json`. Sparkle's pinned release
 license is kept in `packaging/licenses/`. The About pane opens the bundled
 notices, and packaging refuses an app without them.
+
+### Dependency security fixes
+
+The phone's test utilities currently need scoped overrides for
+`js-beautify > glob` and `editorconfig > minimatch`. These select patched
+upstream releases without replacing unrelated dependencies. The Bun tests in
+`scripts/tests/dependencies.test.ts` exercise their real formatting and
+EditorConfig call paths. Run `bun audit` in `web/` after dependency changes.
+Remove the overrides once compatible upstream dependency ranges include the
+fixed versions.
+
+`vendor/askama_derive` is the published 0.16.1 source with a small config-parser
+patch: `toml` 1.1 replaces the unmaintained `basic-toml`. Its `NOTICE` and
+`UPSTREAM.json` record the change, upstream commit and crate checksum. Cargo
+uses this copy through `[patch.crates-io]`; it remains a third-party dependency
+in bundled notices. Remove the patch when Askama ships a compatible fix.
+To check the vendored parser and template behavior directly:
+
+```sh
+cargo test --manifest-path vendor/askama_derive/Cargo.toml --lib --target-dir target/vendor-askama
+```
 
 To work in Xcode, generate the project once and open it. The build runs the
 Rust and web steps for you.
