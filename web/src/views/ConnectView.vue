@@ -32,7 +32,7 @@ const reload = () => location.reload()
 const busy = computed(() => state.status === 'connecting' || state.status === 'pending')
 const mac = computed(() => macName.value || 'your Mac')
 // Disconnected from the Mac while still paired.
-const canReconnect = computed(() => state.status === 'idle' && !!token.get())
+const canReconnect = computed(() => !!token.get() && (state.status === 'idle' || (state.status === 'denied' && state.denied?.reason === 'busy')))
 const disconnected = computed(() => (canReconnect.value && !state.byeReason ? 'Disconnected from the Mac.' : ''))
 
 const error = computed(() => {
@@ -52,7 +52,7 @@ const error = computed(() => {
     case 'blocked':
       return `Too many attempts. Try again in ${state.denied.retryAfter ?? 30} seconds.`
     case 'busy':
-      return 'The Mac is already handling a request from this device.'
+      return `The Mac can’t accept this connection right now. Try again in ${state.denied.retryAfter ?? 5} seconds. If this keeps happening, quit and reopen CmdPalm on the Mac.`
     case 'incompatible':
       return 'This page doesn’t match the CmdPalm version on the Mac. Reload the page.'
     default:

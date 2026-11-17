@@ -226,6 +226,29 @@ fn hello(device: &str, auth: Value) -> Value {
 }
 
 #[test]
+fn an_unreadable_device_list_preserves_tokens_and_refuses_to_overwrite_the_file() {
+    let f = fixture();
+    let path = std::path::Path::new(&f.config.data_dir).join("devices.json");
+    // A directory is unreadable as a JSON file even when tests run as root.
+    std::fs::create_dir(&path).unwrap();
+    f.shared.state().trust = crate::auth::TrustStore::load(Some(path.clone()));
+    f.host.set_pin_shown(true);
+    let pin = f.host.pairing_info().pin;
+    f.rt.block_on(async {
+        for auth in [json!({"method":"token", "token":"saved-token"}), json!({"method":"pin", "pin":pin})] {
+            let mut ws = connect(f.port).await;
+            send(&mut ws, hello("paired-phone", auth)).await;
+            let denied = recv_kind(&mut ws, "denied").await;
+            assert_eq!(denied["reason"], "busy", "never tell the phone to erase its saved token");
+            assert_eq!(denied["retryAfter"], 5);
+        }
+    });
+    assert!(path.is_dir(), "a remembered pairing must not replace an unreadable list");
+    assert_eq!(f.host.pairing_info().pin, pin, "refused pairing must not consume the PIN");
+    assert!(f.host.trusted_devices().is_empty());
+}
+
+#[test]
 fn screen_viewing_needs_a_separate_native_grant_and_filters_late_lists() {
     let f = fixture();
     f.host.set_pin_shown(true);

@@ -146,7 +146,8 @@ pub(crate) fn clean(text: &str, max: usize) -> String {
 impl TrustStore {
     pub fn load(path: Option<PathBuf>) -> Self {
         let (devices, intact) = match path.as_deref().map(store::try_load::<TrustFile>) {
-            Some(Loaded::Found(file)) => (file.devices, true),
+            Some(Loaded::Found(file)) if file.version == 1 => (file.devices, true),
+            Some(Loaded::Found(_)) => (Vec::new(), false),
             Some(Loaded::Unusable) => (Vec::new(), false),
             Some(Loaded::Missing) | None => (Vec::new(), true),
         };
@@ -285,6 +286,8 @@ impl TrustStore {
 
     pub fn clear(&mut self) {
         self.devices.clear();
+        // Explicitly forgetting every device also resets an unusable list.
+        self.intact = true;
         self.save();
     }
 
@@ -611,6 +614,22 @@ mod tests {
         assert!(TrustStore::load(Some(path.clone())).intact());
         std::fs::write(&path, b"{not json").unwrap();
         assert!(!TrustStore::load(Some(path)).intact());
+    }
+
+    #[test]
+    fn preserves_device_files_from_an_unsupported_version_until_explicit_reset() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("devices.json");
+        let file = br#"{"version":2,"devices":[]}"#;
+        std::fs::write(&path, file).unwrap();
+        let mut trust = TrustStore::load(Some(path.clone()));
+        assert!(!trust.intact());
+        assert!(trust.pending_save().is_none());
+        assert_eq!(std::fs::read(&path).unwrap(), file);
+        trust.clear();
+        assert!(trust.intact(), "explicitly forgetting all devices resets the list");
+        trust.pending_save().unwrap().write(&Mutex::new(0));
+        assert!(TrustStore::load(Some(path)).intact());
     }
 
     #[test]

@@ -172,6 +172,18 @@ describe('controls used without touch', () => {
 })
 
 describe('forgetting a Mac', () => {
+  it('offers token reconnection after a retryable refusal from the Mac', async () => {
+    conn.connect()
+    lastSocket().open()
+    lastSocket().receive({ t: 'denied', reason: 'busy', retryAfter: 5 })
+    const { default: ConnectView } = await import('../src/views/ConnectView.vue')
+    const view = mount(ConnectView, { attachTo: document.body })
+    expect(view.text()).toContain('quit and reopen CmdPalm')
+    await view.findAll('button').find((button) => button.text() === 'Reconnect')!.trigger('click')
+    lastSocket().open()
+    expect(lastSocket().sent[0]).toMatchObject({ t: 'hello', auth: { method: 'token', token: 'saved' } })
+  })
+
   it('drops its app list', () => {
     const socket = connect()
     socket.receive({ t: 'apps', apps: [{ id: 'a', name: 'A', running: false, active: false, hidden: false }] })

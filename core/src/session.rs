@@ -382,6 +382,12 @@ where
     S: AsyncRead + AsyncWrite + Unpin,
 {
     let config = shared.config();
+    // An unreadable list is not evidence that a token was revoked. The phone
+    // erases its token on Unknown, and a new remembered pairing would overwrite
+    // the saved list. Leave both copies alone until the Mac can load it again.
+    if (remember || matches!(&request, AuthRequest::Token { .. })) && !shared.state().trust.intact() {
+        return Err(Some(Refusal(DenyReason::Busy, Some(Duration::from_secs(5)))));
+    }
     let now = Instant::now();
     let fallback_name = || {
         let name = auth::clean(&device.name, 64);
