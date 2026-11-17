@@ -15,7 +15,7 @@ use str0m::media::{Direction, MediaKind, MediaTime};
 use str0m::net::{Protocol, Receive};
 use str0m::{Candidate, Event, Input, Output, Rtc};
 use tokio::net::UdpSocket;
-use tokio::sync::{mpsc, watch};
+use tokio::sync::{Notify, mpsc, watch};
 
 use crate::api::{DisplayApprovalRequest, DisplayCommand, HostEvent};
 use crate::host::{Outgoing, Shared};
@@ -48,6 +48,25 @@ struct Frame {
     keyframe: bool,
 }
 
+/// HD text keeps only the newest waiting picture. A still screen sends no
+/// further updates, so dropping the newest would leave the phone out of date.
+#[derive(Default)]
+struct Latest {
+    frame: Mutex<Option<Frame>>,
+    ready: Notify,
+}
+
+impl Latest {
+    fn replace(&self, frame: Frame) {
+        *self.frame.lock().unwrap_or_else(|p| p.into_inner()) = Some(frame);
+        self.ready.notify_one();
+    }
+
+    fn take(&self) -> Option<Frame> {
+        self.frame.lock().unwrap_or_else(|p| p.into_inner()).take()
+    }
+}
+
 struct Active {
     session: u64,
     request: u32,
@@ -55,6 +74,7 @@ struct Active {
     original: bool,
     alive: Instant,
     frames: mpsc::Sender<Frame>,
+    latest: Arc<Latest>,
     cancel: watch::Sender<bool>,
     stopped: Arc<AtomicBool>,
     needs_keyframe: Arc<AtomicBool>,
@@ -442,7 +462,11 @@ impl DisplayHub {
         else {
             return false;
         };
-        if !active.original && data.len() > MAX_FRAME {
+        if active.original {
+            active.latest.replace(Frame { data, timestamp_us, queued: Instant::now(), keyframe });
+            return true;
+        }
+        if data.len() > MAX_FRAME {
             return false;
         }
         if active.needs_keyframe.load(Ordering::Acquire) && !keyframe {
@@ -511,7 +535,8 @@ pub(crate) fn start(
     }
     let generation = shared.next_id();
     let original = quality == DisplayQuality::Original;
-    let (tx, rx) = mpsc::channel(if original { 1 } else { 2 });
+    let (tx, rx) = mpsc::channel(2);
+    let latest = Arc::new(Latest::default());
     let (cancel, cancelled) = watch::channel(false);
     let stopped = Arc::new(AtomicBool::new(false));
     let needs_keyframe = Arc::new(AtomicBool::new(true));
@@ -522,6 +547,7 @@ pub(crate) fn start(
         original,
         alive: Instant::now(),
         frames: tx,
+        latest: latest.clone(),
         cancel,
         stopped: stopped.clone(),
         needs_keyframe: needs_keyframe.clone(),
@@ -538,6 +564,7 @@ pub(crate) fn start(
             sdp,
             quality,
             rx,
+            &latest,
             cancelled,
             &stopped,
             &needs_keyframe,
@@ -625,6 +652,7 @@ async fn run(
     offer_text: String,
     quality: DisplayQuality,
     mut frames: mpsc::Receiver<Frame>,
+    latest: &Latest,
     mut cancelled: watch::Receiver<bool>,
     stopped: &AtomicBool,
     needs_keyframe: &AtomicBool,
@@ -718,13 +746,21 @@ async fn run(
         if !connected && started.elapsed() > CONNECT_TIMEOUT {
             return Err("Video could not reach the phone. Check that the network or VPN allows a direct UDP connection to the Mac.".into());
         }
+        if original
+            && connected
+            && image_transfer.is_none()
+            && let Some(frame) = latest.take()
+        {
+            image_sequence = image_sequence.wrapping_add(1);
+            image_transfer = Some((frame, image_sequence, 0, Instant::now()));
+        }
         if let (Some(channel), Some((frame, sequence, offset, began))) = (image_channel, image_transfer.as_mut()) {
             if began.elapsed() > Duration::from_secs(12) {
                 return Err("HD text could not keep up with the connection. Choose Sharper text and try again.".into());
             }
             if let Some(mut channel) = rtc.channel(channel) {
-                // One in-flight picture, one queued picture, and 128 KiB of SCTP buffering. Chunk
-                // writes yield regularly to network input and cancellation.
+                // One in-flight picture, the newest waiting picture, and 128 KiB of SCTP
+                // buffering. Chunk writes yield regularly to network input and cancellation.
                 for _ in 0..4 {
                     if *offset == frame.data.len() || channel.buffered_amount() >= 64 * 1024 {
                         break;
@@ -883,14 +919,9 @@ async fn run(
                     if rtc.accepts(&input) { let _ = rtc.handle_input(input); }
                 }
             }
-            Some(frame) = frames.recv(), if connected && (!original || image_transfer.is_none()) => {
-                if original {
-                    if frame.queued.elapsed() <= Duration::from_secs(2) {
-                        image_sequence = image_sequence.wrapping_add(1);
-                        image_transfer = Some((frame, image_sequence, 0, Instant::now()));
-                    }
-                    continue;
-                }
+            // Only a wake-up: the next pass takes the newest picture itself.
+            _ = latest.ready.notified(), if original && connected && image_transfer.is_none() => {}
+            Some(frame) = frames.recv(), if connected && !original => {
                 if frame.queued.elapsed() > Duration::from_millis(150) {
                     waiting_for_keyframe = true;
                     needs_keyframe.store(true, Ordering::Release);

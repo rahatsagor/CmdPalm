@@ -657,12 +657,17 @@ fn original_pictures_cross_encrypted_data_channels_with_bounded_chunks_and_stop_
         // Larger than the SCTP send buffer: correct delivery requires the
         // sender to honor backpressure rather than enqueueing a whole frame.
         let image: Vec<u8> = (0..300_000).map(|i| (i * 31 + i / 7) as u8).collect();
+        // Both arrive while the first picture is in flight. A still screen
+        // sends nothing more, so the phone must end on the newest one.
+        let skipped: Vec<u8> = image.iter().map(|byte| byte ^ 0x55).collect();
+        let newest: Vec<u8> = image.iter().rev().copied().collect();
+        let mut pictures: Vec<Vec<u8>> = Vec::new();
         let mut received = Vec::new();
         let mut buffer = [0; 2048];
         let mut pulse = tokio::time::interval(Duration::from_millis(20));
         let began = Instant::now(); let mut generation = None; let mut sent = false;
-        while received.len() < image.len() {
-            assert!(began.elapsed() < Duration::from_secs(8), "HD picture transfer stalled at {} bytes", received.len());
+        while pictures.len() < 2 {
+            assert!(began.elapsed() < Duration::from_secs(12), "HD picture transfer stalled at {} bytes", received.len());
             let deadline = loop {
                 match receiver.poll_output().unwrap() {
                     Output::Timeout(deadline) => break deadline,
@@ -672,7 +677,13 @@ fn original_pictures_cross_encrypted_data_channels_with_bounded_chunks_and_stop_
                         assert_eq!(&data.data[..4], b"CPNG");
                         assert_eq!(u32::from_le_bytes(data.data[8..12].try_into().unwrap()) as usize, image.len());
                         assert_eq!(u32::from_le_bytes(data.data[12..16].try_into().unwrap()) as usize, received.len());
+                        if pictures.is_empty() && received.is_empty() {
+                            let generation = generation.unwrap();
+                            assert!(f.host.display_frame(session, generation, skipped.clone(), 1, true));
+                            assert!(f.host.display_frame(session, generation, newest.clone(), 2, true));
+                        }
                         received.extend_from_slice(&data.data[16..]);
+                        if received.len() == image.len() { pictures.push(std::mem::take(&mut received)); }
                     }
                     _ => {}
                 }
@@ -700,7 +711,9 @@ fn original_pictures_cross_encrypted_data_channels_with_bounded_chunks_and_stop_
                 }
             }
         }
-        assert_eq!(received, image, "encrypted transport must preserve original picture bytes exactly");
+        assert!(pictures[0] == image, "encrypted transport must preserve original picture bytes exactly");
+        assert!(pictures[1] != skipped, "a picture replaced while waiting must not be sent");
+        assert!(pictures[1] == newest, "the newest picture must follow the one in flight");
         send(&mut ws, json!({"t":"displayStop", "id":2})).await;
         loop { if recv_kind(&mut ws, "displayState").await["state"] == "stopped" { break; } }
         assert!(!f.host.display_frame(session, generation.unwrap(), image, 1, true));
