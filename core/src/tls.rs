@@ -126,6 +126,17 @@ fn fingerprint(der: &[u8]) -> String {
     Sha256::digest(der).iter().map(|b| format!("{b:02X}")).collect::<Vec<_>>().join(":")
 }
 
+fn ca_matches_key(der: &[u8], key: &KeyPair) -> bool {
+    let key = pki_types::PrivateKeyDer::Pkcs8(pki_types::PrivatePkcs8KeyDer::from(key.serialize_der()));
+    rustls::sign::CertifiedKey::from_der(
+        vec![pki_types::CertificateDer::from(der.to_vec())],
+        key,
+        &rustls::crypto::ring::default_provider(),
+    )
+    .and_then(|certified| certified.keys_match())
+    .is_ok()
+}
+
 /// Names the server certificate must cover: the Bonjour name, localhost and
 /// every current LAN address the authority is allowed to vouch for.
 pub fn server_names(host_name: &str, addresses: &[IpAddr]) -> Vec<String> {
@@ -167,7 +178,9 @@ fn build_identity(dir: &Path, names: &[String], reissue: bool) -> Result<Identit
     let ca_der = std::fs::read(&paths.ca_cert).ok();
 
     let (ca_key, ca_der, mut current) = match (ca_key, ca_der, meta.take()) {
-        (Some(key), Some(der), Some(meta)) if meta.ca_expires > renew_cutoff => (key, der, meta),
+        (Some(key), Some(der), Some(meta)) if meta.ca_expires > renew_cutoff && ca_matches_key(&der, &key) => {
+            (key, der, meta)
+        }
         _ => {
             changed = true;
             let key = KeyPair::generate()?;
@@ -267,6 +280,41 @@ mod tests {
         let again = load_identity(dir.path(), &names).unwrap();
         assert_eq!(first.ca_fingerprint, again.ca_fingerprint, "devices keep trusting the same CA");
         load_identity(dir.path(), &names).expect("the reissued pair loads as is");
+    }
+
+    #[test]
+    fn recovers_from_an_authority_key_that_doesnt_match_its_certificate() {
+        use rustls::client::danger::ServerCertVerifier;
+
+        let dir = tempfile::tempdir().unwrap();
+        let names = server_names("Studio.local", &[]);
+        let first = load_identity(dir.path(), &names).unwrap();
+        let leaf_before = std::fs::read(dir.path().join("server.der")).unwrap();
+        // A crash between the CA key and certificate writes must not leave
+        // the Mac signing leaves with a key the phone's root cannot verify.
+        std::fs::write(dir.path().join("ca-key.pem"), KeyPair::generate().unwrap().serialize_pem()).unwrap();
+        let recovered = load_identity(dir.path(), &names).unwrap();
+        assert_ne!(first.ca_fingerprint, recovered.ca_fingerprint);
+        let leaf = std::fs::read(dir.path().join("server.der")).unwrap();
+        assert_ne!(leaf_before, leaf, "the old leaf belongs to the previous authority");
+        let mut roots = rustls::RootCertStore::empty();
+        roots.add(pki_types::CertificateDer::from(recovered.ca_der.clone())).unwrap();
+        let verifier = rustls::client::WebPkiServerVerifier::builder_with_provider(
+            Arc::new(roots),
+            Arc::new(rustls::crypto::ring::default_provider()),
+        )
+        .build()
+        .unwrap();
+        verifier
+            .verify_server_cert(
+                &pki_types::CertificateDer::from(leaf),
+                &[],
+                &pki_types::ServerName::try_from("localhost").unwrap(),
+                &[],
+                pki_types::UnixTime::now(),
+            )
+            .expect("the recovered chain must authenticate with its advertised authority");
+        assert_eq!(load_identity(dir.path(), &names).unwrap().ca_fingerprint, recovered.ca_fingerprint);
     }
 
     #[test]
