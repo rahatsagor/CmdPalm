@@ -35,6 +35,7 @@ final class HostController {
     @ObservationIgnored private var host: CoreHost!
     @ObservationIgnored private var bridge: HostBridge!
     @ObservationIgnored private var configuredPort: Int
+    @ObservationIgnored private var couldView: Bool
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
     @ObservationIgnored private var appsChanged: DispatchWorkItem?
     @ObservationIgnored private var pairingTimer: Timer?
@@ -51,6 +52,7 @@ final class HostController {
         self.preferences = preferences
         self.permissions = permissions
         configuredPort = preferences.port
+        couldView = permissions.canView
 
         let reference = reference
         let volume = AudioVolume { state in
@@ -311,7 +313,10 @@ final class HostController {
     private func permissionsChanged() {
         host.permissionChanged()
         host.updateConfig(config: makeConfig())
-        if !permissions.canView { host.suspendDisplay() }
+        // Only losing Screen Recording ends viewing. Other permission changes
+        // must not cancel an access request that is waiting for an answer.
+        if couldView, !permissions.canView { host.suspendDisplay() }
+        couldView = permissions.canView
         if permissions.canControl, notice?.contains("Accessibility") == true { notice = nil }
     }
 
@@ -379,6 +384,12 @@ final class HostController {
         }
         for (name, locked) in [("com.apple.screenIsLocked", true), ("com.apple.screenIsUnlocked", false)] {
             observers.append(DistributedNotificationCenter.default().addObserver(forName: Notification.Name(name), object: nil, queue: .main) { _ in display.suspend(locked, reason: "lock") })
+        }
+        // Notifications only report changes. Start from the current state in
+        // case CmdPalm opens while the screen is locked or switched out.
+        if let session = CGSessionCopyCurrentDictionary() as? [String: Any] {
+            if session["CGSSessionScreenIsLocked"] as? Bool == true { display.suspend(true, reason: "lock") }
+            if session[kCGSessionOnConsoleKey as String] as? Bool == false { display.suspend(true, reason: "session") }
         }
         observers.append(NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { _ in display.displaysChanged() })
         let appNotifications: [Notification.Name] = [
