@@ -179,4 +179,29 @@ describe('fullscreen display accessibility', () => {
     await nextTick()
     expect(wrapper!.find('[aria-label="Fullscreen Mac display"]').exists()).toBe(false)
   })
+
+  it('extends only a right-side scroll strip to the outer screen edge in wide display mode', async () => {
+    let resize: ResizeObserverCallback | undefined
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(cb: ResizeObserverCallback) { resize = cb }
+      observe() {}
+      disconnect() {}
+    })
+    const { view } = await mountViewer()
+    const { settings } = await import('../src/lib/settings')
+    settings.displayControls = 'trackpad'
+    settings.scrollStrip = 'short'
+    settings.scrollStripEdge = true
+    resize?.([{ contentRect: { width: 800, height: 400 } } as ResizeObserverEntry], {} as ResizeObserver)
+
+    settings.scrollStripSide = 'right'
+    await nextTick()
+    const trackpad = view.get('.trackpad')
+    expect((trackpad.element as HTMLElement).style.marginRight).toBe('-0.5rem')
+
+    settings.scrollStripSide = 'left'
+    await nextTick()
+    expect((trackpad.element as HTMLElement).style.marginLeft).toBe('')
+    expect((trackpad.element as HTMLElement).style.marginRight).toBe('')
+  })
 })

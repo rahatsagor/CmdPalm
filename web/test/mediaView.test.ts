@@ -77,9 +77,32 @@ describe('MediaView', () => {
     socket.receive({ t: 'paused', paused: true })
     await nextTick()
     const atPause = mediaSent(socket).length
-    vi.advanceTimersByTime(500)
+    await vi.advanceTimersByTimeAsync(500)
     expect(mediaSent(socket)).toHaveLength(atPause)
     expect(brighter.className).not.toContain('bg-surface-3')
+    view.unmount()
+  })
+
+  it('keeps Enter and Space on focused media buttons local even with hardware keyboard forwarding installed', async () => {
+    const { socket, view } = await mediaView()
+    const { installHardwareKeyboard } = await import('../src/lib/hardware')
+    const { Key } = await import('../src/lib/keys')
+    installHardwareKeyboard()
+    const play = view.find('button[aria-label="Play or pause"]').element as HTMLButtonElement
+    play.focus()
+
+    const enter = new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true, cancelable: true })
+    play.dispatchEvent(enter)
+    const space = new KeyboardEvent('keydown', { key: ' ', code: 'Space', bubbles: true, cancelable: true })
+    play.dispatchEvent(space)
+    expect(enter.defaultPrevented).toBe(false)
+    expect(space.defaultPrevented).toBe(false)
+    expect(socket.sent.filter((m) => m.t === 'key')).toEqual([])
+
+    const letter = new KeyboardEvent('keydown', { key: 'a', code: 'KeyA', bubbles: true, cancelable: true })
+    document.body.dispatchEvent(letter)
+    expect(letter.defaultPrevented).toBe(true)
+    expect(socket.sent.filter((m) => m.t === 'key')).toMatchObject([{ code: Key.A, down: true }])
     view.unmount()
   })
 })

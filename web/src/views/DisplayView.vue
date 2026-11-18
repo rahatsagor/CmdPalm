@@ -332,7 +332,7 @@ function up(event: PointerEvent) { pointers.delete(event.pointerId); beginGestur
         </div>
       </div>
 
-      <TrackpadSurface v-if="settings.displayControls === 'trackpad'" class="min-h-0 min-w-0 flex-1" :edge="!wide || settings.scrollStripSide === 'left'">
+      <TrackpadSurface v-if="settings.displayControls === 'trackpad'" class="min-h-0 min-w-0 flex-1" :edge="!wide || settings.scrollStripSide === 'right'">
         <ScrollRail v-if="settings.scrollStrip !== 'off'" />
       </TrackpadSurface>
       <KeyboardView v-else-if="settings.displayControls === 'keyboard'" embedded :compact="controlsHeight < 240" class="min-h-0 min-w-0 flex-1" />

@@ -48,9 +48,9 @@ describe('settings feature tabs', () => {
     await settings()
     expect(document.querySelectorAll('[aria-label="Feature settings"] button')).toHaveLength(5)
     const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!
-    expect(dialog.textContent).toContain('CmdPalm 1.0 · 8 ms')
-    expect(dialog.textContent).not.toContain('Others on this Wi-Fi')
-    expect(dialog.textContent).not.toContain('Not encrypted')
+    expect(dialog.textContent).toContain('CmdPalm 1.0 · Connected · 8 ms')
+    expect(dialog.textContent).toContain('Not encrypted')
+    expect(dialog.textContent).toContain('Others on this Wi-Fi')
     expect(dialog.querySelector('[role="tabpanel"]')!.getAttribute('aria-labelledby')).toBe('settings-tab-trackpad')
     const scroller = dialog.lastElementChild!
     scroller.scrollTop = 400
@@ -199,5 +199,39 @@ describe('settings feature tabs', () => {
     expect(prefs.settings.displayQuality).toBe('battery')
     expect(start).toHaveBeenCalledOnce()
     start.mockRestore()
+  })
+
+  it('shows encryption status and tailored dictation setup guidance for each connection and feature state', async () => {
+    const sheet = await settings()
+    const hostCard = () => document.querySelector<HTMLElement>('[role="dialog"] .card')!
+    expect(hostCard().textContent).toContain('Not encrypted')
+    expect(hostCard().textContent).toContain('Others on this Wi-Fi')
+
+    await click('Keyboard')
+    const panelText = () => document.querySelector<HTMLElement>('[role="tabpanel"]')!.textContent!
+    expect(panelText()).toContain('encrypted connection')
+    expect(panelText()).toContain('Allow dictation from devices')
+
+    connection.state.features.voice = true
+    await nextTick()
+    expect(panelText()).toContain('Phone Setup → Encrypted Connection')
+    expect(panelText()).not.toContain('Allow dictation from devices')
+
+    connection.state.features.secure = true
+    connection.state.features.voice = false
+    await nextTick()
+    expect(hostCard().textContent).toContain('Encrypted')
+    expect(hostCard().textContent).not.toContain('Not encrypted')
+    expect(hostCard().textContent).not.toContain('Others on this Wi-Fi')
+    expect(panelText()).toContain('Dictation is turned off on this Mac')
+
+    connection.state.features.voice = true
+    vi.stubGlobal('isSecureContext', true)
+    vi.stubGlobal('navigator', { ...navigator, mediaDevices: { getUserMedia: vi.fn() } })
+    vi.stubGlobal('AudioWorkletNode', class {})
+    sheet.unmount()
+    await settings()
+    await click('Keyboard')
+    expect(panelText()).toContain('Dictation is ready')
   })
 })

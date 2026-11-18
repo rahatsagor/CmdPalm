@@ -12,6 +12,15 @@ const MODIFIERS: Record<string, number> = {
 
 const down = new Set<number>()
 
+const INTERACTIVE = 'button, a[href], summary, [role="button"], [role="switch"], [role="tab"], [role="radio"], [role="option"], [role="menuitem"], [role="checkbox"]'
+
+function activatesControl(event: KeyboardEvent): boolean {
+  if (event.metaKey || event.ctrlKey || event.altKey) return false
+  if (event.key !== 'Enter' && event.key !== ' ' && event.code !== 'Enter' && event.code !== 'NumpadEnter' && event.code !== 'Space') return false
+  const el = event.target as Element | null
+  return !!el?.closest?.(INTERACTIVE)
+}
+
 function editable(target: EventTarget | null): boolean {
   const el = target as HTMLElement | null
   return !!el && (el.isContentEditable || el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT')
@@ -22,9 +31,9 @@ function codeFor(event: KeyboardEvent): number | undefined {
 }
 
 function onKeyDown(event: KeyboardEvent) {
-  // Sheets keep the keyboard for their own fields and Escape-to-close, and a
-  // focused button that took Return or Space has used it.
-  if (editable(event.target) || event.isComposing || event.defaultPrevented || document.querySelector('[role="dialog"]')) return
+  // Sheets keep the keyboard for their own fields and Escape-to-close, and
+  // focused interactive controls keep Enter and Space for activation.
+  if (editable(event.target) || activatesControl(event) || event.isComposing || event.defaultPrevented || document.querySelector('[role="dialog"]')) return
   const code = codeFor(event)
   if (code === undefined) return
   event.preventDefault()

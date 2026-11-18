@@ -30,7 +30,7 @@ export type SyncedSettings = {
 export const COPY_CATEGORIES = [
   {
     id: 'trackpad', label: 'Trackpad', hint: 'Pointer, clicks and scrolling',
-    keys: ['pointerSpeed', 'pointerAcceleration', 'tapToClick', 'twoFingerTapRightClick', 'longPress', 'tapAndDrag', 'dragLock', 'clickButtons', 'scrollSpeed', 'naturalScroll', 'momentum', 'scrollStrip', 'scrollStripSide', 'scrollStripWidth', 'scrollStripEdge', 'scrollHold'],
+    keys: ['pointerSpeed', 'pointerAcceleration', 'tapToClick', 'twoFingerTapRightClick', 'longPress', 'tapAndDrag', 'dragLock', 'clickButtons', 'scrollSpeed', 'naturalScroll', 'momentum', 'scrollStrip', 'scrollStripSide', 'scrollStripWidth', 'scrollStripEdge', 'scrollHold', 'showTouches'],
   },
   {
     id: 'gestures', label: 'Gestures', hint: 'Pinch, rotate and finger gestures',
@@ -47,7 +47,7 @@ export const COPY_CATEGORIES = [
   },
   {
     id: 'appearance', label: 'Appearance and feedback', hint: 'Theme, haptics and screen preferences',
-    keys: ['theme', 'haptics', 'keyHaptics', 'keepAwake', 'showTouches', 'showAdvanced'],
+    keys: ['theme', 'haptics', 'keyHaptics', 'keepAwake', 'showAdvanced'],
   },
 ] as const satisfies readonly { id: string; label: string; hint: string; keys: readonly (keyof SyncedPrefs)[] }[]
 

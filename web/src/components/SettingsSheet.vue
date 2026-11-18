@@ -6,6 +6,8 @@ import {
   Hand,
   Keyboard,
   LayoutGrid,
+  Lock,
+  LockOpen,
   LogOut,
   Maximize,
   Minimize,
@@ -13,7 +15,6 @@ import {
   RotateCcw,
   Touchpad,
   Unplug,
-  Wifi,
 } from '@lucide/vue'
 import { computed, nextTick, ref } from 'vue'
 import { appNames } from '@/lib/apps'
@@ -28,6 +29,7 @@ import { lazy } from '@/lib/reload'
 import { screen, startViewing } from '@/lib/screen'
 import { DECK_SIZE, resetSettings, settings, type GestureMap, type GestureSlot, type Settings } from '@/lib/settings'
 import { wakeLockSupported } from '@/lib/wakeLock'
+import { voiceSupported } from '@/lib/voice'
 import ActionEditor from './ActionEditor.vue'
 import DisplayPreferences from './DisplayPreferences.vue'
 import RangeRow from './RangeRow.vue'
@@ -38,7 +40,21 @@ import Toggle from './Toggle.vue'
 const CopySettingsSheet = lazy(() => import('./CopySettingsSheet.vue'))
 const BackupSheet = lazy(() => import('./BackupSheet.vue'))
 const emit = defineEmits<{ close: [] }>()
-const secure = computed(() => location.protocol === 'https:')
+const secure = computed(() => state.features.secure || location.protocol === 'https:')
+const dictationHelp = computed(() => {
+  if (state.features.voice && voiceSupported()) {
+    return 'Dictation is ready. Tap the microphone button in the typing panel to dictate onto your Mac.'
+  }
+  if (!secure.value) {
+    return state.features.voice
+      ? 'Dictation needs an encrypted connection so this browser can use the microphone. On your Mac, open CmdPalm Settings → Phone Setup → Encrypted Connection.'
+      : 'To dictate, open CmdPalm over an encrypted connection (Mac CmdPalm Settings → Phone Setup → Encrypted Connection) and turn on “Allow dictation from devices” in General.'
+  }
+  if (!state.features.voice) {
+    return 'Dictation is turned off on this Mac. Turn on “Allow dictation from devices” and Speech Recognition in CmdPalm Settings → General.'
+  }
+  return 'This browser cannot access the microphone here. Trust CmdPalm’s certificate on this device or use a browser that supports microphone capture over HTTPS.'
+})
 const confirmForget = ref(false)
 const confirmReset = ref(false)
 const showCopy = ref(false)
@@ -126,14 +142,21 @@ const times = (v: number) => `${v.toFixed(1)}×`
         <div class="min-w-0 flex-1">
           <div class="truncate text-[16px] font-semibold">{{ state.hostName || 'Mac' }}</div>
           <div class="text-[13px] text-muted">
-            CmdPalm {{ state.hostVersion }} · {{ state.status === 'connected' ? `${state.latency || '<1'} ms` : 'offline' }}
+            CmdPalm {{ state.hostVersion }} · {{ state.status === 'connected' ? `Connected · ${state.latency || '<1'} ms` : 'Reconnecting…' }}
           </div>
         </div>
-        <span class="flex shrink-0 items-center gap-1 rounded-full bg-surface-3 px-2.5 py-1 text-[12px] font-medium text-muted">
-          <Wifi :size="12" />
-          {{ state.status === 'connected' ? 'Connected' : 'Reconnecting…' }}
+        <span
+          class="flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[12px] font-medium"
+          :class="secure ? 'bg-good/15 text-good' : 'bg-warn/15 text-warn'"
+        >
+          <Lock v-if="secure" :size="12" /><LockOpen v-else :size="12" />
+          {{ secure ? 'Encrypted' : 'Not encrypted' }}
         </span>
       </div>
+      <p v-if="!secure" class="pb-3 text-[13px] leading-snug text-muted">
+        Others on this Wi-Fi could see what you type. To set up the encrypted connection, open CmdPalm’s settings on the Mac and
+        choose <b>Phone Setup → Encrypted Connection</b>. Dictation and some phone features need it too.
+      </p>
     </section>
 
     <div>
@@ -355,7 +378,7 @@ const times = (v: number) => `${v.toFixed(1)}×`
           <h3 class="section">Dictation setup</h3>
           <section class="card py-3">
             <p class="text-[13px] leading-relaxed text-muted">
-              Use the microphone in the typing panel to dictate. Set it up on your Mac in CmdPalm Settings → Phone Setup → Encrypted Connection.
+              {{ dictationHelp }}
             </p>
           </section>
           <h3 class="section">Text compatibility</h3>

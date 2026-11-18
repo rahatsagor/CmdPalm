@@ -367,6 +367,9 @@ describe('copying from another device', () => {
     const keys = sync.COPY_CATEGORIES.flatMap((category) => [...category.keys])
     expect(new Set(keys).size).toBe(keys.length)
     expect([...keys].sort()).toEqual(Object.keys(sync.buildPayload().settings).sort())
+    const byId = Object.fromEntries(sync.COPY_CATEGORIES.map((category) => [category.id, [...category.keys]]))
+    expect(byId.trackpad).toContain('showTouches')
+    expect(byId.appearance).not.toContain('showTouches')
   })
 })
 

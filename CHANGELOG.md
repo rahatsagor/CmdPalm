@@ -39,16 +39,31 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - Screen mirroring limits bandwidth bursts, avoids unnecessary capture updates,
   and keeps the latest frame ready when the hardware encoder is busy.
 - Monitor refreshes can overlap without interrupting a live view. Stopped
-  captures ignore late callbacks and clean up delayed startup work.
+  captures ignore late callbacks and clean up delayed startup work. Failed
+  starts also release the display wake assertion and partial capture state
+  immediately.
+- WebRTC display connections prioritize local Wi-Fi and Ethernet interfaces,
+  ignore link-local addresses, and recover from transient UDP socket errors.
+- Volume reporting listens to per-channel controls on audio devices that lack a
+  single virtual main volume control.
+- Links using `sftp:`, `ftps:`, `dav:`, `davs:`, `webdav:`, `webdavs:`, or
+  `vnc:` now follow the Mac’s shell-command permission alongside `file:`, `ssh:`,
+  and other file-server schemes.
 - Approve a phone's screen-access request directly in the Mac's native panel.
-  Requests expire after one minute and never grant access automatically.
+  Requests expire after one minute, never grant access automatically, support
+  the Cancel shortcut, show waiting request counts, stay within visible screen
+  bounds, and use matching card styling in the menu bar popover.
+- Save Certificate explains when a certificate is not ready instead of failing
+  silently.
 
 ### Phone client
 
-- Settings keep the Mac name, latency and connection details at the top, with
-  tabs for Trackpad, Gestures, Keyboard, Display and Deck. Device preferences
-  and backup, reset and connection actions stay below. All sections are visible
-  within their tab, dictation setup is in Keyboard, and changes save automatically.
+- Settings keep the Mac name, latency and connection status alongside an
+  **Encrypted** / **Not encrypted** badge and HTTP Wi-Fi warning at the top,
+  with tabs for Trackpad, Gestures, Keyboard, Display and Deck. Device
+  preferences and backup, reset and connection actions stay below. Dictation setup
+  guidance adapts to HTTPS, browser microphone support, and whether dictation is
+  turned on on the Mac. **Show touches** now copies with Trackpad settings.
 - Gesture shortcuts have separate three- and four-finger tabs. Display layout
   and quality preferences are also available from Settings.
 - Run Shortcut, Mouse click, Sequence and Wait are available directly in
@@ -58,7 +73,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
   Controls have clearer screen-reader names and descriptions.
 - Gesture editors keep keyboard focus inside the dialog, and Escape closes
   only the top dialog. Main control surfaces keep forwarding the physical
-  keyboard to the Mac, and mouse-button labels fit on narrow phones.
+  keyboard to the Mac while letting Enter and Space activate focused buttons and
+  controls, and mouse-button labels fit on narrow phones.
 - Tab labels are easier to read, trackpad tips follow your enabled gestures,
   and empty app searches offer a Clear search button.
 - Reset and Forget explain what happens and offer Cancel before applying the
@@ -86,7 +102,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - Refreshing the display list keeps a live view running, and tapping Refresh
   twice no longer clears the list.
 - Both scroll-strip lengths now use matching up/down chevrons at every width,
-  with more space between the chevrons on the short handle.
+  with more space between the chevrons on the short handle, and edge-to-edge
+  placement follows the right screen edge in wide Display layouts.
 
 ## [0.8.1] - 2026-11-13
 
