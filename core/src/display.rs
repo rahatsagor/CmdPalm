@@ -640,22 +640,55 @@ struct Datagram {
     bytes: Vec<u8>,
 }
 
+fn rank_endpoint(name: &str, ip: IpAddr) -> Option<(u8, bool, IpAddr)> {
+    if ip.is_unspecified() || ip.is_multicast() {
+        return None;
+    }
+    match ip {
+        IpAddr::V4(v4) if v4.is_link_local() => return None,
+        IpAddr::V6(v6) if v6.is_unicast_link_local() => return None,
+        _ => {}
+    }
+    let tier = if ip.is_loopback() {
+        3
+    } else if name.starts_with("en") {
+        0
+    } else if crate::host::VPN_INTERFACES.iter().any(|prefix| name.starts_with(prefix))
+        || name.starts_with("bridge")
+        || name.starts_with("awdl")
+        || name.starts_with("llw")
+    {
+        2
+    } else {
+        1
+    };
+    Some((tier, ip.is_ipv6(), ip))
+}
+
 async fn endpoints() -> Result<Vec<Endpoint>, String> {
-    let mut addresses: Vec<IpAddr> = if_addrs::get_if_addrs()
+    let mut ranked: Vec<((u8, bool, IpAddr), IpAddr)> = if_addrs::get_if_addrs()
         .unwrap_or_default()
         .into_iter()
-        .map(|iface| iface.ip())
-        .filter(|ip| !ip.is_unspecified() && !ip.is_multicast())
-        .filter(|ip| match ip {
-            IpAddr::V6(v6) => !v6.is_unicast_link_local(),
-            IpAddr::V4(_) => true,
+        .filter_map(|iface| {
+            let ip = iface.ip();
+            rank_endpoint(&iface.name, ip).map(|key| (key, ip))
         })
         .collect();
-    addresses.extend([IpAddr::V4(Ipv4Addr::LOCALHOST), IpAddr::V6(Ipv6Addr::LOCALHOST)]);
-    addresses.sort_by_key(|ip| (ip.is_loopback(), ip.is_ipv6(), *ip));
-    addresses.dedup();
+    for ip in [IpAddr::V4(Ipv4Addr::LOCALHOST), IpAddr::V6(Ipv6Addr::LOCALHOST)] {
+        if let Some(key) = rank_endpoint("lo0", ip) {
+            ranked.push((key, ip));
+        }
+    }
+    ranked.sort_by_key(|(key, _)| *key);
+    let mut seen = HashSet::new();
     let mut endpoints = Vec::new();
-    for ip in addresses.into_iter().take(32) {
+    for (_, ip) in ranked {
+        if !seen.insert(ip) {
+            continue;
+        }
+        if seen.len() > 32 {
+            break;
+        }
         if let Ok(socket) = UdpSocket::bind(SocketAddr::new(ip, 0)).await {
             let address = socket.local_addr().map_err(|e| e.to_string())?;
             endpoints.push(Endpoint { address, socket: Arc::new(socket) });
@@ -696,10 +729,34 @@ async fn run(
         let destination = endpoint.address;
         let incoming = incoming.clone();
         readers.spawn(async move {
-            let mut buffer = [0; 2048];
-            while let Ok((size, source)) = socket.recv_from(&mut buffer).await {
-                if incoming.send(Datagram { source, destination, bytes: buffer[..size].to_vec() }).await.is_err() {
-                    break;
+            let mut buffer = [0; 8192];
+            loop {
+                match socket.recv_from(&mut buffer).await {
+                    Ok((size, source)) => {
+                        if incoming
+                            .send(Datagram { source, destination, bytes: buffer[..size].to_vec() })
+                            .await
+                            .is_err()
+                        {
+                            break;
+                        }
+                    }
+                    // Transient ICMP/socket errors (such as ConnectionReset or
+                    // ConnectionRefused from an unreachable candidate) must not
+                    // end the reader for this socket.
+                    Err(err)
+                        if matches!(
+                            err.kind(),
+                            std::io::ErrorKind::WouldBlock
+                                | std::io::ErrorKind::Interrupted
+                                | std::io::ErrorKind::ConnectionReset
+                                | std::io::ErrorKind::ConnectionRefused
+                                | std::io::ErrorKind::ConnectionAborted
+                                | std::io::ErrorKind::TimedOut
+                        ) => {}
+                    Err(_) => {
+                        tokio::time::sleep(Duration::from_millis(10)).await;
+                    }
                 }
             }
         });
@@ -983,5 +1040,33 @@ mod tests {
         assert_eq!(capture_limits(DisplayQuality::Original, 31), (3840, 1, 0));
         assert_eq!(receiver_level("a=fmtp:108 packetization-mode=1; profile-level-id=42e020\r\n", 108), 32);
         assert_eq!(receiver_level("a=fmtp:109 profile-level-id=42e02a\r\n", 108), 31);
+    }
+
+    #[test]
+    fn endpoint_ranking_excludes_link_local_and_prefers_lan() {
+        assert_eq!(rank_endpoint("en0", IpAddr::V4(Ipv4Addr::new(169, 254, 1, 2))), None);
+        assert_eq!(rank_endpoint("en0", "fe80::1".parse().unwrap()), None);
+        assert_eq!(rank_endpoint("en0", IpAddr::V4(Ipv4Addr::UNSPECIFIED)), None);
+        assert_eq!(rank_endpoint("en0", IpAddr::V4(Ipv4Addr::new(224, 0, 0, 1))), None);
+
+        let lan4 = rank_endpoint("en0", "192.168.1.10".parse().unwrap()).unwrap();
+        let lan6 = rank_endpoint("en0", "fd00::1".parse().unwrap()).unwrap();
+        let other = rank_endpoint("p2p0", "172.16.0.5".parse().unwrap()).unwrap();
+        let vpn = rank_endpoint("utun4", "10.8.0.2".parse().unwrap()).unwrap();
+        let awdl = rank_endpoint("awdl0", "fd00::2".parse().unwrap()).unwrap();
+        let llw = rank_endpoint("llw0", "fd00::3".parse().unwrap()).unwrap();
+        let bridge = rank_endpoint("bridge100", "192.168.64.1".parse().unwrap()).unwrap();
+        let lo4 = rank_endpoint("lo0", IpAddr::V4(Ipv4Addr::LOCALHOST)).unwrap();
+        let lo6 = rank_endpoint("lo0", IpAddr::V6(Ipv6Addr::LOCALHOST)).unwrap();
+
+        assert!(lan4 < lan6);
+        assert!(lan6 < other);
+        assert!(other < vpn);
+        assert!(other < awdl);
+        assert!(other < llw);
+        assert!(other < bridge);
+        assert!(vpn < lo4);
+        assert!(awdl < lo4);
+        assert!(lo4 < lo6);
     }
 }

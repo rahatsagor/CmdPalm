@@ -357,7 +357,7 @@ fn data_dir(config: &HostConfig) -> Option<PathBuf> {
 
 /// Interfaces that VPNs and mesh networks create on macOS: WireGuard and
 /// most VPN apps use `utun`, ZeroTier uses `feth`.
-const VPN_INTERFACES: [&str; 8] = ["utun", "ipsec", "ppp", "tun", "tap", "wg", "zt", "feth"];
+pub(crate) const VPN_INTERFACES: [&str; 8] = ["utun", "ipsec", "ppp", "tun", "tap", "wg", "zt", "feth"];
 
 /// Addresses a phone might reach, Wi-Fi and Ethernet first, each marked
 /// with whether it belongs to a VPN.

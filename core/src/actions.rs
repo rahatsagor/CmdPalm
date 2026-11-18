@@ -157,12 +157,17 @@ fn link_problem(url: &str, allow_shell: bool) -> Option<&'static str> {
     }
     match scheme.as_str() {
         "javascript" | "data" => Some(NOT_ALLOWED),
-        // A file URL can launch scripts, and these open a terminal or connect
-        // to a file server, which can hand over the Mac's login. Treat them
-        // like shell commands.
-        "file" | "ssh" | "telnet" | "x-man-page" | "smb" | "cifs" | "afp" | "nfs" | "ftp" if !allow_shell => Some(
-            "Links to files, terminals and file servers need shell commands turned on in CmdPalm settings on the Mac.",
-        ),
+        // A file URL can launch scripts, and these open a terminal, file server
+        // or screen-sharing session, which can hand over the Mac's login. Treat
+        // them like shell commands.
+        "file" | "ssh" | "telnet" | "x-man-page" | "smb" | "cifs" | "afp" | "nfs" | "ftp" | "sftp" | "ftps" | "dav"
+        | "davs" | "webdav" | "webdavs" | "vnc"
+            if !allow_shell =>
+        {
+            Some(
+                "Links to files, terminals and file servers need shell commands turned on in CmdPalm settings on the Mac.",
+            )
+        }
         _ => None,
     }
 }
@@ -436,7 +441,19 @@ mod tests {
         assert!(allowed("raycast://extensions", false));
         assert!(!allowed("file:///tmp/x.command", false));
         assert!(allowed("file:///tmp/x.command", true));
-        for url in ["ssh://host", "SMB://server/share", "afp://server", "x-man-page://ls"] {
+        for url in [
+            "ssh://host",
+            "SMB://server/share",
+            "afp://server",
+            "x-man-page://ls",
+            "sftp://server/path",
+            "ftps://server/path",
+            "dav://server/path",
+            "davs://server/path",
+            "webdav://server/path",
+            "webdavs://server/path",
+            "vnc://mac.local",
+        ] {
             assert!(!allowed(url, false), "{url}");
             assert!(allowed(url, true), "{url}");
         }
