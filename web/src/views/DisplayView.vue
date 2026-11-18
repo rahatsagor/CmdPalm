@@ -7,6 +7,7 @@ import Segmented from '@/components/Segmented.vue'
 import Sheet from '@/components/Sheet.vue'
 import TrackpadSurface from '@/components/TrackpadSurface.vue'
 import { state as connection } from '@/lib/connection'
+import { navigatesControls } from '@/lib/hardware'
 import { releaseAll } from '@/lib/input'
 import { activateScreen, cancelAccessRequest, deactivateScreen, focusDisplay, playViewing, refreshDisplays, requestScreenAccess, screen, selectedDisplay, startViewing, stopViewing } from '@/lib/screen'
 import { settings } from '@/lib/settings'
@@ -116,6 +117,7 @@ function fullscreenKeys(event: KeyboardEvent) {
   else if (['Enter', ' ', 'Tab'].includes(event.key) && !event.altKey && !event.ctrlKey && !event.metaKey && event.target instanceof Element && displayArea.value?.contains(event.target) && event.target.closest('button')) {
     // Explicitly focused viewer buttons use the browser's keyboard actions.
     // Other hardware keyboard input can still be sent to the Mac.
+    if (event.key === 'Tab') navigatesControls(event)
     event.stopPropagation()
   }
 }
