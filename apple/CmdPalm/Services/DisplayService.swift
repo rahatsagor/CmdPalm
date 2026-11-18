@@ -140,19 +140,35 @@ private actor DisplayController {
         let ticket = revision
         let previous = active
         active = nil
+        settings = nil
         await previous?.stop()
         guard ticket == revision, gate.contains(config.generation) else { return }
+        var created: DisplayCapture?
         do {
             guard CGPreflightScreenCaptureAccess() else { throw DisplayError.permission }
             let content = try await shareableContent()
             guard ticket == revision, gate.contains(config.generation) else { return }
             guard let display = content.displays.first(where: { Self.identifier($0.displayID) == config.id }) else { throw DisplayError.missing }
             let capture = DisplayCapture(display: display, settings: config, gate: gate, reference: reference)
+            created = capture
             active = capture
             settings = config
             try await capture.start()
-            if ticket != revision || !gate.contains(config.generation) { await capture.stop() }
+            if ticket != revision || !gate.contains(config.generation) {
+                if active === capture {
+                    active = nil
+                    settings = nil
+                }
+                await capture.stop()
+            }
         } catch {
+            if let created {
+                if active === created {
+                    active = nil
+                    settings = nil
+                }
+                await created.stop()
+            }
             guard ticket == revision, gate.contains(config.generation) else { return }
             reference.host?.displayFailed(session: config.session, generation: config.generation, message: (error as? DisplayError)?.message ?? "Screen capture stopped. Check Screen Recording permission and the selected display, then try again.")
         }
@@ -414,24 +430,29 @@ final class DisplayCapture: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
     }
 
     @MainActor func start() async throws {
-        if !settings.original { try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            queue.async {
-                do { try self.createEncoder(); continuation.resume() }
-                catch { continuation.resume(throwing: error) }
+        do {
+            if !settings.original { try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                queue.async {
+                    do { try self.createEncoder(); continuation.resume() }
+                    catch { continuation.resume(throwing: error) }
+                }
+            } }
+            guard gate.contains(generation), !flags.withLock({ $0.stopped }) else { await stop(); return }
+            let fps = flags.withLock { $0.fps }
+            let stream = SCStream(filter: SCContentFilter(display: display, excludingWindows: []), configuration: configuration(fps: fps), delegate: self)
+            self.stream = stream
+            configuredFPS = fps
+            try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: queue)
+            try await stream.startCapture()
+            // A display reconfiguration can replace this capture without
+            // changing the viewer's generation while startCapture is awaiting.
+            if !gate.contains(generation) || flags.withLock({ $0.stopped }) || self.stream !== stream {
+                try? await stream.stopCapture()
+                await stop()
             }
-        } }
-        guard gate.contains(generation), !flags.withLock({ $0.stopped }) else { await stop(); return }
-        let fps = flags.withLock { $0.fps }
-        let stream = SCStream(filter: SCContentFilter(display: display, excludingWindows: []), configuration: configuration(fps: fps), delegate: self)
-        self.stream = stream
-        configuredFPS = fps
-        try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: queue)
-        try await stream.startCapture()
-        // A display reconfiguration can replace this capture without
-        // changing the viewer's generation while startCapture is awaiting.
-        if !gate.contains(generation) || flags.withLock({ $0.stopped }) || self.stream !== stream {
-            try? await stream.stopCapture()
+        } catch {
             await stop()
+            throw error
         }
     }
 

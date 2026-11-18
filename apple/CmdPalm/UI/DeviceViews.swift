@@ -139,14 +139,26 @@ struct DisplayApprovalRow: View {
     @Environment(HostController.self) private var host
     @Environment(Preferences.self) private var preferences
     let request: DisplayApprovalRequest
+    var inMenu = false
+    var waitingCount = 0
 
     var body: some View {
+        if inMenu {
+            content
+                .padding(12)
+                .cardBackground(tint: .accentColor)
+        } else {
+            content
+        }
+    }
+
+    private var content: some View {
         VStack(alignment: .leading, spacing: 10) {
             Label("Allow “\(request.deviceName)” to view your Mac screen?", systemImage: "display")
-                .font(.headline)
+                .font(inMenu ? .callout.weight(.semibold) : .headline)
                 .fixedSize(horizontal: false, vertical: true)
             Text("\(request.model.isEmpty ? "Device" : request.model) at \(request.address). Only approve a device you recognize.")
-                .font(.callout)
+                .font(inMenu ? .caption : .callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             Text(request.remembered ? "This paired device stays allowed until you revoke access in Devices." : "Access lasts for this connection only.")
@@ -159,13 +171,41 @@ struct DisplayApprovalRow: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            HStack {
-                Spacer()
-                Button("Don’t Allow") { host.respond(to: request, allow: false) }
-                Button("Allow Screen Mirroring") { host.respond(to: request, allow: true) }
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) {
+                    if waitingCount > 0 {
+                        Text("\(waitingCount) more waiting")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: true, vertical: true)
+                    }
+                    Spacer(minLength: 8)
+                    actionButtons
+                        .fixedSize(horizontal: true, vertical: true)
+                }
+                VStack(alignment: .trailing, spacing: 6) {
+                    HStack(spacing: 8) {
+                        Spacer()
+                        actionButtons
+                            .fixedSize(horizontal: true, vertical: true)
+                    }
+                    if waitingCount > 0 {
+                        Text("\(waitingCount) more waiting")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
             }
-            .fixedSize(horizontal: false, vertical: true)
+            .controlSize(inMenu ? .small : .regular)
         }
+    }
+
+    @ViewBuilder private var actionButtons: some View {
+        Button("Don’t Allow") { host.respond(to: request, allow: false) }
+            .keyboardShortcut(.cancelAction)
+        Button("Allow Screen Mirroring") { host.respond(to: request, allow: true) }
+            .buttonStyle(.borderedProminent)
     }
 }
 

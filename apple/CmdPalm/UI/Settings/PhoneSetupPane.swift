@@ -267,6 +267,7 @@ private struct EncryptedConnectionSection: View {
 
             LabeledContent {
                 Button("Save Certificate…", action: saveCertificate)
+                    .disabled(!host.isRunning)
             } label: {
                 Text("Certificate file")
                 Text("For a device that can’t scan the code.")
@@ -300,7 +301,16 @@ private struct EncryptedConnectionSection: View {
 
     private func saveCertificate() {
         let data = host.certificate()
-        guard !data.isEmpty else { return }
+        guard !data.isEmpty else {
+            AppActivation.shared.present {
+                let alert = NSAlert()
+                alert.alertStyle = .warning
+                alert.messageText = "Certificate Unavailable"
+                alert.informativeText = "CmdPalm’s certificate could not be loaded right now. Wait for CmdPalm to finish starting or check Encrypted Connection settings, then try again."
+                alert.runModal()
+            }
+            return
+        }
         let panel = NSSavePanel()
         panel.nameFieldStringValue = "CmdPalm.crt"
         panel.allowedContentTypes = [UTType(filenameExtension: "crt") ?? .x509Certificate]

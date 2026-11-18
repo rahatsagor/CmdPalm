@@ -18,10 +18,13 @@ enum SystemActions {
         }
     }
 
-    /// File URLs can launch scripts, and these others open a terminal or
-    /// connect to a file server, which can hand over the Mac's login. Matches
-    /// `link_problem` in the core.
-    static let shellLikeSchemes: Set<String> = ["file", "ssh", "telnet", "x-man-page", "smb", "cifs", "afp", "nfs", "ftp"]
+    /// File URLs can launch scripts, and these others open a terminal,
+    /// file server or screen-sharing session, which can hand over the Mac's login.
+    /// Matches `link_problem` in the core.
+    static let shellLikeSchemes: Set<String> = [
+        "file", "ssh", "telnet", "x-man-page", "smb", "cifs", "afp", "nfs", "ftp",
+        "sftp", "ftps", "dav", "davs", "webdav", "webdavs", "vnc",
+    ]
 
     /// Opens a deck button's link. Links that act like shell commands are
     /// only allowed when shell commands are.

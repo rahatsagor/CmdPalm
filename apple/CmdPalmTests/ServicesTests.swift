@@ -40,6 +40,24 @@ import Testing
         #expect(image.pixelsHigh == expected)
     }
 
+    @Test func rendersIconsConcurrentlyWithoutCorruption() async throws {
+        let icons = try await withThrowingTaskGroup(of: (Int, Int).self) { group in
+            for i in 0..<16 {
+                let bundleID = i.isMultiple(of: 2) ? "com.apple.Safari" : "com.apple.finder"
+                group.addTask {
+                    let data = try #require(catalog.icon(id: bundleID, size: 64))
+                    let image = try #require(NSBitmapImageRep(data: data))
+                    return (image.pixelsWide, image.pixelsHigh)
+                }
+            }
+            var dimensions: [(Int, Int)] = []
+            for try await pair in group { dimensions.append(pair) }
+            return dimensions
+        }
+        #expect(icons.count == 16)
+        #expect(icons.allSatisfy { $0.0 == 64 && $0.1 == 64 })
+    }
+
     @Test func scansCustomFoldersAndSkipsMissingOnes() throws {
         let root = FileManager.default.temporaryDirectory.appending(path: "cmdpalm-apps-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: root) }
@@ -211,6 +229,9 @@ import Testing
         #expect(SystemActions.open("ssh://example.com") == false)
         #expect(SystemActions.open("SMB://example.com/share") == false)
         #expect(SystemActions.open("x-man-page://ls") == false)
+        #expect(SystemActions.open("sftp://example.com/file") == false)
+        #expect(SystemActions.open("webdavs://example.com/dav") == false)
+        #expect(SystemActions.open("vnc://mac.local") == false)
         #expect(SystemActions.open("javascript:alert(1)") == false)
         #expect(SystemActions.open("javascript:alert(1)", allowShellLike: true) == false)
         #expect(SystemActions.open("data:text/html,hi", allowShellLike: true) == false)

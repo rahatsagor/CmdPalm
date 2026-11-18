@@ -18,12 +18,19 @@ enum ApprovalPanel {
             DispatchQueue.main.async { withExtendedLifetime(closing) {} }
             return
         }
-        if panel == nil {
-            let panel = makePanel()
+        let panel: NSPanel
+        if let existing = self.panel {
+            panel = existing
+        } else {
+            panel = makePanel()
             self.panel = panel
             position(panel)
             panel.orderFrontRegardless()
             NSSound(named: "Glass")?.play()
+        }
+        DispatchQueue.main.async {
+            guard self.panel === panel else { return }
+            keepVisible(panel)
         }
     }
 
@@ -56,12 +63,31 @@ enum ApprovalPanel {
         let visible = screen.visibleFrame
         panel.setFrameOrigin(NSPoint(x: visible.maxX - size.width - 16, y: visible.maxY - size.height - 12))
     }
+
+    private static func keepVisible(_ panel: NSPanel) {
+        panel.layoutIfNeeded()
+        guard let screen = panel.screen ?? NSScreen.main ?? NSScreen.screens.first else { return }
+        let visible = screen.visibleFrame
+        let size = panel.frame.size
+        let minX = visible.minX + 16
+        let minY = visible.minY + 12
+        let maxX = max(minX, visible.maxX - size.width - 16)
+        let maxY = max(minY, visible.maxY - size.height - 12)
+        let clamped = NSPoint(
+            x: min(max(panel.frame.origin.x, minX), maxX),
+            y: min(max(panel.frame.origin.y, minY), maxY)
+        )
+        if clamped != panel.frame.origin {
+            panel.setFrameOrigin(clamped)
+        }
+    }
 }
 
 private struct ApprovalPrompt: View {
     @Environment(HostController.self) private var host
 
     var body: some View {
+        let waiting = max(0, host.approvals.count + host.displayApprovals.count - 1)
         if let request = host.approvals.first {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .top, spacing: 12) {
@@ -79,8 +105,8 @@ private struct ApprovalPrompt: View {
                     }
                 }
                 HStack {
-                    if host.approvals.count > 1 {
-                        Text("\(host.approvals.count - 1) more waiting")
+                    if waiting > 0 {
+                        Text("\(waiting) more waiting")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -88,12 +114,13 @@ private struct ApprovalPrompt: View {
                     Button("Don’t Allow") { host.respond(to: request, allow: false) }
                         .keyboardShortcut(.cancelAction)
                     Button("Allow") { host.respond(to: request, allow: true) }
+                        .buttonStyle(.borderedProminent)
                 }
             }
             .padding(16)
             .frame(width: 340)
         } else if let request = host.displayApprovals.first {
-            DisplayApprovalRow(request: request)
+            DisplayApprovalRow(request: request, waitingCount: waiting)
                 .padding(16)
                 .frame(width: 340)
         }

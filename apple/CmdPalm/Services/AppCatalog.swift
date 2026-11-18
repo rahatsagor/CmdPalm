@@ -63,6 +63,7 @@ final class AppCatalog: Sendable {
     /// after every app launch; they wait for one scan instead of each running
     /// their own on a core thread.
     private let scanning = NSLock()
+    private let iconLock = NSLock()
     private let ownID = Bundle.main.bundleIdentifier ?? ""
 
     /// Forget the scan so the next request picks up new or removed apps.
@@ -113,6 +114,8 @@ final class AppCatalog: Sendable {
     func icon(id: String, size: UInt32) -> Data? {
         guard let url = location(of: id) else { return nil }
         let pixels = Int(min(max(size, 16), 512))
+        iconLock.lock()
+        defer { iconLock.unlock() }
         let image = NSWorkspace.shared.icon(forFile: url.path)
         return Self.png(image, pixels: pixels)
     }

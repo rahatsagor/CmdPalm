@@ -62,8 +62,13 @@ final class AudioVolume: Sendable {
         // (removing needs the original block); `report` ignores them.
         let isNew = listened.withLock { $0.insert(id).inserted }
         if isNew, id != kAudioObjectUnknown {
-            for selector in [kAudioHardwareServiceDeviceProperty_VirtualMainVolume, kAudioDevicePropertyMute] {
-                var address = Self.address(selector)
+            var mainVolume = Self.address(kAudioHardwareServiceDeviceProperty_VirtualMainVolume)
+            let volumeAddresses: [AudioObjectPropertyAddress] = if AudioObjectHasProperty(id, &mainVolume) {
+                [mainVolume]
+            } else {
+                Self.channels(of: id).map { Self.address(kAudioDevicePropertyVolumeScalar, element: $0) }
+            }
+            for var address in volumeAddresses + [Self.address(kAudioDevicePropertyMute)] {
                 guard AudioObjectHasProperty(id, &address) else { continue }
                 AudioObjectAddPropertyListenerBlock(id, &address, queue) { [weak self] _, _ in
                     self?.report(from: id)

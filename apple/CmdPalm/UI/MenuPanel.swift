@@ -55,7 +55,7 @@ struct MenuPanel: View {
                     ApprovalRow(request: request)
                 }
                 ForEach(host.displayApprovals, id: \.id) { request in
-                    DisplayApprovalRow(request: request)
+                    DisplayApprovalRow(request: request, inMenu: true)
                 }
                 if !host.connected.isEmpty {
                     devices
