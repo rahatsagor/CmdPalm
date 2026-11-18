@@ -96,9 +96,17 @@ describe('controls used without touch', () => {
     const { Key } = await import('../src/lib/keys')
     const { default: Composer } = await import('../src/components/Composer.vue')
     const view = mount(Composer, { attachTo: document.body })
+    const esc = view.find('[aria-label="Escape"]').element as HTMLElement
+    const tabKey = view.find('[aria-label="Tab"]').element as HTMLElement
+    esc.focus()
+    const tabNav = new KeyboardEvent('keydown', { key: 'Tab', code: 'Tab', bubbles: true, cancelable: true })
+    esc.dispatchEvent(tabNav)
+    expect(tabNav.defaultPrevented).toBe(false)
+    expect(document.activeElement).toBe(tabKey)
+    enter(tabKey)
     enter(view.find('[aria-label="Left"]').element)
     readerClick(view.find('[aria-label="Return"]').element)
-    expect(socket.sent.filter((m) => m.t === 'tap')).toMatchObject([{ code: Key.Left }, { code: Key.Return }])
+    expect(socket.sent.filter((m) => m.t === 'tap')).toMatchObject([{ code: Key.Tab }, { code: Key.Left }, { code: Key.Return }])
     expect(socket.sent.filter((m) => m.t === 'key')).toEqual([])
   })
 

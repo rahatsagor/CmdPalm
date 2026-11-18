@@ -13,12 +13,45 @@ const MODIFIERS: Record<string, number> = {
 const down = new Set<number>()
 
 const INTERACTIVE = 'button, a[href], summary, [role="button"], [role="switch"], [role="tab"], [role="radio"], [role="option"], [role="menuitem"], [role="checkbox"]'
+const FOCUSABLE = 'a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])'
+const REMOTE_TAB_MODS = [Key.Command, Key.RightCommand, Key.Control, Key.RightControl, Key.Option, Key.RightOption]
+const CLEANUP_KEY = Symbol.for('cmdpalm.hardwareKeyboard')
 
 function activatesControl(event: KeyboardEvent): boolean {
   if (event.metaKey || event.ctrlKey || event.altKey) return false
   if (event.key !== 'Enter' && event.key !== ' ' && event.code !== 'Enter' && event.code !== 'NumpadEnter' && event.code !== 'Space') return false
   const el = event.target as Element | null
   return !!el?.closest?.(INTERACTIVE)
+}
+
+function isTabbable(el: HTMLElement): boolean {
+  if (el.tabIndex < 0 || el.closest('[inert], [hidden], [aria-hidden="true"]')) return false
+  for (let cur: HTMLElement | null = el; cur; cur = cur.parentElement) {
+    const style = getComputedStyle(cur)
+    if (style.display === 'none' || style.visibility === 'hidden') return false
+  }
+  return true
+}
+
+export function navigatesControls(event: KeyboardEvent): boolean {
+  if (event.key !== 'Tab' && event.code !== 'Tab') return false
+  if (event.metaKey || event.ctrlKey || event.altKey || REMOTE_TAB_MODS.some((mod) => down.has(mod))) return false
+  // Synthetic/test DOMs (like happy-dom) do not advance focus on Tab events.
+  if (!event.isTrusted || 'happyDOM' in window) {
+    const items = Array.from(document.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(isTabbable)
+    if (items.length) {
+      const active = document.activeElement instanceof HTMLElement ? document.activeElement : null
+      const index = active ? items.findIndex((item) => item === active || item.contains(active)) : -1
+      const next =
+        index === -1
+          ? event.shiftKey
+            ? items.at(-1)!
+            : items[0]!
+          : items[(index + (event.shiftKey ? items.length - 1 : 1)) % items.length]!
+      next.focus()
+    }
+  }
+  return true
 }
 
 function editable(target: EventTarget | null): boolean {
@@ -31,9 +64,10 @@ function codeFor(event: KeyboardEvent): number | undefined {
 }
 
 function onKeyDown(event: KeyboardEvent) {
-  // Sheets keep the keyboard for their own fields and Escape-to-close, and
-  // focused interactive controls keep Enter and Space for activation.
-  if (editable(event.target) || activatesControl(event) || event.isComposing || event.defaultPrevented || document.querySelector('[role="dialog"]')) return
+  // Sheets keep the keyboard for their own fields and Escape-to-close; unmodified
+  // Tab moves between phone controls, and focused controls keep Enter and Space.
+  if (event.isComposing || event.defaultPrevented || document.querySelector('[role="dialog"]')) return
+  if (navigatesControls(event) || editable(event.target) || activatesControl(event)) return
   const code = codeFor(event)
   if (code === undefined) return
   event.preventDefault()
@@ -56,6 +90,11 @@ export function releaseHardwareKeys() {
 }
 
 export function installHardwareKeyboard() {
+  const host = globalThis as unknown as { [CLEANUP_KEY]?: () => void }
+  host[CLEANUP_KEY]?.()
+  const onVisibility = () => {
+    if (document.visibilityState === 'hidden') down.clear()
+  }
   addEventListener('keydown', onKeyDown)
   addEventListener('keyup', onKeyUp)
   // Key-up events are lost when focus leaves the page mid-press.
@@ -63,10 +102,16 @@ export function installHardwareKeyboard() {
   // The Mac lets go of every key on reconnect, on pause and when the page
   // hides. Forgetting them here lets a key still held press again on its
   // next repeat instead of being ignored.
-  onMessage((message) => {
+  const offMessage = onMessage((message) => {
     if (message.t === 'welcome' || message.t === 'paused') down.clear()
   })
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') down.clear()
-  })
+  document.addEventListener('visibilitychange', onVisibility)
+  host[CLEANUP_KEY] = () => {
+    removeEventListener('keydown', onKeyDown)
+    removeEventListener('keyup', onKeyUp)
+    removeEventListener('blur', releaseHardwareKeys)
+    document.removeEventListener('visibilitychange', onVisibility)
+    offMessage()
+    releaseHardwareKeys()
+  }
 }

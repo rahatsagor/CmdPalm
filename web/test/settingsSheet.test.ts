@@ -111,7 +111,6 @@ describe('settings feature tabs', () => {
   it('edits just the selected finger map and keeps canceled gesture drafts out of settings', async () => {
     await settings()
     await click('Gestures')
-    expect(prefs.settings.showAdvanced).toBe(false)
     await click('Four fingers')
     await click('Tap')
     const editor = document.querySelector<HTMLElement>('[aria-label="Four-finger tap"]')!

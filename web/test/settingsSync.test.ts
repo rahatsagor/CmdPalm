@@ -370,6 +370,27 @@ describe('copying from another device', () => {
     const byId = Object.fromEntries(sync.COPY_CATEGORIES.map((category) => [category.id, [...category.keys]]))
     expect(byId.trackpad).toContain('showTouches')
     expect(byId.appearance).not.toContain('showTouches')
+    expect(keys).not.toContain('showAdvanced')
+    expect(sync.buildPayload().settings).not.toHaveProperty('showAdvanced')
+  })
+
+  it('ignores removed legacy showAdvanced preferences when syncing or copying settings', async () => {
+    const socket = connect()
+    const preview = sync.requestCopy({ id: 'old', name: 'Old iPad', model: 'iPad', updatedAt: NOW - 1000 })
+    const request = socket.sent.at(-1)!
+    socket.receive({
+      t: 'settings',
+      id: request.id,
+      settings: { version: 1, settings: { theme: 'light', showTouches: false, showAdvanced: true }, keyboards: [] },
+      updatedAt: NOW - 1000,
+    })
+    const loaded = (await preview)!
+    expect(loaded.settings).toEqual({ theme: 'light', showTouches: false })
+    expect(loaded.settings).not.toHaveProperty('showAdvanced')
+    expect(sync.copyFrom(loaded, { categories: ['appearance', 'trackpad'], keyboards: [] })).toBe(true)
+    expect(prefs.settings.theme).toBe('light')
+    expect(prefs.settings.showTouches).toBe(false)
+    expect(prefs.settings).not.toHaveProperty('showAdvanced')
   })
 })
 

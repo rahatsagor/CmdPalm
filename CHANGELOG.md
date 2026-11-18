@@ -73,8 +73,9 @@ and versions follow [Semantic Versioning](https://semver.org/).
   Controls have clearer screen-reader names and descriptions.
 - Gesture editors keep keyboard focus inside the dialog, and Escape closes
   only the top dialog. Main control surfaces keep forwarding the physical
-  keyboard to the Mac while letting Enter and Space activate focused buttons and
-  controls, and mouse-button labels fit on narrow phones.
+  keyboard to the Mac while letting Tab and Shift+Tab move focus through
+  phone controls and Enter and Space activate them, and mouse-button labels fit
+  on narrow phones.
 - Tab labels are easier to read, trackpad tips follow your enabled gestures,
   and empty app searches offer a Clear search button.
 - Reset and Forget explain what happens and offer Cancel before applying the

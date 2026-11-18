@@ -83,13 +83,21 @@ describe('MediaView', () => {
     view.unmount()
   })
 
-  it('keeps Enter and Space on focused media buttons local even with hardware keyboard forwarding installed', async () => {
+  it('moves focus through phone buttons with Tab and Shift+Tab while keeping Enter, Space and modified Tab working', async () => {
     const { socket, view } = await mediaView()
     const { installHardwareKeyboard } = await import('../src/lib/hardware')
     const { Key } = await import('../src/lib/keys')
     installHardwareKeyboard()
+    const previous = view.find('button[aria-label="Previous track"]').element as HTMLButtonElement
     const play = view.find('button[aria-label="Play or pause"]').element as HTMLButtonElement
-    play.focus()
+    previous.focus()
+
+    const forwardDown = new KeyboardEvent('keydown', { key: 'Tab', code: 'Tab', bubbles: true, cancelable: true })
+    previous.dispatchEvent(forwardDown)
+    previous.dispatchEvent(new KeyboardEvent('keyup', { key: 'Tab', code: 'Tab', bubbles: true, cancelable: true }))
+    expect(forwardDown.defaultPrevented).toBe(false)
+    expect(document.activeElement).toBe(play)
+    expect(socket.sent.filter((m) => m.t === 'key')).toEqual([])
 
     const enter = new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true, cancelable: true })
     play.dispatchEvent(enter)
@@ -99,10 +107,42 @@ describe('MediaView', () => {
     expect(space.defaultPrevented).toBe(false)
     expect(socket.sent.filter((m) => m.t === 'key')).toEqual([])
 
+    const backwardDown = new KeyboardEvent('keydown', { key: 'Tab', code: 'Tab', shiftKey: true, bubbles: true, cancelable: true })
+    play.dispatchEvent(backwardDown)
+    play.dispatchEvent(new KeyboardEvent('keyup', { key: 'Tab', code: 'Tab', shiftKey: true, bubbles: true, cancelable: true }))
+    expect(backwardDown.defaultPrevented).toBe(false)
+    expect(document.activeElement).toBe(previous)
+    expect(socket.sent.filter((m) => m.t === 'key')).toEqual([])
+
+    const cmdTab = new KeyboardEvent('keydown', { key: 'Tab', code: 'Tab', metaKey: true, bubbles: true, cancelable: true })
+    previous.dispatchEvent(cmdTab)
+    previous.dispatchEvent(new KeyboardEvent('keyup', { key: 'Tab', code: 'Tab', metaKey: true, bubbles: true, cancelable: true }))
+    expect(cmdTab.defaultPrevented).toBe(true)
+    expect(document.activeElement).toBe(previous)
+    expect(socket.sent.filter((m) => m.t === 'key')).toMatchObject([
+      { code: Key.Tab, down: true },
+      { code: Key.Tab, down: false },
+    ])
+
+    socket.sent.length = 0
     const letter = new KeyboardEvent('keydown', { key: 'a', code: 'KeyA', bubbles: true, cancelable: true })
     document.body.dispatchEvent(letter)
     expect(letter.defaultPrevented).toBe(true)
     expect(socket.sent.filter((m) => m.t === 'key')).toMatchObject([{ code: Key.A, down: true }])
+
+    installHardwareKeyboard()
+    expect(socket.sent.filter((m) => m.t === 'key')).toMatchObject([
+      { code: Key.A, down: true },
+      { code: Key.A, down: false },
+    ])
+
+    document.body.dispatchEvent(new KeyboardEvent('keyup', { key: 'a', code: 'KeyA', bubbles: true, cancelable: true }))
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'b', code: 'KeyB', bubbles: true, cancelable: true }))
+    expect(socket.sent.filter((m) => m.t === 'key')).toMatchObject([
+      { code: Key.A, down: true },
+      { code: Key.A, down: false },
+      { code: Key.B, down: true },
+    ])
     view.unmount()
   })
 })

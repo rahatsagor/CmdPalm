@@ -47,7 +47,7 @@ export const COPY_CATEGORIES = [
   },
   {
     id: 'appearance', label: 'Appearance and feedback', hint: 'Theme, haptics and screen preferences',
-    keys: ['theme', 'haptics', 'keyHaptics', 'keepAwake', 'showAdvanced'],
+    keys: ['theme', 'haptics', 'keyHaptics', 'keepAwake'],
   },
 ] as const satisfies readonly { id: string; label: string; hint: string; keys: readonly (keyof SyncedPrefs)[] }[]
 

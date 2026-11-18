@@ -9,7 +9,6 @@ import { blankBoard } from '../src/lib/customKeyboards'
 import { Key } from '../src/lib/keys'
 import { Mod } from '../src/lib/protocol'
 import { state } from '../src/lib/connection'
-import { settings } from '../src/lib/settings'
 import { LIMITS } from '../src/lib/deck'
 
 // A failed test must not leave its sheet behind for the next one to type into.
@@ -89,7 +88,6 @@ describe('BoardEditor', () => {
 
 describe('action choices', () => {
   it('keeps shortcuts, sequences and waits available without the removed advanced toggle', () => {
-    settings.showAdvanced = false
     const previous = state.features.shell
     state.features.shell = false
     try {

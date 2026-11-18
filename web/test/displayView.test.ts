@@ -139,7 +139,15 @@ describe('fullscreen display accessibility', () => {
     const received = vi.fn()
     window.addEventListener('keydown', received)
     try {
-      await button(view, 'Exit').trigger('keydown', { key: 'Enter', code: 'Enter' })
+      const region = view.get('[aria-label="Fullscreen Mac display"]')
+      const fsStop = region.findAll('button').find(item => item.text() === 'Stop')!
+      const fsExit = region.findAll('button').find(item => item.text() === 'Exit')!
+      ;(fsStop.element as HTMLElement).focus()
+      await fsStop.trigger('keydown', { key: 'Tab', code: 'Tab' })
+      expect(document.activeElement).toBe(fsExit.element)
+      await fsExit.trigger('keydown', { key: 'Tab', code: 'Tab', shiftKey: true })
+      expect(document.activeElement).toBe(fsStop.element)
+      await fsExit.trigger('keydown', { key: 'Enter', code: 'Enter' })
       expect(received).not.toHaveBeenCalled()
       await view.get('[aria-label="Fullscreen Mac display"]').trigger('keydown', { key: 'a', code: 'KeyA' })
       expect(received).toHaveBeenCalledOnce()

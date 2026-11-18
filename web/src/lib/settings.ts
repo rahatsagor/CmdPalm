@@ -54,7 +54,6 @@ export interface Settings {
   showTouches: boolean
   rememberDevice: boolean
   deviceName: string
-  showAdvanced: boolean
   tab: Tab
   deckPage: string
 }
@@ -126,7 +125,6 @@ export function defaultSettings(): Settings {
     showTouches: true,
     rememberDevice: true,
     deviceName: '',
-    showAdvanced: false,
     tab: 'trackpad',
     deckPage: '',
   }
