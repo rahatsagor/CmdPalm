@@ -17,7 +17,7 @@ use str0m::{Candidate, Event, Input, Output, Rtc};
 use tokio::net::UdpSocket;
 use tokio::sync::{Notify, mpsc, watch};
 
-use crate::api::{DisplayApprovalRequest, DisplayCommand, HostEvent};
+use crate::api::{DisplayApprovalRequest, DisplayCommand, DisplayProfile, HostEvent};
 use crate::host::{Outgoing, Shared};
 use crate::protocol::{DisplayInfo, DisplayQuality, ServerMessage};
 
@@ -602,6 +602,8 @@ pub(crate) fn start(
 
 /// Conservative receiver limits, including the macroblock rate. Many phone
 /// offers advertise level 3.1 even when their hardware can decode more.
+/// Desktop streams are idle when still, so higher LAN ceilings improve scrolling
+/// without raising idle bandwidth; BWE scales down on slower links.
 fn capture_limits(quality: DisplayQuality, level: u8) -> (u32, u32, u32) {
     if quality == DisplayQuality::Original {
         return (3840, 1, 0);
@@ -610,12 +612,21 @@ fn capture_limits(quality: DisplayQuality, level: u8) -> (u32, u32, u32) {
         return (352, 15, 400_000);
     }
     match quality {
-        DisplayQuality::Auto if level >= 32 => (1280, 60, 4_000_000),
-        DisplayQuality::Auto => (896, 60, 3_000_000),
-        DisplayQuality::Battery => (960, 30, 1_500_000),
-        DisplayQuality::Sharp if level >= 40 => (1920, 30, 6_000_000),
-        DisplayQuality::Sharp => (1280, 30, 4_000_000),
+        DisplayQuality::Auto if level >= 32 => (1280, 60, 8_000_000),
+        DisplayQuality::Auto => (896, 60, 4_500_000),
+        DisplayQuality::Battery => (960, 30, 2_000_000),
+        DisplayQuality::Sharp if level >= 40 => (1920, 30, 12_000_000),
+        DisplayQuality::Sharp => (1280, 30, 6_000_000),
         DisplayQuality::Original => unreachable!(),
+    }
+}
+
+fn h264_profile(profile_level_id: Option<u32>) -> (u8, DisplayProfile) {
+    match profile_level_id.unwrap_or(0x42e01f) >> 8 {
+        0x640c => (3, DisplayProfile::ConstrainedHigh),
+        0x6400 => (2, DisplayProfile::ConstrainedHigh),
+        0x4d00 => (1, DisplayProfile::Main),
+        _ => (0, DisplayProfile::ConstrainedBaseline),
     }
 }
 
@@ -767,11 +778,15 @@ async fn run(
         .set_send_buffer_video(1024)
         .set_sctp_max_message_size(1024)
         .set_sctp_max_buffered_amount(128 * 1024)
-        .enable_bwe(Some(Bitrate::mbps(1)))
+        .enable_bwe(Some(Bitrate::mbps(4)))
         .set_stats_interval(Some(Duration::from_secs(1)));
     builder.codec_config().clear();
-    // The encoder always emits Constrained Baseline. The receiver's offered
-    // level, not this local receive ceiling, determines capture limits below.
+    // Prefer CABAC-capable H.264 profiles (no B-frames) when the browser
+    // offers them, falling back to Constrained Baseline. The receiver's
+    // offered level determines capture limits below.
+    builder.codec_config().add_h264(114.into(), Some(115.into()), true, 0x640c2a);
+    builder.codec_config().add_h264(112.into(), Some(113.into()), true, 0x64002a);
+    builder.codec_config().add_h264(123.into(), Some(119.into()), true, 0x4d002a);
     builder.codec_config().add_h264(108.into(), Some(109.into()), true, 0x42e02a);
     let started = Instant::now();
     let mut rtc = builder.build(started);
@@ -809,6 +824,7 @@ async fn run(
     let mut last_config = Instant::now();
     let mut last_keyframe = Instant::now() - Duration::from_secs(1);
     let mut waiting_for_keyframe = true;
+    let mut frames_sent = 0u64;
     let mut send_failing: Option<Instant> = None;
     let mut tick = tokio::time::interval(Duration::from_millis(250));
     loop {
@@ -895,16 +911,24 @@ async fn run(
                     if added.direction != Direction::SendOnly {
                         return Err("The browser requested an unsupported video connection.".into());
                     }
-                    let pt = rtc.writer(added.mid).and_then(|writer| {
-                        writer.payload_params().find(|p| p.spec().codec == Codec::H264).map(|p| p.pt())
+                    let chosen = rtc.writer(added.mid).and_then(|writer| {
+                        writer
+                            .payload_params()
+                            .filter(|p| p.spec().codec == Codec::H264)
+                            .max_by_key(|p| h264_profile(p.spec().format.profile_level_id).0)
+                            .map(|p| (p.pt(), h264_profile(p.spec().format.profile_level_id).1))
                     });
-                    let Some(pt) = pt else { return Err("This browser did not offer compatible H.264 video.".into()) };
+                    let Some((pt, profile)) = chosen else {
+                        return Err("This browser did not offer compatible H.264 video.".into());
+                    };
                     let level = receiver_level(&offer_text, *pt);
                     let (dimension, fps, bitrate) = capture_limits(quality, level);
-                    media = Some((added.mid, pt, dimension));
+                    media = Some((added.mid, pt, dimension, profile));
                     maximum_bitrate = bitrate;
                     current_bitrate = bitrate;
                     maximum_fps = fps;
+                    let initial_bwe = bitrate.min(6_000_000) as u64;
+                    rtc.bwe().reset(Bitrate::bps(initial_bwe));
                     rtc.bwe().set_bitrate(Bitrate::ZERO, Bitrate::bps(bitrate as u64));
                 }
                 Output::Event(Event::Connected) => {
@@ -932,7 +956,7 @@ async fn run(
                     }
                 }
                 Output::Event(Event::EgressBitrateEstimate(estimate)) => {
-                    if original {
+                    if original || frames_sent == 0 {
                         continue;
                     }
                     let estimate = match estimate {
@@ -940,9 +964,12 @@ async fn run(
                         _ => continue,
                     };
                     let bitrate = ((estimate.as_u64() * 8 / 10).min(maximum_bitrate as u64) as u32).max(250_000);
+                    let decreasing = bitrate < current_bitrate;
+                    let cooldown = if decreasing { Duration::from_millis(400) } else { Duration::from_secs(1) };
+                    let threshold = if decreasing { current_bitrate * 3 / 20 } else { current_bitrate / 5 };
                     if connected
-                        && last_config.elapsed() >= Duration::from_secs(1)
-                        && bitrate.abs_diff(current_bitrate) > current_bitrate / 5
+                        && last_config.elapsed() >= cooldown
+                        && bitrate.abs_diff(current_bitrate) > threshold
                     {
                         current_bitrate = bitrate;
                         let fps = if bitrate < 800_000 {
@@ -973,6 +1000,7 @@ async fn run(
                         fps: 1,
                         bitrate: 0,
                         original: true,
+                        profile: DisplayProfile::ConstrainedBaseline,
                     },
                 );
                 shared.send_to(session, state(request, "streaming", None));
@@ -980,7 +1008,7 @@ async fn run(
             if !original
                 && connected
                 && !capture_started
-                && let Some((_, _, max_dimension)) = media
+                && let Some((_, _, max_dimension, profile)) = media
             {
                 capture_started = true;
                 shared.delegate.display_command(
@@ -992,6 +1020,7 @@ async fn run(
                         fps: maximum_fps,
                         bitrate: current_bitrate,
                         original: false,
+                        profile,
                     },
                 );
                 shared.send_to(session, state(request, "streaming", None));
@@ -1015,13 +1044,17 @@ async fn run(
                 if frame.queued.elapsed() > Duration::from_millis(150) {
                     waiting_for_keyframe = true;
                     needs_keyframe.store(true, Ordering::Release);
-                    shared.delegate.display_command(session, DisplayCommand::KeyFrame { generation });
+                    if last_keyframe.elapsed() > Duration::from_millis(500) {
+                        shared.delegate.display_command(session, DisplayCommand::KeyFrame { generation });
+                        last_keyframe = Instant::now();
+                    }
                     continue;
                 }
                 if waiting_for_keyframe && !frame.keyframe { continue; }
                 if frame.keyframe { waiting_for_keyframe = false; }
-                if let Some((mid, pt, _)) = media {
+                if let Some((mid, pt, _, _)) = media {
                     rtc.writer(mid).ok_or("The video track ended.")?.write(pt, Instant::now(), MediaTime::from_micros(frame.timestamp_us), frame.data).map_err(|e| e.to_string())?;
+                    frames_sent += 1;
                 }
             }
             _ = tokio::time::sleep_until(deadline.into()) => { rtc.handle_input(Input::Timeout(Instant::now())).map_err(|e| e.to_string())?; }
@@ -1034,12 +1067,30 @@ mod tests {
     use super::*;
     #[test]
     fn levels_limit_resolution_and_macroblock_rate() {
-        assert_eq!(capture_limits(DisplayQuality::Auto, 31), (896, 60, 3_000_000));
-        assert_eq!(capture_limits(DisplayQuality::Sharp, 31).0, 1280);
-        assert_eq!(capture_limits(DisplayQuality::Sharp, 40).0, 1920);
+        assert_eq!(capture_limits(DisplayQuality::Auto, 31), (896, 60, 4_500_000));
+        assert_eq!(capture_limits(DisplayQuality::Auto, 32), (1280, 60, 8_000_000));
+        assert_eq!(capture_limits(DisplayQuality::Battery, 31), (960, 30, 2_000_000));
+        assert_eq!(capture_limits(DisplayQuality::Sharp, 31), (1280, 30, 6_000_000));
+        assert_eq!(capture_limits(DisplayQuality::Sharp, 40), (1920, 30, 12_000_000));
         assert_eq!(capture_limits(DisplayQuality::Original, 31), (3840, 1, 0));
         assert_eq!(receiver_level("a=fmtp:108 packetization-mode=1; profile-level-id=42e020\r\n", 108), 32);
         assert_eq!(receiver_level("a=fmtp:109 profile-level-id=42e02a\r\n", 108), 31);
+    }
+
+    #[test]
+    fn h264_profile_ranking_prefers_cabac_profiles_over_baseline() {
+        let ch = h264_profile(Some(0x640c2a));
+        let high = h264_profile(Some(0x64002a));
+        let main = h264_profile(Some(0x4d002a));
+        let cb = h264_profile(Some(0x42e01f));
+        let unknown = h264_profile(None);
+
+        assert_eq!(ch.1, DisplayProfile::ConstrainedHigh);
+        assert_eq!(high.1, DisplayProfile::ConstrainedHigh);
+        assert_eq!(main.1, DisplayProfile::Main);
+        assert_eq!(cb.1, DisplayProfile::ConstrainedBaseline);
+        assert_eq!(unknown.1, DisplayProfile::ConstrainedBaseline);
+        assert!(ch.0 > high.0 && high.0 > main.0 && main.0 > cb.0);
     }
 
     #[test]

@@ -114,6 +114,37 @@ import ImageIO
         #expect(DisplayVideo.annexB(Data([0, 0, 0, 0, 0]), headerLength: 5, parameters: []) == nil)
         #expect(DisplayVideo.annexB(Data([0]), headerLength: 0, parameters: []) == nil)
     }
+
+    @Test func dirtyRectDetectionSkipsEmptyAndZeroAreaUpdates() {
+        #expect(DisplayVideo.hasDirtyContent(nil))
+        #expect(!DisplayVideo.hasDirtyContent([] as [Any]))
+        #expect(!DisplayVideo.hasDirtyContent([NSValue(rect: .zero)]))
+        #expect(!DisplayVideo.hasDirtyContent([CGRect.zero.dictionaryRepresentation]))
+        #expect(DisplayVideo.hasDirtyContent([NSValue(rect: NSRect(x: 10, y: 20, width: 32, height: 16))]))
+        #expect(DisplayVideo.hasDirtyContent([CGRect(x: 0, y: 0, width: 4, height: 4).dictionaryRepresentation]))
+    }
+
+    @Test func captureBucketAllowsTwoFrameBurstThenPacesAtConfiguredFps() {
+        var bucket = CaptureBucket(fps: 60, now: 10.0)
+        #expect(bucket.ready(now: 10.0))
+        bucket.spend(now: 10.0)
+        #expect(bucket.ready(now: 10.0))
+        bucket.spend(now: 10.0)
+        #expect(!bucket.ready(now: 10.0))
+        #expect(bucket.waitSeconds(now: 10.0) > 0.015)
+
+        let nextFrame = 10.0 + (1.0 / 60.0) + 0.0001
+        #expect(bucket.ready(now: nextFrame))
+        bucket.spend(now: nextFrame)
+        #expect(!bucket.ready(now: nextFrame))
+
+        bucket.setFPS(30, now: nextFrame + 1.0)
+        #expect(bucket.ready(now: nextFrame + 1.0))
+        bucket.spend(now: nextFrame + 1.0)
+        bucket.spend(now: nextFrame + 1.0)
+        #expect(!bucket.ready(now: nextFrame + 1.0))
+        #expect(bucket.waitSeconds(now: nextFrame + 1.0) > 0.032)
+    }
 }
 
 @Suite struct DisplayGateTests {
@@ -272,7 +303,7 @@ private func grayNV12(width: Int, height: Int) throws -> CVPixelBuffer {
     return pixelBuffer
 }
 
-private func encodeOneGrayFrame(maxDimension: Int, fps: Int, bitrate: Int) throws -> EncoderCallbackResult {
+private func encodeOneGrayFrame(maxDimension: Int, fps: Int, bitrate: Int, profile: DisplayProfile = .constrainedBaseline) throws -> EncoderCallbackResult {
     let size = DisplayVideo.size(width: 2560, height: 1600, maximum: maxDimension)
     let pixelBuffer = try grayNV12(width: size.width, height: size.height)
     let probe = EncoderCallbackProbe()
@@ -283,7 +314,7 @@ private func encodeOneGrayFrame(maxDimension: Int, fps: Int, bitrate: Int) throw
         width: Int32(size.width),
         height: Int32(size.height),
         codecType: kCMVideoCodecType_H264,
-        encoderSpecification: [kVTVideoEncoderSpecification_RequireHardwareAcceleratedVideoEncoder: true] as CFDictionary,
+        encoderSpecification: DisplayVideo.encoderSpecification(),
         imageBufferAttributes: nil,
         compressedDataAllocator: nil,
         outputCallback: { context, _, status, _, sampleBuffer in
@@ -305,7 +336,7 @@ private func encodeOneGrayFrame(maxDimension: Int, fps: Int, bitrate: Int) throw
     }
 
     do {
-        try DisplayVideo.configureEncoder(encoder, fps: fps, bitrate: bitrate)
+        try DisplayVideo.configureEncoder(encoder, fps: fps, bitrate: bitrate, profile: profile)
         var rateLimits: Unmanaged<CFTypeRef>?
         let status = VTSessionCopyProperty(encoder, key: kVTCompressionPropertyKey_DataRateLimits, allocator: nil, valueOut: &rateLimits)
         let limits = rateLimits?.takeRetainedValue() as? [NSNumber]
@@ -331,24 +362,26 @@ private func encodeOneGrayFrame(maxDimension: Int, fps: Int, bitrate: Int) throw
 
 @Suite(.serialized) struct DisplayHardwareEncoderSmokeTests {
     @Test(.enabled(if: ProcessInfo.processInfo.environment["CMDPALM_TEST_HARDWARE_VIDEO"] == "1"))
-    func emitsFirstConstrainedBaselineFrameWithoutWaitingForAnotherFrame() {
-        let cases = [
-            (maximum: 896, fps: 60, bitrate: 3_000_000, maxLevel: 31),
-            (maximum: 1280, fps: 60, bitrate: 4_000_000, maxLevel: 32),
-            (maximum: 960, fps: 30, bitrate: 1_500_000, maxLevel: 31),
-            (maximum: 1920, fps: 30, bitrate: 6_000_000, maxLevel: 40),
+    func emitsFirstFrameAcrossNegotiatedProfilesWithoutWaitingForAnotherFrame() {
+        let cases: [(maximum: Int, fps: Int, bitrate: Int, maxLevel: UInt8, profile: DisplayProfile, profileIdc: UInt8)] = [
+            (maximum: 896, fps: 60, bitrate: 4_500_000, maxLevel: 31, profile: .constrainedBaseline, profileIdc: 66),
+            (maximum: 1280, fps: 60, bitrate: 8_000_000, maxLevel: 32, profile: .main, profileIdc: 77),
+            (maximum: 960, fps: 30, bitrate: 2_000_000, maxLevel: 31, profile: .constrainedBaseline, profileIdc: 66),
+            (maximum: 1920, fps: 30, bitrate: 12_000_000, maxLevel: 40, profile: .constrainedHigh, profileIdc: 100),
         ]
         for testCase in cases {
             do {
-                let callback = try encodeOneGrayFrame(maxDimension: testCase.maximum, fps: testCase.fps, bitrate: testCase.bitrate)
+                let callback = try encodeOneGrayFrame(maxDimension: testCase.maximum, fps: testCase.fps, bitrate: testCase.bitrate, profile: testCase.profile)
                 #expect(callback.status == noErr)
                 guard callback.status == noErr, let sps = callback.sps, sps.count >= 4 else {
                     Issue.record("The hardware encoder callback did not contain a valid H.264 SPS for max dimension \(testCase.maximum).")
                     continue
                 }
                 let bytes = [UInt8](sps)
-                #expect(bytes[1] == 66, "Expected H.264 profile_idc 66 for constrained baseline.")
-                #expect(bytes[2] & 0xc0 == 0xc0, "Expected baseline and constrained-baseline SPS flags.")
+                #expect(bytes[1] == testCase.profileIdc, "Expected H.264 profile_idc \(testCase.profileIdc) for \(testCase.profile).")
+                if testCase.profile == .constrainedBaseline {
+                    #expect(bytes[2] & 0xc0 == 0xc0, "Expected baseline and constrained-baseline SPS flags.")
+                }
                 #expect(bytes[3] <= testCase.maxLevel, "The encoder exceeded the negotiated H.264 level ceiling.")
             } catch {
                 Issue.record("Hardware encoder smoke failed for max dimension \(testCase.maximum): \(error)")

@@ -56,7 +56,7 @@ final class DisplayService: Sendable {
 
     func command(session: UInt64, command: DisplayCommand) {
         switch command {
-        case let .start(generation, _, _, _, _, _):
+        case let .start(generation, _, _, _, _, _, _):
             guard gate.begin(generation) else {
                 reference.host?.displayFailed(session: session, generation: generation, message: "Unlock or wake the Mac, then start viewing again.")
                 return
@@ -111,9 +111,9 @@ private actor DisplayController {
             } catch {
                 reference.host?.displaySources(session: session, requestId: requestId, displays: [], message: (error as? DisplayError)?.message ?? "The Mac could not list its displays. Check Screen Recording permission, then refresh.")
             }
-        case let .start(generation, displayId, maxDimension, fps, bitrate, original):
+        case let .start(generation, displayId, maxDimension, fps, bitrate, original, profile):
             guard gate.contains(generation) else { return }
-            let config = DisplaySettings(session: session, generation: generation, id: displayId, dimension: Int(maxDimension), fps: Int(fps), bitrate: Int(bitrate), original: original)
+            let config = DisplaySettings(session: session, generation: generation, id: displayId, dimension: Int(maxDimension), fps: Int(fps), bitrate: Int(bitrate), original: original, profile: profile)
             await start(config)
         case let .configure(generation, fps, bitrate):
             guard gate.contains(generation), active?.generation == generation else { return }
@@ -241,6 +241,55 @@ struct DisplaySettings: Sendable {
     var fps: Int
     var bitrate: Int
     var original = false
+    var profile: DisplayProfile = .constrainedBaseline
+}
+
+/// Token bucket pacing captures at the active frame rate while keeping a
+/// two-frame burst reserve so waking from an idle desktop is never delayed.
+struct CaptureBucket: Sendable {
+    static let burst = 2.0
+    private(set) var interval: Double
+    private(set) var credit: Double
+    private var updated: Double
+
+    init(fps: Int, now: Double = 0) {
+        interval = 1.0 / Double(max(1, fps))
+        credit = Self.burst * interval
+        updated = now
+    }
+
+    mutating func reset(fps: Int, now: Double) {
+        interval = 1.0 / Double(max(1, fps))
+        credit = Self.burst * interval
+        updated = now
+    }
+
+    mutating func setFPS(_ fps: Int, now: Double) {
+        refill(now: now)
+        interval = 1.0 / Double(max(1, fps))
+        credit = min(credit, Self.burst * interval)
+    }
+
+    mutating func refill(now: Double) {
+        guard now > updated else { return }
+        credit = min(credit + (now - updated), Self.burst * interval)
+        updated = now
+    }
+
+    func ready(now: Double) -> Bool {
+        waitSeconds(now: now) == 0
+    }
+
+    mutating func spend(now: Double) {
+        refill(now: now)
+        credit = max(0, credit - interval)
+    }
+
+    func waitSeconds(now: Double) -> Double {
+        let elapsed = max(0, now - updated)
+        let available = min(credit + elapsed, Self.burst * interval)
+        return available >= interval ? 0 : interval - available
+    }
 }
 
 private enum DisplayError: Error {
@@ -314,19 +363,57 @@ enum DisplayVideo {
         return output as Data
     }
 
-    static func configureEncoder(_ encoder: VTCompressionSession, fps: Int, bitrate: Int) throws {
+    static func hasDirtyContent(_ dirtyRects: Any?) -> Bool {
+        guard let rects = dirtyRects as? [Any] else { return true }
+        if rects.isEmpty { return false }
+        for item in rects {
+            let rect: CGRect
+            if let value = item as? NSValue {
+                rect = value.rectValue
+            } else if CFGetTypeID(item as CFTypeRef) == CFDictionaryGetTypeID(),
+                      let parsed = CGRect(dictionaryRepresentation: item as! CFDictionary) {
+                rect = parsed
+            } else {
+                return true
+            }
+            if rect.width.isFinite && rect.height.isFinite && rect.width > 0 && rect.height > 0 {
+                return true
+            }
+        }
+        return false
+    }
+
+    static func profileLevel(for profile: DisplayProfile) -> CFString {
+        switch profile {
+        case .constrainedHigh: kVTProfileLevel_H264_ConstrainedHigh_AutoLevel
+        case .main: kVTProfileLevel_H264_Main_AutoLevel
+        case .constrainedBaseline: kVTProfileLevel_H264_ConstrainedBaseline_AutoLevel
+        }
+    }
+
+    static func encoderSpecification() -> CFDictionary {
+        [
+            kVTVideoEncoderSpecification_RequireHardwareAcceleratedVideoEncoder: true,
+        ] as CFDictionary
+    }
+
+    static func configureEncoder(_ encoder: VTCompressionSession, fps: Int, bitrate: Int, profile: DisplayProfile = .constrainedBaseline) throws {
         let properties: [CFString: Any] = [
-            kVTCompressionPropertyKey_ProfileLevel: kVTProfileLevel_H264_ConstrainedBaseline_AutoLevel,
+            kVTCompressionPropertyKey_ProfileLevel: profileLevel(for: profile),
             kVTCompressionPropertyKey_RealTime: true,
             kVTCompressionPropertyKey_AllowFrameReordering: false,
             kVTCompressionPropertyKey_AverageBitRate: bitrate,
             kVTCompressionPropertyKey_ExpectedFrameRate: fps,
-            kVTCompressionPropertyKey_MaxKeyFrameIntervalDuration: 2,
+            kVTCompressionPropertyKey_MaxKeyFrameIntervalDuration: 30,
             kVTCompressionPropertyKey_ColorPrimaries: kCVImageBufferColorPrimaries_ITU_R_709_2,
             kVTCompressionPropertyKey_TransferFunction: kCVImageBufferTransferFunction_ITU_R_709_2,
             kVTCompressionPropertyKey_YCbCrMatrix: kCVImageBufferYCbCrMatrix_ITU_R_709_2,
         ]
         guard VTSessionSetProperties(encoder, propertyDictionary: properties as CFDictionary) == noErr else { throw DisplayError.encoder }
+        if profile != .constrainedBaseline {
+            VTSessionSetProperty(encoder, key: kVTCompressionPropertyKey_H264EntropyMode, value: kVTH264EntropyMode_CABAC)
+        }
+        VTSessionSetProperty(encoder, key: kVTCompressionPropertyKey_MaximumRealTimeFrameRate, value: fps as CFNumber)
         setRateLimit(encoder, bitrate: bitrate)
         // Set before preparation so the first frame can be emitted without
         // waiting for another frame on a static desktop.
@@ -338,10 +425,11 @@ enum DisplayVideo {
         guard status == noErr, accelerated == true else { throw DisplayError.encoder }
     }
 
-    static func setRateLimit(_ encoder: VTCompressionSession, bitrate: Int) {
+    static func setRateLimit(_ encoder: VTCompressionSession, bitrate: Int, wide: Bool = false) {
         // AverageBitRate permits large spikes. Bound a one-second window
-        // with room for an IDR; encoders that lack this key keep the target.
-        let limit: [NSNumber] = [NSNumber(value: max(1, bitrate * 5 / 32)), NSNumber(value: 1.0)]
+        // with room for an IDR; idle refinement passes get a wider budget.
+        let numerator = wide ? 10 : 5
+        let limit: [NSNumber] = [NSNumber(value: max(1, bitrate * numerator / 32)), NSNumber(value: 1.0)]
         VTSessionSetProperty(encoder, key: kVTCompressionPropertyKey_DataRateLimits, value: limit as CFArray)
     }
 }
@@ -364,21 +452,30 @@ final class DisplayCapture: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
         var keyframe = true
         var stopped = false
         var forcedKeyframeInFlight = false
+        var refinementInFlight = false
         var fps: Int
         var bitrate: Int
     }
     private let flags: Mutex<Flags>
     @MainActor private var stream: SCStream?
-    @MainActor private var configuredFPS: Int?
     /// Confined to the sample handler queue, including invalidation.
     private var encoder: VTCompressionSession?
-    /// One scaled surface allows a fresh IDR after packet loss even when the
-    /// desktop is static and ScreenCaptureKit is only reporting idle updates.
+    /// One scaled surface allows a fresh IDR after packet loss and idle
+    /// paint-over refinement when the desktop settles.
     private var latestImage: CVPixelBuffer?
     private var latestTime = CMTime.invalid
     private var pendingImage = false
     private var lastEncodedTime = CMTime.invalid
     private var keyframeWorkQueued = false
+    private var paceWorkQueued = false
+    private var originalHasSent = false
+    private var bucket: CaptureBucket
+    private var wideRateLimit = false
+    private var refinementToken: UInt64 = 0
+    private var refinementPasses = 0
+    private var firstRefinementSize = 0
+    private static let refinementDelayMs = 180
+    private static let maxRefinementPasses = 3
 
     convenience init(display: SCDisplay, settings: DisplaySettings, gate: DisplayGate, reference: HostReference) {
         self.init(display: display, settings: settings, gate: gate, sendFrame: { data, timestamp, keyframe in
@@ -404,6 +501,7 @@ final class DisplayCapture: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
         self.sendFrame = sendFrame
         self.onFailure = onFailure
         flags = Mutex(Flags(fps: settings.fps, bitrate: settings.bitrate))
+        bucket = CaptureBucket(fps: settings.fps, now: ProcessInfo.processInfo.systemUptime)
     }
 
     private func configuration(fps: Int) -> SCStreamConfiguration {
@@ -412,9 +510,13 @@ final class DisplayCapture: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
         config.width = size.width
         config.height = size.height
         config.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(max(1, fps)))
-        config.queueDepth = 3
+        config.queueDepth = 6
         config.pixelFormat = settings.original ? kCVPixelFormatType_32BGRA : kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
         config.colorSpaceName = settings.original ? CGColorSpace.sRGB : CGColorSpace.itur_709
+        if !settings.original {
+            config.colorMatrix = kCVImageBufferYCbCrMatrix_ITU_R_709_2
+        }
+        config.captureResolution = .best
         config.showsCursor = true
         config.capturesAudio = false
         config.captureMicrophone = false
@@ -424,8 +526,8 @@ final class DisplayCapture: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
     }
 
     private var outputSize: (width: Int, height: Int) {
-        DisplayVideo.size(width: settings.original ? sourcePixelWidth : sourceWidth,
-                          height: settings.original ? sourcePixelHeight : sourceHeight,
+        DisplayVideo.size(width: sourcePixelWidth,
+                          height: sourcePixelHeight,
                           maximum: settings.dimension, original: settings.original)
     }
 
@@ -441,7 +543,6 @@ final class DisplayCapture: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
             let fps = flags.withLock { $0.fps }
             let stream = SCStream(filter: SCContentFilter(display: display, excludingWindows: []), configuration: configuration(fps: fps), delegate: self)
             self.stream = stream
-            configuredFPS = fps
             try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: queue)
             try await stream.startCapture()
             // A display reconfiguration can replace this capture without
@@ -460,7 +561,6 @@ final class DisplayCapture: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
         flags.withLock { $0.stopped = true }
         if let stream { try? await stream.stopCapture() }
         self.stream = nil
-        configuredFPS = nil
         await withCheckedContinuation { continuation in
             queue.async {
                 if let encoder = self.encoder {
@@ -471,6 +571,12 @@ final class DisplayCapture: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
                 self.latestTime = .invalid
                 self.pendingImage = false
                 self.keyframeWorkQueued = false
+                self.paceWorkQueued = false
+                self.originalHasSent = false
+                self.wideRateLimit = false
+                self.refinementToken &+= 1
+                self.refinementPasses = 0
+                self.firstRefinementSize = 0
                 continuation.resume()
             }
         }
@@ -479,23 +585,15 @@ final class DisplayCapture: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
     @MainActor func configure(fps: Int, bitrate: Int) async {
         guard !settings.original, gate.contains(generation) else { return }
         flags.withLock { $0.fps = fps; $0.bitrate = bitrate }
-        // Bitrate feedback is frequent. Reconfigure capture surfaces only
-        // when its frame interval changes, rather than for every estimate.
-        if let stream, configuredFPS != fps {
-            do {
-                try await stream.updateConfiguration(configuration(fps: fps))
-                if self.stream === stream { configuredFPS = fps }
-            } catch {
-                if gate.contains(generation) { fail("The display could not adjust its frame rate. Start viewing again.") }
-                return
-            }
-        }
         queue.async {
             guard let encoder = self.encoder, self.gate.contains(self.generation) else { return }
             let latest = self.flags.withLock { ($0.fps, $0.bitrate) }
+            // Pace FPS in software via CaptureBucket instead of reconfiguring
+            // SCStream surfaces, avoiding capture hitches on bitrate changes.
+            self.bucket.setFPS(latest.0, now: ProcessInfo.processInfo.systemUptime)
             VTSessionSetProperty(encoder, key: kVTCompressionPropertyKey_AverageBitRate, value: latest.1 as CFNumber)
             VTSessionSetProperty(encoder, key: kVTCompressionPropertyKey_ExpectedFrameRate, value: latest.0 as CFNumber)
-            DisplayVideo.setRateLimit(encoder, bitrate: latest.1)
+            DisplayVideo.setRateLimit(encoder, bitrate: latest.1, wide: self.wideRateLimit)
         }
     }
 
@@ -503,6 +601,7 @@ final class DisplayCapture: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
         guard !settings.original else { return }
         flags.withLock { $0.keyframe = true }
         queue.async {
+            self.cancelRefinement()
             guard !self.keyframeWorkQueued else { return }
             self.keyframeWorkQueued = true
             // A changing desktop normally supplies the next frame itself.
@@ -520,14 +619,49 @@ final class DisplayCapture: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
         keyframeWorkQueued = false
         guard flags.withLock({ $0.keyframe }) else { return }
         pendingImage = false
-        encode(latestImage, at: CMClockGetTime(CMClockGetHostTimeClock()))
+        encode(latestImage, at: CMClockGetTime(CMClockGetHostTimeClock()), refinement: false)
+    }
+
+    private func cancelRefinement() {
+        refinementToken &+= 1
+        refinementPasses = 0
+        firstRefinementSize = 0
+        setWideRateLimit(false)
+    }
+
+    private func setWideRateLimit(_ wide: Bool) {
+        guard wideRateLimit != wide, let encoder else { return }
+        wideRateLimit = wide
+        let bitrate = flags.withLock { $0.bitrate }
+        DisplayVideo.setRateLimit(encoder, bitrate: bitrate, wide: wide)
+    }
+
+    private func scheduleRefinement(afterMs delay: Int) {
+        refinementToken &+= 1
+        let token = refinementToken
+        queue.asyncAfter(deadline: .now() + .milliseconds(delay)) { [weak self] in
+            self?.runRefinement(token: token)
+        }
+    }
+
+    private func runRefinement(token: UInt64) {
+        guard token == refinementToken, gate.contains(generation), !pendingImage,
+              let latestImage, !flags.withLock({ $0.stopped || $0.keyframe }) else { return }
+        if flags.withLock({ $0.encoding }) {
+            queue.asyncAfter(deadline: .now() + .milliseconds(16)) { [weak self] in
+                self?.runRefinement(token: token)
+            }
+            return
+        }
+        setWideRateLimit(true)
+        encode(latestImage, at: CMClockGetTime(CMClockGetHostTimeClock()), refinement: true)
     }
 
     private func createEncoder() throws {
         guard gate.contains(generation) else { return }
         let size = outputSize
         let status = VTCompressionSessionCreate(allocator: nil, width: Int32(size.width), height: Int32(size.height), codecType: kCMVideoCodecType_H264,
-            encoderSpecification: [kVTVideoEncoderSpecification_RequireHardwareAcceleratedVideoEncoder: true] as CFDictionary,
+            encoderSpecification: DisplayVideo.encoderSpecification(),
             imageBufferAttributes: nil, compressedDataAllocator: nil,
             outputCallback: { context, _, status, infoFlags, sample in
                 guard let context else { return }
@@ -535,7 +669,8 @@ final class DisplayCapture: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
             }, refcon: Unmanaged.passUnretained(self).toOpaque(), compressionSessionOut: &encoder)
         guard status == noErr, let encoder else { throw DisplayError.encoder }
         let latest = flags.withLock { ($0.fps, $0.bitrate) }
-        try DisplayVideo.configureEncoder(encoder, fps: latest.0, bitrate: latest.1)
+        try DisplayVideo.configureEncoder(encoder, fps: latest.0, bitrate: latest.1, profile: settings.profile)
+        bucket.reset(fps: latest.0, now: ProcessInfo.processInfo.systemUptime)
     }
 
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
@@ -543,14 +678,16 @@ final class DisplayCapture: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
               let attachments = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: false) as? [[SCStreamFrameInfo: Any]],
               let value = attachments.first?[.status] as? Int, let status = SCFrameStatus(rawValue: value) else { return }
         switch status {
-        case .complete: break
+        case .complete, .started: break
         case .blank, .suspended, .stopped:
             fail("The selected display is no longer available. Wake or unlock the Mac, then start viewing again.")
             return
         default: return
         }
         guard sampleBuffer.isValid, let image = sampleBuffer.imageBuffer else { return }
+        let dirty = DisplayVideo.hasDirtyContent(attachments.first?[.dirtyRects])
         if settings.original {
+            if !dirty && originalHasSent { return }
             guard !flags.withLock({ $0.stopped }) else { return }
             guard let png = autoreleasepool(invoking: { DisplayVideo.png(image) }) else {
                 fail("The HD picture could not be prepared. Try Sharper text or start viewing again.")
@@ -560,9 +697,13 @@ final class DisplayCapture: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
             guard png.count <= 16 * 1024 * 1024 else { fail("This HD picture is too large. Choose Sharper text for this screen content."); return }
             let seconds = CMTimeGetSeconds(sampleBuffer.presentationTimeStamp)
             guard seconds.isFinite, seconds >= 0 else { return }
-            _ = sendFrame(png, UInt64(seconds * 1_000_000), true)
+            if sendFrame(png, UInt64(seconds * 1_000_000), true) {
+                originalHasSent = true
+            }
             return
         }
+        if !dirty && latestImage != nil { return }
+        cancelRefinement()
         latestImage = image
         latestTime = sampleBuffer.presentationTimeStamp
         pendingImage = true
@@ -571,18 +712,34 @@ final class DisplayCapture: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
 
     private func encodePendingImage() {
         guard pendingImage, let latestImage, !flags.withLock({ $0.encoding || $0.stopped }), gate.contains(generation) else { return }
+        let now = ProcessInfo.processInfo.systemUptime
+        let forceKey = flags.withLock { $0.keyframe }
+        if !forceKey && !bucket.ready(now: now) {
+            guard !paceWorkQueued else { return }
+            paceWorkQueued = true
+            let waitMs = max(1, Int((bucket.waitSeconds(now: now) * 1000).rounded(.up)))
+            queue.asyncAfter(deadline: .now() + .milliseconds(waitMs)) { [weak self] in
+                guard let self else { return }
+                self.paceWorkQueued = false
+                self.encodePendingImage()
+            }
+            return
+        }
+        bucket.spend(now: now)
         pendingImage = false
-        encode(latestImage, at: latestTime)
+        setWideRateLimit(forceKey)
+        encode(latestImage, at: latestTime, refinement: false)
     }
 
-    private func encode(_ image: CVPixelBuffer, at time: CMTime) {
+    private func encode(_ image: CVPixelBuffer, at time: CMTime, refinement: Bool) {
         guard gate.contains(generation), let encoder else { return }
         let force: Bool? = flags.withLock {
             guard !$0.stopped, !$0.encoding else { return nil }
             $0.encoding = true
-            let keyframe = $0.keyframe
-            $0.keyframe = false
+            let keyframe = !refinement && $0.keyframe
+            if keyframe { $0.keyframe = false }
             $0.forcedKeyframeInFlight = keyframe
+            $0.refinementInFlight = refinement
             return keyframe
         }
         guard let force else { return }
@@ -593,17 +750,25 @@ final class DisplayCapture: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
         let result = VTCompressionSessionEncodeFrame(encoder, imageBuffer: image, presentationTimeStamp: timestamp,
             duration: .invalid, frameProperties: options, sourceFrameRefcon: nil, infoFlagsOut: nil)
         if result != noErr {
-            flags.withLock { $0.encoding = false }
+            flags.withLock { $0.encoding = false; $0.refinementInFlight = false }
             fail("Hardware video encoding stopped. Try starting the view again.")
         }
     }
 
     private func encoded(status: OSStatus, infoFlags: VTEncodeInfoFlags, sample: CMSampleBuffer?) {
+        let wasRefinement = flags.withLock { $0.refinementInFlight }
+        var sentBytes: Int?
         defer {
-            flags.withLock { $0.encoding = false }
+            let emitted = sentBytes
+            flags.withLock { $0.encoding = false; $0.refinementInFlight = false }
             // Drain the newest pending frame even when screen motion ends
             // while an earlier frame is still being encoded.
-            queue.async { self.encodePendingImage() }
+            queue.async {
+                if let emitted {
+                    self.afterEncoded(wasRefinement: wasRefinement, bytes: emitted)
+                }
+                self.encodePendingImage()
+            }
         }
         guard gate.contains(generation), !flags.withLock({ $0.stopped }) else { return }
         guard status == noErr else { fail("Hardware video encoding stopped. Try starting the view again."); return }
@@ -642,7 +807,37 @@ final class DisplayCapture: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
         guard copied == noErr, seconds.isFinite, seconds >= 0,
               let annexB = DisplayVideo.annexB(data, headerLength: Int(headerLength), parameters: parameters) else { requestKeyframe(); return }
         guard annexB.count <= 1024 * 1024 else { fail("This frame could not be streamed at the selected quality. Choose Save battery and try again."); return }
-        if !sendFrame(annexB, UInt64(seconds * 1_000_000), keyframe) { requestKeyframe() }
+        if !sendFrame(annexB, UInt64(seconds * 1_000_000), keyframe) {
+            requestKeyframe()
+        } else {
+            sentBytes = annexB.count
+        }
+    }
+
+    private func afterEncoded(wasRefinement: Bool, bytes: Int) {
+        guard gate.contains(generation), !flags.withLock({ $0.stopped }) else { return }
+        if pendingImage {
+            setWideRateLimit(false)
+            return
+        }
+        let latest = flags.withLock { ($0.fps, $0.bitrate) }
+        if wasRefinement {
+            if refinementPasses == 0 { firstRefinementSize = bytes }
+            refinementPasses += 1
+            let smallEnough = bytes <= max(1024, latest.1 / (32 * max(1, latest.0)))
+            let converged = smallEnough || bytes * 4 <= firstRefinementSize || refinementPasses >= Self.maxRefinementPasses
+            if converged {
+                setWideRateLimit(false)
+            } else {
+                let paceMs = max(33, 1000 / max(1, latest.0))
+                scheduleRefinement(afterMs: paceMs)
+            }
+        } else {
+            setWideRateLimit(false)
+            refinementPasses = 0
+            firstRefinementSize = 0
+            scheduleRefinement(afterMs: Self.refinementDelayMs)
+        }
     }
 
     func stream(_ stream: SCStream, didStopWithError error: Error) {
