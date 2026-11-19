@@ -9,106 +9,60 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+See your Mac's screen on your phone while you use the trackpad or keyboard.
+This update also reorganizes phone settings and improves recovery when
+reconnecting or setting up HTTPS.
+
+### Screen mirroring
+
+- Open **Display** on your phone to view one Mac display. Use the preview on its
+  own, alongside a trackpad or keyboard, or fullscreen. Pinch to zoom, drag to
+  pan, and bring the Mac pointer onto the selected display.
+- Choose adaptive live video or **HD text · lossless** for small text and code.
+  HD text preserves source pixels within a 4K pixel budget and sends changed
+  regions up to four times per second. Live video refines fine detail when the
+  desktop settles and requests a shorter playback delay on supported browsers.
+- Screen mirroring is off by default. Enable it in **General** and grant macOS
+  Screen Recording permission. Allow individual devices in **Devices**, or
+  approve a phone's access request on the Mac. The welcome guide explains setup.
+- Display works over HTTP and HTTPS with encrypted media and needs a direct
+  UDP connection. The Mac display stays awake while you view it. Pausing,
+  locking, sleeping, revoking access, or leaving Display stops the view.
+
 ### Mac app
 
-- A paired phone keeps its token if the Mac cannot read the device list. New
-  remembered pairings also leave an unreadable or newer-format list untouched.
-- HTTPS recovers when a saved certificate authority and its key no longer
-  match. Devices need the replacement certificate if the old authority cannot
-  be recovered.
-- Disconnecting one device no longer releases a media key another device holds.
-- Deck imports and saves reject empty or duplicate page and button IDs.
-- App and dependency license notices ship in the bundle and can be opened
-  from About. Builds collect notices from their resolved dependency versions.
-- Optional screen mirroring streams one selected display to an explicitly allowed
-  device using hardware H.264 encoding. Enable it in General, grant Screen
-  Recording permission, then allow a device in Devices.
-- The welcome guide introduces Display and includes a skippable Screen Recording
-  permission step before pairing. Screen mirroring can be set up later in General.
-- Screen mirroring works with HTTP and HTTPS. It stops when paused, locked,
-  asleep, disconnected, revoked, or no longer active on the phone.
-- The Mac's display stays awake while a device is viewing it, so reading
-  without touching anything no longer ends the view when the display would
-  have gone to sleep. Locking or sleeping the Mac still stops viewing.
-- A brief network interruption, such as a phone moving between Wi-Fi access
-  points, no longer ends the view immediately.
-- Asking for Screen Recording shows the macOS prompt on its own the first
-  time. Later requests open System Settings directly.
-- Device names and actions have more space in Settings, with a separate screen
-  access row for each device and a direct link from Display setup.
-- Screen mirroring limits bandwidth bursts, avoids unnecessary capture updates,
-  and keeps the latest frame ready when the hardware encoder is busy. Live video
-  refines fine detail when movement stops.
+- Keep saved pairings when the Mac cannot read the trusted-device list.
+  Remembered pairings leave an unreadable or newer-format list intact.
+- Recover HTTPS if the saved certificate authority and key no longer match.
+  Devices need to trust the replacement certificate. **Save Certificate**
+  explains when a certificate is still being prepared.
+- Preserve media keys held by another device when one phone disconnects.
+  Volume reporting also supports devices with per-channel controls.
+- Reject empty or duplicate page and button IDs in Deck saves and imports.
+  Links to file servers or remote screen-sharing tools require shell-command
+  permission, including SFTP, WebDAV and VNC.
 - CmdPalm wakes less often in the background while idle in the menu bar.
-- Monitor refreshes can overlap without interrupting a live view. Stopped
-  captures ignore late callbacks and clean up delayed startup work. Failed
-  starts also release the display wake assertion and partial capture state
-  immediately.
-- WebRTC display connections prioritize local Wi-Fi and Ethernet interfaces,
-  ignore link-local addresses, and recover from transient UDP socket errors.
-- Volume reporting listens to per-channel controls on audio devices that lack a
-  single virtual main volume control.
-- Links using `sftp:`, `ftps:`, `dav:`, `davs:`, `webdav:`, `webdavs:`, or
-  `vnc:` now follow the Mac’s shell-command permission alongside `file:`, `ssh:`,
-  and other file-server schemes.
-- Approve a phone's screen-access request directly in the Mac's native panel.
-  Requests expire after one minute, never grant access automatically, support
-  the Cancel shortcut, show waiting request counts, stay within visible screen
-  bounds, and use matching card styling in the menu bar popover.
-- Save Certificate explains when a certificate is not ready instead of failing
-  silently.
+  App and dependency license notices are available from **About**.
 
 ### Phone client
 
-- Settings keep the Mac name, latency and connection status alongside an
-  **Encrypted** / **Not encrypted** badge and HTTP Wi-Fi warning at the top,
-  with tabs for Trackpad, Gestures, Keyboard, Display and Deck. Device
-  preferences and backup, reset and connection actions stay below. Dictation setup
-  guidance adapts to HTTPS, browser microphone support, and whether dictation is
-  turned on on the Mac. **Show touches** now copies with Trackpad settings.
-- Gesture shortcuts have separate three- and four-finger tabs. Display layout
-  and quality preferences are also available from Settings.
-- Run Shortcut, Mouse click, Sequence and Wait are available directly in
-  action editors. Shell commands still require the Mac owner’s permission.
-- Switches respond across the whole row, settings controls have larger touch
-  targets, and segmented choices in settings support arrow-key navigation.
-  Controls have clearer screen-reader names and descriptions.
-- Gesture editors keep keyboard focus inside the dialog, and Escape closes
-  only the top dialog. Main control surfaces keep forwarding the physical
-  keyboard to the Mac while letting Tab and Shift+Tab move focus through
-  phone controls and Enter and Space activate them, and mouse-button labels fit
-  on narrow phones.
-- Tab labels are easier to read, trackpad tips follow your enabled gestures,
-  and empty app searches offer a Clear search button.
-- Reset and Forget explain what happens and offer Cancel before applying the
-  change. Resetting settings also shows a confirmation message.
-- Reconnecting after a retryable refusal keeps the saved pairing and offers
-  a Reconnect button with recovery instructions.
-- Shared mouse buttons and seeking keys stay held until the last finger lifts.
-- Stored custom keyboards reject invalid media names and keep shortened key
-  IDs distinct.
-- A Display tab shows the Mac screen on its own, above a trackpad or keyboard,
-  or beside the controls on a wide screen. Choose a monitor, zoom the preview,
-  move the Mac pointer to that display, and choose motion, battery, or text
-  quality. Display preferences can be backed up and copied between devices.
-- Preview controls stay below the image, move into Display options when space
-  is tight, and zoom follows the point you pinch. You can zoom further into
-  high-resolution displays.
-- Display requests a shorter playback delay on browsers that support it.
-- Fullscreen viewing hides the input controls and fills the app viewport.
-  Hidden controls stay out of keyboard and assistive navigation after rotation,
-  and focus returns to the app when viewing ends.
-- Viewing stays active when unrelated Mac settings change or an existing
-  permission is reported again. Approval refreshes preserve newly started views.
-- HD text preserves lossless picture detail up to 4K for reading small text,
-  with up to four updates per second over an encrypted WebRTC connection.
-  Small changes travel as patches, and the Mac combines changes while the
-  connection catches up.
-- Refreshing the display list keeps a live view running, and tapping Refresh
-  twice no longer clears the list.
-- Both scroll-strip lengths now use matching up/down chevrons at every width,
-  with more space between the chevrons on the short handle, and edge-to-edge
-  placement follows the right screen edge in wide Display layouts.
+- Settings group Trackpad, Gestures, Keyboard, Display and Deck preferences into
+  tabs. The connection card shows whether the connection is encrypted. Keyboard
+  settings explain how to set up dictation for the current connection.
+- Configure three- and four-finger gestures separately. **Copy settings from
+  another device** includes **Show touches** with Trackpad settings and supports
+  Display preferences. Device backups include Display preferences too.
+- **Run Shortcut**, **Mouse click**, **Sequence** and **Wait** are available
+  directly in action editors. Stored custom keyboards handle shortened IDs and
+  invalid media keys more reliably.
+- Larger touch targets and clearer labels make Settings easier to use with
+  touch or a screen reader. **Tab** and **Shift+Tab** on a physical keyboard
+  move between phone controls. The on-screen **Tab** sends Tab to the Mac.
+- The trackpad shows tips for your enabled gestures, its short and long scroll
+  strips use matching chevrons, and an empty app search offers **Clear search**.
+- Reset and Forget explain the effect before you confirm. If the Mac reports a
+  recoverable pairing problem, **Reconnect** keeps your saved pairing.
+- Shared mouse buttons and media seek keys stay held until the last finger lifts.
 
 ## [0.8.1] - 2026-11-13
 

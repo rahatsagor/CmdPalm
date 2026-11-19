@@ -194,7 +194,7 @@ settings. Changes save automatically, and every section is visible within its
 tab. Dictation setup is in Keyboard.
 
 <p align="center">
-<img src="docs/media/phone-settings-trackpad.webp" width="260" alt="Phone Settings with the Mac connection card, five feature tabs and Trackpad preferences" />
+<img src="docs/media/phone-settings-trackpad.webp" width="260" alt="Phone Settings with the Encrypted badge, five feature tabs and Trackpad preferences" />
 &nbsp;
 <img src="docs/media/phone-settings-keyboard.webp" width="260" alt="Keyboard preferences grouped in the phone Settings Keyboard tab" />
 </p>
@@ -417,6 +417,10 @@ with separate tabs for three and four fingers. Pointer acceleration is under
 **Modifiers** work three ways: tap for the next key only, double-tap to lock,
 or hold while you press another key or click. The hand button in the top bar
 lets go of every held key and button at once.
+
+On a physical keyboard connected to your phone or iPad, **Tab** and **Shift+Tab**
+move focus through the phone UI. To send Tab to the Mac, open the on-screen
+**Keyboard → Mac** layout and tap **Tab**. Use its **Shift** key to send Shift+Tab.
 
 ## Troubleshooting
 

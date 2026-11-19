@@ -65,18 +65,18 @@ export const MEDIA: Record<MediaKey, Meta> = {
   illuminationToggle: { label: 'Backlight On/Off', symbol: 'lightbulb', group: 'Sound & Display' },
 }
 
-export const ACTION_KINDS: { kind: Action['kind']; label: string; symbol: string; advanced?: boolean }[] = [
+export const ACTION_KINDS: { kind: Action['kind']; label: string; symbol: string }[] = [
   { kind: 'keys', label: 'Keyboard shortcut', symbol: 'command' },
   { kind: 'system', label: 'Mac action', symbol: 'laptop' },
   { kind: 'media', label: 'Media & sound', symbol: 'music' },
   { kind: 'app', label: 'Open app', symbol: 'app-window' },
   { kind: 'text', label: 'Type text', symbol: 'type' },
   { kind: 'url', label: 'Open link', symbol: 'link' },
-  { kind: 'shortcut', label: 'Run Shortcut', symbol: 'workflow', advanced: true },
-  { kind: 'mouse', label: 'Mouse click', symbol: 'mouse-pointer-click', advanced: true },
-  { kind: 'sequence', label: 'Sequence', symbol: 'list-ordered', advanced: true },
-  { kind: 'delay', label: 'Wait', symbol: 'timer', advanced: true },
-  { kind: 'shell', label: 'Shell command', symbol: 'square-terminal', advanced: true },
+  { kind: 'shortcut', label: 'Run Shortcut', symbol: 'workflow' },
+  { kind: 'mouse', label: 'Mouse click', symbol: 'mouse-pointer-click' },
+  { kind: 'sequence', label: 'Sequence', symbol: 'list-ordered' },
+  { kind: 'delay', label: 'Wait', symbol: 'timer' },
+  { kind: 'shell', label: 'Shell command', symbol: 'square-terminal' },
 ]
 
 export function defaultAction(kind: Action['kind']): Action {

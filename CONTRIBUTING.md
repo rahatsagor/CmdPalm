@@ -56,11 +56,13 @@ EditorConfig call paths. Run `bun audit` in `web/` after dependency changes.
 Remove the overrides once compatible upstream dependency ranges include the
 fixed versions.
 
-`vendor/askama_derive` is the published 0.16.1 source with a small config-parser
-patch: `toml` 1.1 replaces the unmaintained `basic-toml`. Its `NOTICE` and
-`UPSTREAM.json` record the change, upstream commit and crate checksum. Cargo
-uses this copy through `[patch.crates-io]`; it remains a third-party dependency
-in bundled notices. Remove the patch when Askama ships a compatible fix.
+`vendor/askama_derive` is the published 0.16.1 source with two small patches:
+`toml` 1.1 replaces the unmaintained `basic-toml` config parser, and external
+include paths stay absolute when Cargo reaches the registry through a symlink.
+Its `NOTICE` and `UPSTREAM.json` record the changes, upstream commit and crate
+checksum. Cargo uses this copy through `[patch.crates-io]`; it remains a
+third-party dependency in bundled notices. Remove each patch when a compatible
+Askama release includes its fix.
 To check the vendored parser and template behavior directly:
 
 ```sh

@@ -294,6 +294,21 @@ struct CaptureBucket: Sendable {
     }
 }
 
+struct IdleRefinement {
+    private var attempts = 0
+    private var firstEncodedSize: Int?
+
+    /// A dropped frame still uses one of the three attempts for this idle image.
+    mutating func shouldContinue(afterEncoding bytes: Int?, smallFrameSize: Int) -> Bool {
+        attempts += 1
+        guard attempts < 3 else { return false }
+        guard let bytes else { return true }
+        let baseline = firstEncodedSize ?? bytes
+        firstEncodedSize = baseline
+        return bytes > smallFrameSize && bytes * 4 > baseline
+    }
+}
+
 private enum DisplayError: Error {
     case permission, missing, encoder, busy
     var message: String {
@@ -327,9 +342,22 @@ enum DisplayVideo {
         return (pixels(width), pixels(height))
     }
 
+    static let originalPixelBudget = 3840 * 2160
+
     static func size(width: Int, height: Int, maximum: Int, original: Bool = false) -> (width: Int, height: Int) {
         guard width > 0, height > 0 else { return (2, 2) }
-        let longest = Double(min(max(maximum, 352), original ? 3840 : 1920))
+        if original {
+            let edge = min(max(maximum, 352), 3840)
+            let longest = max(width, height)
+            var size = longest > edge ? (width: width * edge / longest, height: height * edge / longest) : (width: width, height: height)
+            let pixels = size.width * size.height
+            if pixels > originalPixelBudget {
+                let scale = (Double(originalPixelBudget) / Double(pixels)).squareRoot()
+                size = (Int(Double(size.width) * scale), Int(Double(size.height) * scale))
+            }
+            return (max(2, size.width), max(2, size.height))
+        }
+        let longest = Double(min(max(maximum, 352), 1920))
         let shortest = floor(longest * 9 / 16)
         let wide = width >= height
         let scale = min(1, min((wide ? longest : shortest) / Double(width), (wide ? shortest : longest) / Double(height)))
@@ -545,10 +573,8 @@ final class DisplayCapture: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
     private var bucket: CaptureBucket
     private var wideRateLimit = false
     private var refinementToken: UInt64 = 0
-    private var refinementPasses = 0
-    private var firstRefinementSize = 0
+    private var refinement = IdleRefinement()
     private static let refinementDelayMs = 180
-    private static let maxRefinementPasses = 3
 
     convenience init(display: SCDisplay, settings: DisplaySettings, gate: DisplayGate, reference: HostReference) {
         self.init(display: display, settings: settings, gate: gate, sendFrame: { data, timestamp, keyframe in
@@ -654,8 +680,7 @@ final class DisplayCapture: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
                 self.originalPayload = nil
                 self.wideRateLimit = false
                 self.refinementToken &+= 1
-                self.refinementPasses = 0
-                self.firstRefinementSize = 0
+                self.refinement = IdleRefinement()
                 continuation.resume()
             }
         }
@@ -703,8 +728,7 @@ final class DisplayCapture: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
 
     private func cancelRefinement() {
         refinementToken &+= 1
-        refinementPasses = 0
-        firstRefinementSize = 0
+        refinement = IdleRefinement()
         setWideRateLimit(false)
     }
 
@@ -906,13 +930,15 @@ final class DisplayCapture: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
     private func encoded(status: OSStatus, infoFlags: VTEncodeInfoFlags, sample: CMSampleBuffer?) {
         let wasRefinement = flags.withLock { $0.refinementInFlight }
         var sentBytes: Int?
+        var dropped = false
         defer {
             let emitted = sentBytes
+            let resend = dropped
             flags.withLock { $0.encoding = false; $0.refinementInFlight = false }
             // Drain the newest pending frame even when screen motion ends
             // while an earlier frame is still being encoded.
             queue.async {
-                if let emitted {
+                if emitted != nil || resend {
                     self.afterEncoded(wasRefinement: wasRefinement, bytes: emitted)
                 }
                 self.encodePendingImage()
@@ -922,8 +948,9 @@ final class DisplayCapture: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
         guard status == noErr else { fail("Hardware video encoding stopped. Try starting the view again."); return }
         if infoFlags.contains(.frameDropped) {
             // The encoder maintains its own reference chain for intentional
-            // rate-control drops. Only retry a specifically requested IDR.
-            if flags.withLock({ $0.forcedKeyframeInFlight }) { requestKeyframe() }
+            // rate-control drops. A requested IDR is retried as one; any other
+            // dropped picture is sent again once the desktop stays still.
+            if flags.withLock({ $0.forcedKeyframeInFlight }) { requestKeyframe() } else { dropped = true }
             return
         }
         guard let sample, CMSampleBufferDataIsReady(sample), let block = sample.dataBuffer, let format = sample.formatDescription else {
@@ -974,7 +1001,7 @@ final class DisplayCapture: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
         }
     }
 
-    private func afterEncoded(wasRefinement: Bool, bytes: Int) {
+    private func afterEncoded(wasRefinement: Bool, bytes: Int?) {
         guard gate.contains(generation), !flags.withLock({ $0.stopped }) else { return }
         if pendingImage {
             setWideRateLimit(false)
@@ -982,20 +1009,16 @@ final class DisplayCapture: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
         }
         let latest = flags.withLock { ($0.fps, $0.bitrate) }
         if wasRefinement {
-            if refinementPasses == 0 { firstRefinementSize = bytes }
-            refinementPasses += 1
-            let smallEnough = bytes <= max(1024, latest.1 / (32 * max(1, latest.0)))
-            let converged = smallEnough || bytes * 4 <= firstRefinementSize || refinementPasses >= Self.maxRefinementPasses
-            if converged {
+            let smallFrameSize = max(1024, latest.1 / (32 * max(1, latest.0)))
+            guard refinement.shouldContinue(afterEncoding: bytes, smallFrameSize: smallFrameSize) else {
                 setWideRateLimit(false)
-            } else {
-                let paceMs = max(33, 1000 / max(1, latest.0))
-                scheduleRefinement(afterMs: paceMs)
+                return
             }
+            let delay = bytes == nil ? Self.refinementDelayMs : max(33, 1000 / max(1, latest.0))
+            scheduleRefinement(afterMs: delay)
         } else {
             setWideRateLimit(false)
-            refinementPasses = 0
-            firstRefinementSize = 0
+            refinement = IdleRefinement()
             scheduleRefinement(afterMs: Self.refinementDelayMs)
         }
     }
