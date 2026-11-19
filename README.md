@@ -7,7 +7,7 @@
 ### Your Mac, in your palm.
 
 See and control your Mac from your iPhone, iPad or Android phone.
-Screen mirroring, trackpad, keyboard and shortcut deck, together in your browser.<br />
+Screen mirroring, trackpad, keyboard, shortcut deck and voice typing, together in your browser.<br />
 **No app to install on the phone. No CmdPalm account. Free and open source.**
 
 <br />
@@ -89,7 +89,8 @@ pinch to zoom, pan, and bring the pointer onto the selected display. Automatic,
 Save battery and Sharper text tune the stream; **HD text · lossless** preserves
 picture detail up to 4K and updates changed areas up to four times per second.
 
-Screen mirroring is **off by default**. Enable **Allow screen mirroring** in the Mac’s
+Screen mirroring requires CmdPalm 1.0.0 or later and is **off by default**.
+Enable **Allow screen mirroring** in the Mac’s
 General settings, grant macOS **Screen Recording** permission, and allow screen
 access for the device under **Devices**. Pairing for control does not grant viewing.
 A phone can ask, but you approve on the Mac. One allowed device can view one
@@ -377,8 +378,9 @@ and [troubleshooting](https://cmdpalm.app/docs/troubleshooting/).
 Browsers allow the microphone only over an encrypted connection. Open
 **Settings → Phone Setup → Encrypted Connection** on the Mac, install the
 certificate on your phone as shown, then pair with the **Encrypted link**.
-Without it, everything else works, and you can still dictate with the
-microphone button on your phone's keyboard.
+Trackpad, keyboard, Deck and screen mirroring also work over HTTP. You can
+dictate with the microphone button on your phone's own keyboard over either
+connection.
 
 Your Mac recognises the speech itself, so voice typing needs on-device
 recognition for your language. If CmdPalm says it isn't available, turn on
@@ -426,6 +428,20 @@ For ordinary LAN use, both devices need to be on the same network. For VPN conne
 Wi-Fi block devices from talking to each other. If scanning the QR code
 doesn't open CmdPalm, set **QR link uses** to **IP Address** under the QR code.
 Check that the macOS firewall allows incoming connections for CmdPalm.
+
+</details>
+
+<details>
+<summary><strong>Controls work, but Display won’t connect</strong></summary>
+<br />
+
+On the Mac, open **Settings → General** and check **Allow screen mirroring**
+and macOS **Screen Recording** permission. Then open **Settings → Devices**
+and make sure the phone has screen access. If the view stalls over a VPN,
+try connecting both devices to the same Wi-Fi network. Display needs a
+direct UDP connection.
+
+[Screen mirroring setup and troubleshooting](https://cmdpalm.app/docs/screen-mirroring/)
 
 </details>
 

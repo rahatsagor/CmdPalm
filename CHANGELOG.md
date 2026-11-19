@@ -37,7 +37,9 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - Device names and actions have more space in Settings, with a separate screen
   access row for each device and a direct link from Display setup.
 - Screen mirroring limits bandwidth bursts, avoids unnecessary capture updates,
-  and keeps the latest frame ready when the hardware encoder is busy.
+  and keeps the latest frame ready when the hardware encoder is busy. Live video
+  refines fine detail when movement stops.
+- CmdPalm wakes less often in the background while idle in the menu bar.
 - Monitor refreshes can overlap without interrupting a live view. Stopped
   captures ignore late callbacks and clean up delayed startup work. Failed
   starts also release the display wake assertion and partial capture state
@@ -90,7 +92,9 @@ and versions follow [Semantic Versioning](https://semver.org/).
   move the Mac pointer to that display, and choose motion, battery, or text
   quality. Display preferences can be backed up and copied between devices.
 - Preview controls stay below the image, move into Display options when space
-  is tight, and zoom follows the point you pinch.
+  is tight, and zoom follows the point you pinch. You can zoom further into
+  high-resolution displays.
+- Display requests a shorter playback delay on browsers that support it.
 - Fullscreen viewing hides the input controls and fills the app viewport.
   Hidden controls stay out of keyboard and assistive navigation after rotation,
   and focus returns to the app when viewing ends.
