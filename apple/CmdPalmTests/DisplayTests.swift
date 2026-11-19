@@ -8,6 +8,23 @@ import ImageIO
 @testable import CmdPalm
 
 @Suite struct DisplayVideoTests {
+    @Test func repeatedEncoderDropsExhaustIdleRefinementAttempts() {
+        var refinement = IdleRefinement()
+        let decisions = (1...3).map { _ in
+            refinement.shouldContinue(afterEncoding: nil, smallFrameSize: 1024)
+        }
+        #expect(decisions == [true, true, false])
+    }
+
+    @Test func encoderDropsAndSuccessfulFramesShareTheIdleRefinementLimit() {
+        var refinement = IdleRefinement()
+        let frameSizes: [Int?] = [nil, 8192, nil]
+        let decisions = frameSizes.map { size in
+            refinement.shouldContinue(afterEncoding: size, smallFrameSize: 1024)
+        }
+        #expect(decisions == [true, true, false])
+    }
+
     @Test func sourcePixelSizeUsesTheSelectedDisplaysScaleAndOrientation() {
         let retina = DisplayVideo.pixelSize(width: 1440, height: 900, scale: 2)
         #expect(retina.width == 2880 && retina.height == 1800)
@@ -24,6 +41,18 @@ import ImageIO
         #expect(size.width == 1920 && size.height == 1080)
         let capped = DisplayVideo.size(width: 5120, height: 2880, maximum: 3840, original: true)
         #expect(capped.width == 3840 && capped.height == 2160)
+        let portrait = DisplayVideo.size(width: 2880, height: 5120, maximum: 3840, original: true)
+        #expect(portrait.width == 2160 && portrait.height == 3840)
+        let ultrawide = DisplayVideo.size(width: 5120, height: 2160, maximum: 3840, original: true)
+        #expect(ultrawide.width == 3840 && ultrawide.height == 1620)
+        let tall = DisplayVideo.size(width: 3456, height: 2234, maximum: 3840, original: true)
+        #expect(tall.width == 3456 && tall.height == 2234, "A display within the 4K pixel budget must not be resampled.")
+        let odd = DisplayVideo.size(width: 1365, height: 767, maximum: 3840, original: true)
+        #expect(odd.width == 1365 && odd.height == 767, "Lossless pictures need no even dimensions.")
+        let overBudget = DisplayVideo.size(width: 3840, height: 2400, maximum: 3840, original: true)
+        #expect(overBudget.height > 2160 && overBudget.width <= 3840)
+        #expect(overBudget.width * overBudget.height <= 3840 * 2160, "The phone refuses pictures above the 4K pixel budget.")
+        #expect(abs(overBudget.width * 2400 - overBudget.height * 3840) <= 3840 + 2400)
         var buffer: CVPixelBuffer?
         let attributes: [CFString: Any] = [kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary]
         #expect(CVPixelBufferCreate(nil, 64, 32, kCVPixelFormatType_32BGRA, attributes as CFDictionary, &buffer) == kCVReturnSuccess)

@@ -105,8 +105,9 @@ that:
 - **Shell commands** from deck buttons are off until you allow them in
   **Settings → Deck**, and turning them on asks for confirmation.
 - **Links** from deck buttons can't open `javascript:` or `data:` URLs.
-  `file:` links can run programs, so they work only while shell commands are
-  allowed.
+  Links that open local files, terminals, file servers, or remote screen-sharing
+  sessions require shell-command permission. These include `file:`, `ssh:`,
+  `sftp:`, `webdav:`, and `vnc:`.
 - **The clipboard** is only sent to a phone when that phone asks for it, and
   never when it holds something marked as concealed, such as a password
   copied from a password manager. When text is sent as a paste, CmdPalm puts

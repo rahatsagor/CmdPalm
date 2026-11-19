@@ -361,8 +361,10 @@ including when Vue keeps the page cached. Resuming requires another View tap.
 
 HD text (`original`) uses an ordered reliable data channel named
 `cmdpalm.original`, protected by DTLS. The host captures RGB pictures at up to
-four updates per second and preserves source pixels up to a 3840 × 2160
-budget (rotated for portrait). It encodes lossless PNGs without upscaling.
+four updates per second and preserves source pixels up to 3840 on the longer
+edge and 3840 × 2160 pixels in total, in any shape or orientation. A display
+within both limits is never resampled. It encodes lossless PNGs without
+upscaling, and receivers refuse pictures beyond either limit.
 Clients that send `patches: true` can also receive changed regions after a full
 picture. Older clients receive full pictures throughout.
 
