@@ -108,6 +108,8 @@ pub(crate) struct Shared {
     next_id: AtomicU64,
     pub icons: Mutex<IconCache>,
     pub permission: Box<dyn Fn() -> bool + Send + Sync>,
+    /// Wakes the background housekeeping task immediately on config or network changes.
+    pub housekeeping_wake: tokio::sync::Notify,
 }
 
 impl Shared {
@@ -159,6 +161,7 @@ impl Shared {
             next_id: AtomicU64::new(1),
             icons: Mutex::new(HashMap::new()),
             permission,
+            housekeeping_wake: tokio::sync::Notify::new(),
         }
     }
 
@@ -615,6 +618,7 @@ impl CoreHost {
     pub fn update_config(&self, config: HostConfig) {
         let previous = self.shared.config();
         *self.shared.config.write().unwrap_or_else(|p| p.into_inner()) = config.clone();
+        self.shared.housekeeping_wake.notify_one();
         if previous.allow_shell != config.allow_shell {
             self.shared.interrupts.set_shell_enabled(config.allow_shell);
         }

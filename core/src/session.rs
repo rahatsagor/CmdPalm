@@ -267,6 +267,7 @@ pub(crate) async fn run<S>(
         }
     }
     shared.emit(HostEvent::SessionsChanged);
+    shared.engine(Command::Alive(id));
     tracing::info!(session = id, device = %authorized.name, %peer, secure, "device connected");
 
     let (jobs, job_rx) = mpsc::channel(ACTION_QUEUE);

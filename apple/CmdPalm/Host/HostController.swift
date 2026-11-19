@@ -266,6 +266,7 @@ final class HostController {
             status = .failed(message)
         case .sessionsChanged:
             connected = host.connectedDevices()
+            permissions.refresh()
             // People change key repeat in System Settings while connected.
             sendInputTiming()
         case .devicesChanged:
@@ -398,13 +399,20 @@ final class HostController {
             NSWorkspace.didUnhideApplicationNotification,
         ]
         // Connecting or ejecting a drive adds or removes the apps on it.
-        let rescanNotifications: Set<Notification.Name> = [
-            NSWorkspace.didLaunchApplicationNotification, NSWorkspace.didMountNotification, NSWorkspace.didUnmountNotification,
+        let mountNotifications: Set<Notification.Name> = [
+            NSWorkspace.didMountNotification, NSWorkspace.didUnmountNotification,
         ]
         for name in appNotifications + [NSWorkspace.didMountNotification, NSWorkspace.didUnmountNotification] {
             observers.append(workspace.addObserver(forName: name, object: nil, queue: .main) { [weak self] note in
-                let rescan = rescanNotifications.contains(note.name)
-                MainActor.assumeIsolated { self?.appsDidChange(rescan: rescan) }
+                let launchedID = note.name == NSWorkspace.didLaunchApplicationNotification
+                    ? (note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?.bundleIdentifier
+                    : nil
+                let isMount = mountNotifications.contains(note.name)
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    let rescan = isMount || (launchedID != nil && !self.bridge.apps.contains(bundleID: launchedID!))
+                    self.appsDidChange(rescan: rescan)
+                }
             })
         }
 
@@ -430,6 +438,7 @@ final class HostController {
 
     private func appsDidChange(rescan: Bool) {
         if rescan { bridge.apps.invalidate() }
+        guard !connected.isEmpty else { return }
         appsChanged?.cancel()
         let work = DispatchWorkItem { [weak self] in self?.host.appsChanged() }
         appsChanged = work
