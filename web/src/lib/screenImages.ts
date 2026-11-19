@@ -29,11 +29,7 @@ export class ScreenImageAssembler {
 
   reset() { this.buffer = null; this.offset = 0 }
 
-  push(message: ArrayBuffer): Uint8Array<ArrayBuffer> | null {
-    return this.pushFrame(message)?.png ?? null
-  }
-
-  pushFrame(message: ArrayBuffer): ScreenImageFrame | null {
+  push(message: ArrayBuffer): ScreenImageFrame | null {
     if (message.byteLength < 17 || message.byteLength > 16 * 1024) throw new Error('Invalid HD picture chunk')
     const bytes = new Uint8Array(message)
     const isFull = bytes[0] === 67 && bytes[1] === 80 && bytes[2] === 78 && bytes[3] === 71 // CPNG
@@ -73,11 +69,97 @@ export class ScreenImageAssembler {
     if (!fullWidth || !fullHeight || fullWidth > 3840 || fullHeight > 3840 || fullWidth * fullHeight > MAX_PIXELS) {
       throw new Error('HD picture exceeds the pixel limit')
     }
-    const png = payload.slice(8)
+    const png = payload.subarray(8)
     const { width, height } = parsePngDimensions(png)
     if (x + width > fullWidth || y + height > fullHeight) {
       throw new Error('HD picture patch is out of bounds')
     }
     return { kind: 'patch', png, x, y, width, height, fullWidth, fullHeight }
+  }
+}
+
+// Full frames supersede waiting work. Patches depend on the preceding picture,
+// so a receiver that falls behind must either paint them in order or stop.
+export class ScreenImageRenderer {
+  private readonly waiting: ScreenImageFrame[] = []
+  private waitingBytes = 0
+  private drawing = false
+  private stopped = false
+
+  constructor(
+    private readonly canvas: HTMLCanvasElement,
+    private readonly onPaint: () => void,
+    private readonly onFailure: (message: string) => void,
+  ) {}
+
+  stop() {
+    this.stopped = true
+    this.waiting.length = 0
+    this.waitingBytes = 0
+  }
+
+  receive(frame: ScreenImageFrame) {
+    if (this.stopped) return
+    if (frame.kind === 'full') {
+      this.waiting.length = 0
+      this.waitingBytes = 0
+    }
+    if (this.waiting.length >= 8 || this.waitingBytes + frame.png.byteLength > MAX_IMAGE) {
+      this.stop()
+      this.onFailure('The phone could not display HD updates fast enough. Try Sharper text.')
+      return
+    }
+    this.waiting.push(frame)
+    this.waitingBytes += frame.png.byteLength
+    if (!this.drawing) void this.drain()
+  }
+
+  private async drain() {
+    this.drawing = true
+    try {
+      while (this.waiting.length) {
+        const frame = this.waiting.shift()!
+        this.waitingBytes -= frame.png.byteLength
+        const blob = new Blob([frame.png], { type: 'image/png' })
+        if (typeof createImageBitmap === 'function') {
+          const bitmap = await createImageBitmap(blob)
+          try { this.paint(frame, bitmap) }
+          finally { bitmap.close() }
+        } else {
+          const url = URL.createObjectURL(blob)
+          try {
+            const image = new Image()
+            await new Promise<void>((resolve, reject) => {
+              image.onload = () => resolve()
+              image.onerror = () => reject(new Error('Decode failed'))
+              image.src = url
+            })
+            this.paint(frame, image)
+          } finally { URL.revokeObjectURL(url) }
+        }
+      }
+    } catch {
+      if (!this.stopped) {
+        this.stop()
+        this.onFailure('The HD picture could not be displayed. Try Sharper text.')
+      }
+    } finally { this.drawing = false }
+  }
+
+  private paint(frame: ScreenImageFrame, image: CanvasImageSource) {
+    if (this.stopped) return
+    const canvas = this.canvas
+    const ctx = canvas.getContext('2d')
+    if (!ctx) throw new Error('Canvas unavailable')
+    if (frame.kind === 'full') {
+      const resized = canvas.width !== frame.width || canvas.height !== frame.height
+      if (resized) { canvas.width = frame.width; canvas.height = frame.height }
+      ctx.drawImage(image, 0, 0)
+      if (resized) canvas.dispatchEvent(new Event('load'))
+    } else {
+      if (canvas.width !== frame.fullWidth || canvas.height !== frame.fullHeight) throw new Error('Missing HD base picture')
+      ctx.drawImage(image, frame.x, frame.y)
+    }
+    this.onPaint()
   }
 }

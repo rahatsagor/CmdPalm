@@ -5,7 +5,7 @@ import { onMessage, send, state as connection } from './connection'
 import { releaseAll } from './input'
 import type { DisplayInfo } from './protocol'
 import { settings } from './settings'
-import { ScreenImageAssembler } from './screenImages'
+import { ScreenImageAssembler, ScreenImageRenderer } from './screenImages'
 
 export const screen = reactive({
   active: false,
@@ -20,9 +20,8 @@ export const screen = reactive({
 })
 
 let video: HTMLVideoElement | null = null
-let picture: HTMLImageElement | HTMLCanvasElement | null = null
-let pictureURL: string | null = null
-let pictureQueue: Promise<void> = Promise.resolve()
+let picture: HTMLCanvasElement | null = null
+let renderer: ScreenImageRenderer | null = null
 let channel: RTCDataChannel | null = null
 const images = new ScreenImageAssembler()
 let peer: RTCPeerConnection | null = null
@@ -80,11 +79,9 @@ function closeStream(notify = true) {
   disconnected = undefined
   if (channel) { channel.onmessage = null; channel.onclose = null; channel.close(); channel = null }
   images.reset()
-  if (picture instanceof HTMLImageElement) { picture.onload = null; picture.onerror = null; picture.removeAttribute('src') }
-  else if (picture instanceof HTMLCanvasElement) { picture.width = 0; picture.height = 0 }
-  if (pictureURL) URL.revokeObjectURL(pictureURL)
-  pictureURL = null
-  pictureQueue = Promise.resolve()
+  renderer?.stop()
+  renderer = null
+  if (picture) { picture.width = 0; picture.height = 0 }
   const id = streamId
   streamId = null
   if (notify && id !== null) send({ t: 'displayStop', id })
@@ -203,102 +200,45 @@ export async function startViewing() {
       channel = data
       data.binaryType = 'arraybuffer'
       data.onclose = () => { if (current === generation) fail('The HD text connection ended. Start viewing again.') }
-      data.onmessage = event => {
-        if (current !== generation || !canView() || !picture) return
-        try {
-          if (!(event.data instanceof ArrayBuffer)) throw new Error('Unsupported picture format')
-          const frame = images.pushFrame(event.data)
-          if (!frame) return
-          if (picture instanceof HTMLCanvasElement) {
-            const canvas = picture
-            const blob = new Blob([frame.png], { type: 'image/png' })
-            // Serialize canvas draws so dirty-rect patches always paint in arrival order.
-            pictureQueue = pictureQueue.then(async () => {
-              if (current !== generation || !canView() || picture !== canvas) return
-              const ctx = canvas.getContext('2d')
-              if (!ctx) throw new Error('Canvas unavailable')
-              if (typeof createImageBitmap === 'function') {
-                const bitmap = await createImageBitmap(blob)
-                try {
-                  if (current !== generation || !canView() || picture !== canvas) return
-                  if (frame.kind === 'full') {
-                    const resized = canvas.width !== frame.width || canvas.height !== frame.height
-                    if (resized) { canvas.width = frame.width; canvas.height = frame.height }
-                    ctx.drawImage(bitmap, 0, 0)
-                    if (resized) canvas.dispatchEvent(new Event('load'))
-                  } else if (canvas.width === frame.fullWidth && canvas.height === frame.fullHeight) {
-                    ctx.drawImage(bitmap, frame.x, frame.y)
-                  }
-                } finally { bitmap.close() }
-              } else {
-                const url = URL.createObjectURL(blob)
-                try {
-                  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
-                    const element = new Image()
-                    element.onload = () => resolve(element)
-                    element.onerror = () => reject(new Error('Decode failed'))
-                    element.src = url
-                  })
-                  if (current !== generation || !canView() || picture !== canvas) return
-                  if (frame.kind === 'full') {
-                    const resized = canvas.width !== frame.width || canvas.height !== frame.height
-                    if (resized) { canvas.width = frame.width; canvas.height = frame.height }
-                    ctx.drawImage(img, 0, 0)
-                    if (resized) canvas.dispatchEvent(new Event('load'))
-                  } else if (canvas.width === frame.fullWidth && canvas.height === frame.fullHeight) {
-                    ctx.drawImage(img, frame.x, frame.y)
-                  }
-                } finally { URL.revokeObjectURL(url) }
-              }
-              clearTimeout(timeout)
-              screen.status = 'live'
-              screen.message = ''
-            }).catch(() => {
-              if (current === generation) fail('The HD picture could not be displayed. Try Sharper text.')
-            })
-            return
-          }
-          if (frame.kind !== 'full') return
-          const target = picture
-          const url = URL.createObjectURL(new Blob([frame.png], { type: 'image/png' }))
-          if (pictureURL) URL.revokeObjectURL(pictureURL)
-          pictureURL = url
-          target.onload = () => {
-            if (current !== generation || !canView() || pictureURL !== url) return
-            clearTimeout(timeout)
-            screen.status = 'live'
-            screen.message = ''
-          }
-          target.onerror = () => { if (current === generation && pictureURL === url) fail('The HD picture could not be displayed. Try Sharper text.') }
-          target.src = url
-        } catch { fail('The HD picture could not be received safely. Try Sharper text or reconnect.') }
-      }
-    } else {
-    const transceiver = rtc.addTransceiver('video', { direction: 'recvonly' })
-    const capabilities = typeof RTCRtpReceiver !== 'undefined' ? RTCRtpReceiver.getCapabilities?.('video') : undefined
-    const codecs = capabilities?.codecs.filter(codec => ['video/h264', 'video/rtx'].includes(codec.mimeType.toLowerCase()))
-    if (codecs?.some(codec => codec.mimeType.toLowerCase() === 'video/h264') && typeof transceiver.setCodecPreferences === 'function') transceiver.setCodecPreferences(codecs)
-    rtc.ontrack = event => {
-      if (current !== generation || !canView() || !video) { event.track.stop(); return }
-      const receiver = event.receiver as (RTCRtpReceiver & { playoutDelayHint?: number; jitterBufferTarget?: number | null }) | undefined
-      if (receiver) {
-        try {
-          if ('playoutDelayHint' in receiver) receiver.playoutDelayHint = 0
-          if ('jitterBufferTarget' in receiver) receiver.jitterBufferTarget = 0
-        } catch {
-          // Ignore browsers that expose read-only or stricter jitter-buffer hints.
-        }
-      }
-      video.srcObject = event.streams[0] ?? new MediaStream([event.track])
-      video.onplaying = () => {
-        if (current !== generation || !canView()) return
+      renderer = new ScreenImageRenderer(picture!, () => {
         clearTimeout(timeout)
         screen.status = 'live'
         screen.message = ''
-        screen.needsPlay = false
+      }, fail)
+      data.onmessage = event => {
+        if (current !== generation || !canView()) return
+        try {
+          if (!(event.data instanceof ArrayBuffer)) throw new Error('Unsupported picture format')
+          const frame = images.push(event.data)
+          if (frame) renderer?.receive(frame)
+        } catch { fail('The HD picture could not be received safely. Try Sharper text or reconnect.') }
       }
-      void playViewing()
-    }
+    } else {
+      const transceiver = rtc.addTransceiver('video', { direction: 'recvonly' })
+      const capabilities = typeof RTCRtpReceiver !== 'undefined' ? RTCRtpReceiver.getCapabilities?.('video') : undefined
+      const codecs = capabilities?.codecs.filter(codec => ['video/h264', 'video/rtx'].includes(codec.mimeType.toLowerCase()))
+      if (codecs?.some(codec => codec.mimeType.toLowerCase() === 'video/h264') && typeof transceiver.setCodecPreferences === 'function') transceiver.setCodecPreferences(codecs)
+      rtc.ontrack = event => {
+        if (current !== generation || !canView() || !video) { event.track.stop(); return }
+        const receiver = event.receiver as (RTCRtpReceiver & { playoutDelayHint?: number; jitterBufferTarget?: number | null }) | undefined
+        if (receiver) {
+          try {
+            if ('playoutDelayHint' in receiver) receiver.playoutDelayHint = 0
+            if ('jitterBufferTarget' in receiver) receiver.jitterBufferTarget = 0
+          } catch {
+            // Ignore browsers that expose read-only or stricter jitter-buffer hints.
+          }
+        }
+        video.srcObject = event.streams[0] ?? new MediaStream([event.track])
+        video.onplaying = () => {
+          if (current !== generation || !canView()) return
+          clearTimeout(timeout)
+          screen.status = 'live'
+          screen.message = ''
+          screen.needsPlay = false
+        }
+        void playViewing()
+      }
     }
     rtc.onconnectionstatechange = () => {
       if (current !== generation) return
@@ -319,8 +259,7 @@ export async function startViewing() {
     await gathered(rtc)
     if (current !== generation || !canView()) return
     const sdp = rtc.localDescription?.sdp
-    const patches = screen.original && picture instanceof HTMLCanvasElement
-    if (!sdp || !send({ t: 'displayStart', id, displayId: settings.displayId, quality: settings.displayQuality, sdp, ...(patches ? { patches: true } : {}) })) {
+    if (!sdp || !send({ t: 'displayStart', id, displayId: settings.displayId, quality: settings.displayQuality, sdp, ...(screen.original ? { patches: true } : {}) })) {
       fail('The Mac is not connected.')
       return
     }
@@ -338,7 +277,7 @@ export function focusDisplay() {
   if (streamId !== null && screen.status === 'live' && connection.features.permission) send({ t: 'displayFocus', id: streamId })
 }
 
-export function activateScreen(element: HTMLVideoElement, image?: HTMLImageElement | HTMLCanvasElement) {
+export function activateScreen(element: HTMLVideoElement, image?: HTMLCanvasElement) {
   video = element
   picture = image ?? null
   if (screen.active) return

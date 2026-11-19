@@ -51,8 +51,8 @@ struct Frame {
     keyframe: bool,
 }
 
-/// HD text keeps only the newest waiting picture. A still screen sends no
-/// further updates, so dropping the newest would leave the phone out of date.
+/// One HD update may wait behind the active transfer. Full pictures may
+/// replace it, but dependent patches must wait for their base to be taken.
 #[derive(Default)]
 struct Latest {
     frame: Mutex<Option<Frame>>,
@@ -842,7 +842,7 @@ async fn run(
     let mut last_config = Instant::now();
     let mut last_keyframe = Instant::now() - Duration::from_secs(1);
     let mut waiting_for_keyframe = true;
-    let mut frames_sent = 0u64;
+    let mut sent_video = false;
     let mut send_failing: Option<Instant> = None;
     let mut tick = tokio::time::interval(Duration::from_secs(1));
     loop {
@@ -975,7 +975,7 @@ async fn run(
                     }
                 }
                 Output::Event(Event::EgressBitrateEstimate(estimate)) => {
-                    if original || frames_sent == 0 {
+                    if original || !sent_video {
                         continue;
                     }
                     let estimate = match estimate {
@@ -986,10 +986,7 @@ async fn run(
                     let decreasing = bitrate < current_bitrate;
                     let cooldown = if decreasing { Duration::from_millis(400) } else { Duration::from_secs(1) };
                     let threshold = if decreasing { current_bitrate * 3 / 20 } else { current_bitrate / 5 };
-                    if connected
-                        && last_config.elapsed() >= cooldown
-                        && bitrate.abs_diff(current_bitrate) > threshold
-                    {
+                    if connected && last_config.elapsed() >= cooldown && bitrate.abs_diff(current_bitrate) > threshold {
                         current_bitrate = bitrate;
                         let fps = if bitrate < 800_000 {
                             maximum_fps.min(15)
@@ -1065,17 +1062,17 @@ async fn run(
                 if frame.queued.elapsed() > Duration::from_millis(150) {
                     waiting_for_keyframe = true;
                     needs_keyframe.store(true, Ordering::Release);
-                    if last_keyframe.elapsed() > Duration::from_millis(500) {
-                        shared.delegate.display_command(session, DisplayCommand::KeyFrame { generation });
-                        last_keyframe = Instant::now();
-                    }
+                    // Even a recently requested IDR can age out. A still desktop
+                    // has no next frame to trigger recovery, so request one now.
+                    shared.delegate.display_command(session, DisplayCommand::KeyFrame { generation });
+                    last_keyframe = Instant::now();
                     continue;
                 }
                 if waiting_for_keyframe && !frame.keyframe { continue; }
                 if frame.keyframe { waiting_for_keyframe = false; }
                 if let Some((mid, pt, _, _)) = media {
                     rtc.writer(mid).ok_or("The video track ended.")?.write(pt, Instant::now(), MediaTime::from_micros(frame.timestamp_us), frame.data).map_err(|e| e.to_string())?;
-                    frames_sent += 1;
+                    sent_video = true;
                 }
             }
             _ = tokio::time::sleep_until(deadline.into()) => { rtc.handle_input(Input::Timeout(Instant::now())).map_err(|e| e.to_string())?; }

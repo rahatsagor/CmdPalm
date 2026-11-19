@@ -13,7 +13,6 @@ const MODIFIERS: Record<string, number> = {
 const down = new Set<number>()
 
 const INTERACTIVE = 'button, a[href], summary, [role="button"], [role="switch"], [role="tab"], [role="radio"], [role="option"], [role="menuitem"], [role="checkbox"]'
-const FOCUSABLE = 'a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])'
 const REMOTE_TAB_MODS = [Key.Command, Key.RightCommand, Key.Control, Key.RightControl, Key.Option, Key.RightOption]
 const CLEANUP_KEY = Symbol.for('cmdpalm.hardwareKeyboard')
 
@@ -24,34 +23,9 @@ function activatesControl(event: KeyboardEvent): boolean {
   return !!el?.closest?.(INTERACTIVE)
 }
 
-function isTabbable(el: HTMLElement): boolean {
-  if (el.tabIndex < 0 || el.closest('[inert], [hidden], [aria-hidden="true"]')) return false
-  for (let cur: HTMLElement | null = el; cur; cur = cur.parentElement) {
-    const style = getComputedStyle(cur)
-    if (style.display === 'none' || style.visibility === 'hidden') return false
-  }
-  return true
-}
-
-export function navigatesControls(event: KeyboardEvent): boolean {
-  if (event.key !== 'Tab' && event.code !== 'Tab') return false
-  if (event.metaKey || event.ctrlKey || event.altKey || REMOTE_TAB_MODS.some((mod) => down.has(mod))) return false
-  // Synthetic/test DOMs (like happy-dom) do not advance focus on Tab events.
-  if (!event.isTrusted || 'happyDOM' in window) {
-    const items = Array.from(document.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(isTabbable)
-    if (items.length) {
-      const active = document.activeElement instanceof HTMLElement ? document.activeElement : null
-      const index = active ? items.findIndex((item) => item === active || item.contains(active)) : -1
-      const next =
-        index === -1
-          ? event.shiftKey
-            ? items.at(-1)!
-            : items[0]!
-          : items[(index + (event.shiftKey ? items.length - 1 : 1)) % items.length]!
-      next.focus()
-    }
-  }
-  return true
+function navigatesControls(event: KeyboardEvent): boolean {
+  return (event.key === 'Tab' || event.code === 'Tab') && !event.metaKey && !event.ctrlKey && !event.altKey
+    && !REMOTE_TAB_MODS.some(mod => down.has(mod))
 }
 
 function editable(target: EventTarget | null): boolean {

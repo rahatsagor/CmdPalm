@@ -178,7 +178,9 @@ pub enum DisplayProfile {
 
 #[derive(Debug, Clone, PartialEq, uniffi::Enum)]
 pub enum DisplayCommand {
-    List { request_id: u32 },
+    List {
+        request_id: u32,
+    },
     Start {
         generation: u64,
         display_id: String,
@@ -189,10 +191,20 @@ pub enum DisplayCommand {
         patches: bool,
         profile: DisplayProfile,
     },
-    Configure { generation: u64, fps: u32, bitrate: u32 },
-    KeyFrame { generation: u64 },
-    Focus { generation: u64 },
-    Stop { generation: u64 },
+    Configure {
+        generation: u64,
+        fps: u32,
+        bitrate: u32,
+    },
+    KeyFrame {
+        generation: u64,
+    },
+    Focus {
+        generation: u64,
+    },
+    Stop {
+        generation: u64,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]

@@ -348,7 +348,7 @@ private func encodeOneGrayFrame(maxDimension: Int, fps: Int, bitrate: Int, profi
     }
 
     do {
-        try DisplayVideo.configureEncoder(encoder, fps: fps, bitrate: bitrate, profile: profile)
+        try DisplayVideo.configureEncoder(encoder, fps: fps, maximumFPS: fps, bitrate: bitrate, profile: profile)
         var rateLimits: Unmanaged<CFTypeRef>?
         let status = VTSessionCopyProperty(encoder, key: kVTCompressionPropertyKey_DataRateLimits, allocator: nil, valueOut: &rateLimits)
         let limits = rateLimits?.takeRetainedValue() as? [NSNumber]

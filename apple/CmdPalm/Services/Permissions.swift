@@ -15,6 +15,7 @@ final class Permissions {
     @ObservationIgnored var onChange: (() -> Void)?
     @ObservationIgnored private var timer: Timer?
     @ObservationIgnored private var pollInterval: TimeInterval = 0
+    @ObservationIgnored private var requestedViewUntil = Date.distantPast
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
 
     /// `CGPreflightPostEventAccess` keeps returning its first answer until the
@@ -41,7 +42,7 @@ final class Permissions {
     }
 
     private func scheduleTimer() {
-        let needsFastPoll = !canControl || !canView || NSApp.isActive
+        let needsFastPoll = !canControl || NSApp.isActive || (!canView && Date() < requestedViewUntil)
         let interval: TimeInterval = needsFastPoll ? 1 : 15
         guard timer == nil || pollInterval != interval else { return }
         timer?.invalidate()
@@ -49,7 +50,10 @@ final class Permissions {
         // There is no notification for these; poll briskly while active or
         // waiting for a grant, and coalesce lazily when idle in the menu bar.
         let timer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.refresh() }
+            MainActor.assumeIsolated {
+                self?.refresh()
+                self?.scheduleTimer()
+            }
         }
         timer.tolerance = needsFastPoll ? 0.3 : 5
         RunLoop.main.add(timer, forMode: .common)
@@ -64,7 +68,6 @@ final class Permissions {
         canControl = control
         self.speech = speech
         canView = view
-        if !observers.isEmpty { scheduleTimer() }
         onChange?()
     }
 
@@ -97,6 +100,8 @@ final class Permissions {
     /// only for later requests.
     func requestViewing() {
         guard !CGPreflightScreenCaptureAccess() else { refresh(); return }
+        requestedViewUntil = Date().addingTimeInterval(60)
+        if !observers.isEmpty { scheduleTimer() }
         let defaults = UserDefaults.standard
         let asked = defaults.bool(forKey: Self.askedToViewKey)
         // Also adds CmdPalm to the Screen Recording list.

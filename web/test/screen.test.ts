@@ -284,9 +284,12 @@ describe('receive-only display viewing', () => {
   })
 
   it('receives lossless pictures over a data-only peer on HTTP and revokes them on stop', async () => {
-    const socket = connect(); const image = document.createElement('img')
-    const create = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:hd-frame')
-    const revoke = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+    const socket = connect(); const image = document.createElement('canvas')
+    const drawImage = vi.fn()
+    Object.defineProperty(image, 'getContext', { value: () => ({ drawImage }) })
+    const bitmap = { close: vi.fn() }
+    const decode = vi.fn(async () => bitmap)
+    vi.stubGlobal('createImageBitmap', decode)
     const { settings } = await import('../src/lib/settings'); settings.displayQuality = 'original'
     library.activateScreen(video, image); list(socket); await library.startViewing()
     const rtc = FakePeer.all[0]!
@@ -299,23 +302,24 @@ describe('receive-only display viewing', () => {
     view.setUint32(24, 13); view.setUint32(28, 0x49484452); view.setUint32(32, 1920); view.setUint32(36, 1080)
     const handler = rtc.channel.onmessage!
     handler({ data: bytes.buffer })
-    expect(create).toHaveBeenCalledOnce()
-    image.dispatchEvent(new Event('load'))
+    await Promise.resolve()
+    expect(socket.sent.find(m => m.t === 'displayStart')).toMatchObject({ patches: true })
+    expect(drawImage).toHaveBeenCalledWith(bitmap, 0, 0)
+    expect([image.width, image.height]).toEqual([1920, 1080])
+    expect(bitmap.close).toHaveBeenCalledOnce()
     expect(library.screen.status).toBe('live')
     expect(library.screen.original).toBe(true)
     library.stopViewing()
-    expect(revoke).toHaveBeenCalledWith('blob:hd-frame')
-    expect(image.getAttribute('src')).toBeNull()
+    expect([image.width, image.height]).toEqual([0, 0])
     expect(rtc.channel.closed).toBe(true)
     handler({ data: bytes.buffer })
-    expect(create).toHaveBeenCalledOnce()
-    create.mockRestore(); revoke.mockRestore()
+    expect(decode).toHaveBeenCalledOnce()
   })
 
   it('rejects HD text on hosts without its capability', async () => {
     const socket = connect(); connection.state.features.displayOriginal = undefined
     const { settings } = await import('../src/lib/settings'); settings.displayQuality = 'original'
-    library.activateScreen(video, document.createElement('img')); list(socket); await library.startViewing()
+    library.activateScreen(video, document.createElement('canvas')); list(socket); await library.startViewing()
     expect(library.screen.message).toContain('Update CmdPalm')
     expect(FakePeer.all).toHaveLength(0)
   })

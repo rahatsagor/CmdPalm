@@ -113,7 +113,7 @@ private actor DisplayController {
             }
         case let .start(generation, displayId, maxDimension, fps, bitrate, original, patches, profile):
             guard gate.contains(generation) else { return }
-            let config = DisplaySettings(session: session, generation: generation, id: displayId, dimension: Int(maxDimension), fps: Int(fps), bitrate: Int(bitrate), original: original, patches: patches, profile: profile)
+            let config = DisplaySettings(session: session, generation: generation, id: displayId, dimension: Int(maxDimension), maximumFPS: Int(fps), fps: Int(fps), bitrate: Int(bitrate), original: original, patches: patches, profile: profile)
             await start(config)
         case let .configure(generation, fps, bitrate):
             guard gate.contains(generation), active?.generation == generation else { return }
@@ -238,6 +238,7 @@ struct DisplaySettings: Sendable {
     let generation: UInt64
     let id: String
     let dimension: Int
+    let maximumFPS: Int
     var fps: Int
     var bitrate: Int
     var original = false
@@ -463,7 +464,7 @@ enum DisplayVideo {
         ] as CFDictionary
     }
 
-    static func configureEncoder(_ encoder: VTCompressionSession, fps: Int, bitrate: Int, profile: DisplayProfile = .constrainedBaseline) throws {
+    static func configureEncoder(_ encoder: VTCompressionSession, fps: Int, maximumFPS: Int, bitrate: Int, profile: DisplayProfile = .constrainedBaseline) throws {
         let properties: [CFString: Any] = [
             kVTCompressionPropertyKey_ProfileLevel: profileLevel(for: profile),
             kVTCompressionPropertyKey_RealTime: true,
@@ -479,7 +480,7 @@ enum DisplayVideo {
         if profile != .constrainedBaseline {
             VTSessionSetProperty(encoder, key: kVTCompressionPropertyKey_H264EntropyMode, value: kVTH264EntropyMode_CABAC)
         }
-        VTSessionSetProperty(encoder, key: kVTCompressionPropertyKey_MaximumRealTimeFrameRate, value: fps as CFNumber)
+        VTSessionSetProperty(encoder, key: kVTCompressionPropertyKey_MaximumRealTimeFrameRate, value: maximumFPS as CFNumber)
         setRateLimit(encoder, bitrate: bitrate)
         // Set before preparation so the first frame can be emitted without
         // waiting for another frame on a static desktop.
@@ -540,6 +541,7 @@ final class DisplayCapture: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
     private var originalPendingImage: CVPixelBuffer?
     private var originalPendingTime = CMTime.invalid
     private var originalRetryQueued = false
+    private var originalPayload: (data: Data, full: Bool)?
     private var bucket: CaptureBucket
     private var wideRateLimit = false
     private var refinementToken: UInt64 = 0
@@ -575,12 +577,13 @@ final class DisplayCapture: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
         bucket = CaptureBucket(fps: settings.fps, now: ProcessInfo.processInfo.systemUptime)
     }
 
-    private func configuration(fps: Int) -> SCStreamConfiguration {
+    private func configuration() -> SCStreamConfiguration {
         let size = outputSize
         let config = SCStreamConfiguration()
         config.width = size.width
         config.height = size.height
-        config.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(max(1, fps)))
+        // Bandwidth feedback can raise the paced rate after a monitor change.
+        config.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(max(1, settings.maximumFPS)))
         config.queueDepth = 6
         config.pixelFormat = settings.original ? kCVPixelFormatType_32BGRA : kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
         config.colorSpaceName = settings.original ? CGColorSpace.sRGB : CGColorSpace.itur_709
@@ -611,8 +614,7 @@ final class DisplayCapture: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
                 }
             } }
             guard gate.contains(generation), !flags.withLock({ $0.stopped }) else { await stop(); return }
-            let fps = flags.withLock { $0.fps }
-            let stream = SCStream(filter: SCContentFilter(display: display, excludingWindows: []), configuration: configuration(fps: fps), delegate: self)
+            let stream = SCStream(filter: SCContentFilter(display: display, excludingWindows: []), configuration: configuration(), delegate: self)
             self.stream = stream
             try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: queue)
             try await stream.startCapture()
@@ -649,6 +651,7 @@ final class DisplayCapture: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
                 self.originalPendingImage = nil
                 self.originalPendingTime = .invalid
                 self.originalRetryQueued = false
+                self.originalPayload = nil
                 self.wideRateLimit = false
                 self.refinementToken &+= 1
                 self.refinementPasses = 0
@@ -745,7 +748,7 @@ final class DisplayCapture: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
             }, refcon: Unmanaged.passUnretained(self).toOpaque(), compressionSessionOut: &encoder)
         guard status == noErr, let encoder else { throw DisplayError.encoder }
         let latest = flags.withLock { ($0.fps, $0.bitrate) }
-        try DisplayVideo.configureEncoder(encoder, fps: latest.0, bitrate: latest.1, profile: settings.profile)
+        try DisplayVideo.configureEncoder(encoder, fps: latest.0, maximumFPS: settings.maximumFPS, bitrate: latest.1, profile: settings.profile)
         bucket.reset(fps: latest.0, now: ProcessInfo.processInfo.systemUptime)
     }
 
@@ -765,16 +768,17 @@ final class DisplayCapture: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
             let width = CVPixelBufferGetWidth(image)
             let height = CVPixelBufferGetHeight(image)
             let rect = DisplayVideo.dirtyUnion(attachments.first?[.dirtyRects], width: width, height: height)
-            if rect == .zero && originalHasSent && originalDirtyRect == nil && !originalNeedsFull { return }
+            if rect == .zero && originalHasSent { return }
             if !originalHasSent || rect == nil {
                 originalNeedsFull = true
                 originalDirtyRect = nil
             } else if !originalNeedsFull, let rect, rect != .zero {
                 originalDirtyRect = originalDirtyRect.map { $0.union(rect) } ?? rect
             }
+            originalPayload = nil
             originalPendingImage = image
             originalPendingTime = sampleBuffer.presentationTimeStamp
-            sendPendingOriginal()
+            if !originalRetryQueued { sendPendingOriginal() }
             return
         }
         let dirty = DisplayVideo.hasDirtyContent(attachments.first?[.dirtyRects])
@@ -787,13 +791,35 @@ final class DisplayCapture: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
     }
 
     private func sendPendingOriginal() {
-        guard gate.contains(generation), !flags.withLock({ $0.stopped }), let image = originalPendingImage else { return }
-        let width = CVPixelBufferGetWidth(image)
-        let height = CVPixelBufferGetHeight(image)
-        guard width > 0, height > 0 else { return }
+        guard gate.contains(generation), !flags.withLock({ $0.stopped }) else { return }
+        if originalPayload == nil, let image = originalPendingImage {
+            originalPayload = prepareOriginal(image)
+            originalPendingImage = nil
+        }
+        guard let payload = originalPayload else { return }
         let seconds = CMTimeGetSeconds(originalPendingTime)
         guard seconds.isFinite, seconds >= 0 else { return }
+        if sendFrame(payload.data, UInt64(seconds * 1_000_000), payload.full) {
+            originalHasSent = true
+            originalNeedsFull = false
+            originalDirtyRect = nil
+            originalPayload = nil
+        } else {
+            // Reuse the encoded patch while waiting for transport capacity.
+            // New damage invalidates it and is merged into the next attempt.
+            originalRetryQueued = true
+            queue.asyncAfter(deadline: .now() + .milliseconds(60)) { [weak self] in
+                guard let self else { return }
+                self.originalRetryQueued = false
+                self.sendPendingOriginal()
+            }
+        }
+    }
 
+    private func prepareOriginal(_ image: CVPixelBuffer) -> (data: Data, full: Bool)? {
+        let width = CVPixelBufferGetWidth(image)
+        let height = CVPixelBufferGetHeight(image)
+        guard width > 0, height > 0 else { return nil }
         let sendFull: Bool
         let crop: CGRect?
         if !originalHasSent || originalNeedsFull || !settings.patches {
@@ -801,7 +827,7 @@ final class DisplayCapture: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
             crop = nil
         } else if let dirty = originalDirtyRect {
             let areaRatio = (dirty.width * dirty.height) / Double(width * height)
-            if areaRatio > 0.55 || (Int(dirty.width) >= width && Int(dirty.height) >= height) {
+            if areaRatio > 0.55 {
                 sendFull = true
                 crop = nil
             } else {
@@ -809,14 +835,14 @@ final class DisplayCapture: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
                 crop = dirty
             }
         } else {
-            return
+            return nil
         }
 
         guard let png = autoreleasepool(invoking: { DisplayVideo.png(image, crop: crop) }) else {
             fail("The HD picture could not be prepared. Try Sharper text or start viewing again.")
-            return
+            return nil
         }
-        guard gate.contains(generation) else { return }
+        guard gate.contains(generation) else { return nil }
         let payload: Data
         if sendFull {
             payload = png
@@ -826,24 +852,10 @@ final class DisplayCapture: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
                 fullWidth: width, fullHeight: height, png: png
             )
         } else {
-            return
+            return nil
         }
-        guard payload.count <= 16 * 1024 * 1024 else { fail("This HD picture is too large. Choose Sharper text for this screen content."); return }
-        if sendFrame(payload, UInt64(seconds * 1_000_000), sendFull) {
-            originalHasSent = true
-            originalNeedsFull = false
-            originalDirtyRect = nil
-            originalPendingImage = nil
-        } else if !originalRetryQueued {
-            // Transport is still sending a previous patch/picture; keep the
-            // accumulated dirty rect so no changed pixels are lost and retry shortly.
-            originalRetryQueued = true
-            queue.asyncAfter(deadline: .now() + .milliseconds(60)) { [weak self] in
-                guard let self else { return }
-                self.originalRetryQueued = false
-                self.sendPendingOriginal()
-            }
-        }
+        guard payload.count <= 16 * 1024 * 1024 else { fail("This HD picture is too large. Choose Sharper text for this screen content."); return nil }
+        return (payload, sendFull)
     }
 
     private func encodePendingImage() {

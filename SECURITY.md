@@ -128,9 +128,9 @@ that:
 
 Screen video uses WebRTC's encrypted media transport on both HTTP and HTTPS.
 HD text uses lossless PNG pictures over a DTLS-encrypted WebRTC data channel,
-with the same grants, cancellation, and viewing lease. It sends up to one
-picture per second at up to 4K, with a 16 MiB picture limit, 16 KiB chunks,
-and bounded queues. Pictures never use an HTTP endpoint or the control socket.
+with the same grants, cancellation, and viewing lease. It sends up to four
+updates per second at up to 4K. Full pictures and negotiated patches share
+a 16 MiB payload limit, 16 KiB chunks, and bounded queues. Pictures never use an HTTP endpoint or the control socket.
 This does not secure an HTTP page, token, or signaling exchange: an on-path
 attacker could modify signaling or steal a pairing token. The existing HTTPS
 connection is recommended. Direct local UDP connectivity is required; no

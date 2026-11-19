@@ -97,9 +97,9 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - Viewing stays active when unrelated Mac settings change or an existing
   permission is reported again. Approval refreshes preserve newly started views.
 - HD text preserves lossless picture detail up to 4K for reading small text,
-  with up to one update per second over an encrypted WebRTC connection. On a
-  slow connection it skips to the newest picture, so the phone always ends on
-  what the Mac is showing.
+  with up to four updates per second over an encrypted WebRTC connection.
+  Small changes travel as patches, and the Mac combines changes while the
+  connection catches up.
 - Refreshing the display list keeps a live view running, and tapping Refresh
   twice no longer clears the list.
 - Both scroll-strip lengths now use matching up/down chevrons at every width,
