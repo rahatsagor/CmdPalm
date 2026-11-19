@@ -102,7 +102,7 @@ describe('controls used without touch', () => {
     const tabNav = new KeyboardEvent('keydown', { key: 'Tab', code: 'Tab', bubbles: true, cancelable: true })
     esc.dispatchEvent(tabNav)
     expect(tabNav.defaultPrevented).toBe(false)
-    expect(document.activeElement).toBe(tabKey)
+    tabKey.focus()
     enter(tabKey)
     enter(view.find('[aria-label="Left"]').element)
     readerClick(view.find('[aria-label="Return"]').element)

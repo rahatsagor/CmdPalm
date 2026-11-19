@@ -83,7 +83,7 @@ describe('MediaView', () => {
     view.unmount()
   })
 
-  it('moves focus through phone buttons with Tab and Shift+Tab while keeping Enter, Space and modified Tab working', async () => {
+  it('leaves Tab, Shift+Tab and button activation to the browser and forwards modified Tab', async () => {
     const { socket, view } = await mediaView()
     const { installHardwareKeyboard } = await import('../src/lib/hardware')
     const { Key } = await import('../src/lib/keys')
@@ -96,7 +96,7 @@ describe('MediaView', () => {
     previous.dispatchEvent(forwardDown)
     previous.dispatchEvent(new KeyboardEvent('keyup', { key: 'Tab', code: 'Tab', bubbles: true, cancelable: true }))
     expect(forwardDown.defaultPrevented).toBe(false)
-    expect(document.activeElement).toBe(play)
+    play.focus()
     expect(socket.sent.filter((m) => m.t === 'key')).toEqual([])
 
     const enter = new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true, cancelable: true })
@@ -111,7 +111,7 @@ describe('MediaView', () => {
     play.dispatchEvent(backwardDown)
     play.dispatchEvent(new KeyboardEvent('keyup', { key: 'Tab', code: 'Tab', shiftKey: true, bubbles: true, cancelable: true }))
     expect(backwardDown.defaultPrevented).toBe(false)
-    expect(document.activeElement).toBe(previous)
+    previous.focus()
     expect(socket.sent.filter((m) => m.t === 'key')).toEqual([])
 
     const cmdTab = new KeyboardEvent('keydown', { key: 'Tab', code: 'Tab', metaKey: true, bubbles: true, cancelable: true })

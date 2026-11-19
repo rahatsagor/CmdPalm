@@ -321,7 +321,7 @@ and disconnect invalidate them. A request never starts capture automatically.
 | `displays` | `id` | Request the current authorized display list. Requests are bounded and rate limited: one sent while the Mac is still listing receives that list under the newest `id`, and one sent within 300 ms of an answer receives the same list again. A list request does not affect an active viewer. |
 | `displayAccessRequest` | `id` | Request native approval when `features.displayRequests` is true. |
 | `displayAccessCancel` | `id` | Cancel this session's matching pending request. |
-| `displayStart` | `id`, `displayId`, `quality`, `sdp` | Start a WebRTC offer with exactly one media section; SDP is limited to 64 KiB. `auto`, `battery`, and `sharp` use a receive-only video transceiver. `original` requires `features.displayOriginal` and uses only a data section. The display must have appeared in this session's latest list. |
+| `displayStart` | `id`, `displayId`, `quality`, `sdp`, optional `patches` | Start a WebRTC offer with exactly one media section; SDP is limited to 64 KiB. `auto`, `battery`, and `sharp` use a receive-only video transceiver. `original` requires `features.displayOriginal` and uses only a data section. The display must have appeared in this session's latest list. |
 | `displayAlive` | `id` | Renew the active viewing lease every second while visible. The Mac ends it after four seconds without a renewal. |
 | `displayStop` | `id` | Stop only the matching viewer owned by this session. |
 | `displayFocus` | `id` | Move the pointer to the active display. Also requires Accessibility. Selecting a display does not move the pointer. |
@@ -361,18 +361,23 @@ including when Vue keeps the page cached. Resuming requires another View tap.
 
 HD text (`original`) uses an ordered reliable data channel named
 `cmdpalm.original`, protected by DTLS. The host captures RGB pictures at up to
-one update per second, preserves source pixels up to a 3840 × 2160 pixel budget
-(rotated for portrait), and encodes PNG without video compression. This avoids
-H.264 level, bitrate, and chroma-subsampling limits when reading tiny text.
-It does not upscale the source. Each PNG is limited to 16 MiB and carried in
-binary messages of at most 16 KiB. A 16-byte header contains `CPNG`, a u32
-sequence, u32 total PNG length, and u32 byte offset, all integers little-endian.
-The receiver validates order, bounds, PNG signature, and IHDR dimensions before
-decoding. The sender holds one in-flight and one waiting picture with at most
-128 KiB SCTP buffering, yields between chunk batches, and ends a transfer
-that takes more than 12 seconds. A newer picture replaces the waiting one, so
-the picture sent last is always the newest: a still screen produces no further
-updates that could correct an older one. Unexpected
+four updates per second and preserves source pixels up to a 3840 × 2160
+budget (rotated for portrait). It encodes lossless PNGs without upscaling.
+Clients that send `patches: true` can also receive changed regions after a full
+picture. Older clients receive full pictures throughout.
+
+Every binary message is at most 16 KiB. Its 16-byte header contains the
+four ASCII bytes `CPNG` (full picture) or `CPAT` (patch), followed by three
+little-endian u32 values for sequence, total payload length, and byte offset.
+A full payload contains the PNG. A patch payload begins with four little-endian
+u16 values for x, y, full width, and full height, followed by the cropped PNG.
+Coordinates are measured in pixels from the top left. Each payload is limited
+to 16 MiB. Receivers validate chunk order, PNG dimensions, and patch bounds.
+
+The sender holds one transfer and one waiting update, caps SCTP buffering at
+256 KiB, and ends a transfer that takes more than 12 seconds. A full picture
+may replace a waiting update. Dependent patches travel in order, and the Mac
+accumulates unsent changes while the waiting slot is occupied. Unexpected
 channels or application messages from the phone end the viewer. The same
 single-viewer grants, stop controls, and visible lease apply to both modes.
 

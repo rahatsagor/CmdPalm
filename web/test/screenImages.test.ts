@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { ScreenImageAssembler } from '../src/lib/screenImages'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { ScreenImageAssembler, ScreenImageRenderer, type ScreenImageFrame } from '../src/lib/screenImages'
 
 function picture(width = 1920, height = 1080, size = 40_000) {
   const data = new Uint8Array(size)
@@ -24,10 +24,10 @@ describe('lossless screen pictures', () => {
     const png = picture()
     for (let offset = 0; offset < png.length; offset += 10_000) {
       const result = assembler.push(chunk(png, offset, 10_000))
-      if (offset === 30_000) expect(result).toEqual(png)
+      if (offset === 30_000) expect(result?.png).toEqual(png)
       else expect(result).toBeNull()
     }
-    expect(assembler.push(chunk(picture(1280, 720, 33), 0, 33, 2))).toHaveLength(33)
+    expect(assembler.push(chunk(picture(1280, 720, 33), 0, 33, 2))?.png).toHaveLength(33)
   })
   it('does not accept an oversized allocation', () => {
     const bytes = chunk(picture(), 0, 100)
@@ -68,11 +68,59 @@ describe('lossless screen pictures', () => {
     outer.setUint32(4, 3, true); outer.setUint32(8, payload.length, true); outer.setUint32(12, 0, true)
     message.set(payload, 16)
 
-    const frame = new ScreenImageAssembler().pushFrame(message.buffer)
+    const frame = new ScreenImageAssembler().push(message.buffer)
     expect(frame).toEqual({ kind: 'patch', png: patchPng, x: 100, y: 50, width: 200, height: 120, fullWidth: 1920, fullHeight: 1080 })
 
     // Out-of-bounds patch (x + width > fullWidth)
     new DataView(message.buffer, 16, 8).setUint16(0, 1800, true)
-    expect(() => new ScreenImageAssembler().pushFrame(message.buffer)).toThrow('out of bounds')
+    expect(() => new ScreenImageAssembler().push(message.buffer)).toThrow('out of bounds')
+  })
+})
+
+describe('lossless picture rendering', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  function viewer() {
+    const canvas = document.createElement('canvas')
+    canvas.width = canvas.height = 0
+    const drawImage = vi.fn()
+    Object.defineProperty(canvas, 'getContext', { value: () => ({ drawImage }) })
+    const finish: Array<(bitmap: { close: () => void }) => void> = []
+    vi.stubGlobal('createImageBitmap', () => new Promise(resolve => finish.push(resolve)))
+    const onPaint = vi.fn()
+    const onFailure = vi.fn()
+    const renderer = new ScreenImageRenderer(canvas, onPaint, onFailure)
+    const full = { kind: 'full', png: picture(20, 10, 33), width: 20, height: 10 } as const
+    const patch: ScreenImageFrame = { kind: 'patch', png: picture(2, 2, 33), x: 4, y: 5, width: 2, height: 2, fullWidth: 20, fullHeight: 10 }
+    async function decoded() {
+      const bitmap = { close: vi.fn() }
+      finish.shift()!(bitmap)
+      await Promise.resolve()
+      expect(bitmap.close).toHaveBeenCalledOnce()
+      return bitmap
+    }
+    return { renderer, full, patch, drawImage, onPaint, onFailure, decoded }
+  }
+
+  it('replaces waiting patches with a full picture and paints subsequent patches in order', async () => {
+    const { renderer, full, patch, drawImage, onFailure, decoded } = viewer()
+    renderer.receive(full)
+    renderer.receive(patch)
+    renderer.receive(full)
+    renderer.receive(patch)
+    const first = await decoded()
+    const replacement = await decoded()
+    const last = await decoded()
+    expect(drawImage.mock.calls).toEqual([[first, 0, 0], [replacement, 0, 0], [last, 4, 5]])
+    expect(onFailure).not.toHaveBeenCalled()
+  })
+
+  it('bounds the patch backlog and releases an in-flight decode after stopping', async () => {
+    const { renderer, full, patch, onPaint, onFailure, decoded } = viewer()
+    renderer.receive(full)
+    for (let i = 0; i < 20; i++) renderer.receive(patch)
+    expect(onFailure).toHaveBeenCalledExactlyOnceWith(expect.stringContaining('fast enough'))
+    await decoded()
+    expect(onPaint).not.toHaveBeenCalled()
   })
 })

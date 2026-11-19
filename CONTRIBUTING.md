@@ -123,7 +123,6 @@ Set `CMDPALM_HOST` if the host runs somewhere other than `127.0.0.1:8790`.
 CI runs all of these on every push.
 
 ```sh
-export CARGO_HOME="$(cd "${CARGO_HOME:-$HOME/.cargo}" && pwd -P)"
 cargo fmt --all --check
 cargo clippy --all-targets -- -D warnings
 cargo test
@@ -143,9 +142,6 @@ cd apple
 xcodebuild test -project CmdPalm.xcodeproj -scheme CmdPalm -destination "platform=macOS,arch=arm64"
 ```
 
-The canonical `CARGO_HOME` path also works when `~/.cargo` is a symlink.
-UniFFI's binding generator needs its template paths to match Cargo's paths.
-
 ### Screen mirroring checks
 
 The Rust suite includes a real local WebRTC handshake, encrypted media, and
@@ -160,7 +156,7 @@ through the production PNG encoder.
 
 The optional hardware test verifies the production encoder using a generated
 gray pixel buffer. It checks first-frame output without feeding a second
-frame, constrained-baseline H.264, and receiver level limits. It does not
+frame, negotiated H.264 profiles, and receiver level limits. It does not
 capture a display or request screen permission. Run it on an Apple-silicon Mac:
 
 ```sh

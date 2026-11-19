@@ -8,6 +8,8 @@ Local changes:
 - Cargo.toml and Cargo.toml.orig replace optional basic-toml with toml 1.1,
   using only its parse, serde and std features.
 - src/config.rs uses toml::from_str for Askama configuration parsing.
+- src/generator/helpers/paths.rs keeps external include paths absolute when
+  Cargo reaches the registry through a symlink.
 - This NOTICE and UPSTREAM.json record the patch and upstream provenance.
 
 The original MIT and Apache-2.0 licenses are included unchanged. The source

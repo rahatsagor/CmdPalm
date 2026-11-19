@@ -67,7 +67,7 @@ pub(crate) fn diff_paths(
             let Some(manifest_dir) = manifest_dir &&
             // If the `base` doesn't start with the same path as `CARGO_MANIFEST_DIR`, it likely
             // means that we're in a macro, so better use the absolute path in this case.
-            !base.starts_with(manifest_dir)
+            (!base.starts_with(&manifest_dir) || !path.starts_with(&manifest_dir))
         {
             return Some(PathBuf::from(path));
         }
@@ -126,6 +126,16 @@ fn test_diff_paths() {
                 Some("/askama-bugs/b".into()),
             ),
             Some("/askama-bugs/b/templates/empty.txt".into()),
+        );
+
+        // Cargo can reach the same registry via a symlink and its physical path.
+        assert_eq!(
+            diff_paths(
+                Path::new("/volume/cargo/crate/askama.toml"),
+                Path::new("/home/cargo/crate/src"),
+                Some("/home/cargo/crate".into()),
+            ),
+            Some("/volume/cargo/crate/askama.toml".into()),
         );
 
         // If it's in the same crate, relative path should be returned.

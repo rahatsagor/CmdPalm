@@ -7,7 +7,6 @@ import Segmented from '@/components/Segmented.vue'
 import Sheet from '@/components/Sheet.vue'
 import TrackpadSurface from '@/components/TrackpadSurface.vue'
 import { state as connection } from '@/lib/connection'
-import { navigatesControls } from '@/lib/hardware'
 import { releaseAll } from '@/lib/input'
 import { activateScreen, cancelAccessRequest, deactivateScreen, focusDisplay, playViewing, refreshDisplays, requestScreenAccess, screen, selectedDisplay, startViewing, stopViewing } from '@/lib/screen'
 import { settings } from '@/lib/settings'
@@ -43,12 +42,12 @@ const previewStyle = computed(() => settings.displayControls === 'view' ? { flex
 const controlsHeight = computed(() => wide.value ? size.height : Math.max(0, size.height - previewLength.value - 8))
 const compactPreview = computed(() => !fullView.value && settings.displayControls !== 'view' && (wide.value ? size.height : previewLength.value) < 140)
 const media = reactive({ width: 0, height: 0 })
+const previewSize = reactive({ width: 0, height: 0 })
 const maxZoom = computed(() => {
   const floor = screen.original ? 8 : 4
   const ceiling = screen.original ? 12 : 8
-  const element = preview.value
-  if (!element || !media.width || !media.height || !element.clientWidth || !element.clientHeight) return floor
-  const fit = Math.min(element.clientWidth / media.width, element.clientHeight / media.height)
+  if (!media.width || !media.height || !previewSize.width || !previewSize.height) return floor
+  const fit = Math.min(previewSize.width / media.width, previewSize.height / media.height)
   if (!Number.isFinite(fit) || fit <= 0) return floor
   return Math.max(floor, Math.min(ceiling, Math.round((4 / fit) * 10) / 10))
 })
@@ -126,15 +125,20 @@ function fullscreenKeys(event: KeyboardEvent) {
   else if (['Enter', ' ', 'Tab'].includes(event.key) && !event.altKey && !event.ctrlKey && !event.metaKey && event.target instanceof Element && displayArea.value?.contains(event.target) && event.target.closest('button')) {
     // Explicitly focused viewer buttons use the browser's keyboard actions.
     // Other hardware keyboard input can still be sent to the Mac.
-    if (event.key === 'Tab') navigatesControls(event)
     event.stopPropagation()
   }
 }
 onMounted(() => {
-  observer = new ResizeObserver(([entry]) => {
-    if (entry) { size.width = entry.contentRect.width; size.height = entry.contentRect.height; clampPan() }
+  observer = new ResizeObserver(entries => {
+    for (const entry of entries) {
+      const target = entry.target === preview.value ? previewSize : size
+      target.width = entry.contentRect.width
+      target.height = entry.contentRect.height
+    }
+    clampPan()
   })
   if (body.value) observer.observe(body.value)
+  if (preview.value) observer.observe(preview.value)
   document.addEventListener('fullscreenchange', fullscreenChanged)
   addEventListener('keydown', fullscreenKeys, true)
   activate()

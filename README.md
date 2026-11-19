@@ -87,7 +87,7 @@ Screen mirroring, trackpad, keyboard and shortcut deck, together in your browser
 or keyboard beneath the live preview. Choose View or fullscreen for more space,
 pinch to zoom, pan, and bring the pointer onto the selected display. Automatic,
 Save battery and Sharper text tune the stream; **HD text · lossless** preserves
-picture detail up to 4K with up to one update per second for reading.
+picture detail up to 4K and updates changed areas up to four times per second.
 
 Screen mirroring is **off by default**. Enable **Allow screen mirroring** in the Mac’s
 General settings, grant macOS **Screen Recording** permission, and allow screen
