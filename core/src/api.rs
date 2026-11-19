@@ -186,6 +186,7 @@ pub enum DisplayCommand {
         fps: u32,
         bitrate: u32,
         original: bool,
+        patches: bool,
         profile: DisplayProfile,
     },
     Configure { generation: u64, fps: u32, bitrate: u32 },

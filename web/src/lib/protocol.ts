@@ -192,7 +192,7 @@ export type ClientMessage =
   | { t: 'displays'; id: number }
   | { t: 'displayAccessRequest'; id: number }
   | { t: 'displayAccessCancel'; id: number }
-  | { t: 'displayStart'; id: number; displayId: string; sdp: string; quality: DisplayQuality }
+  | { t: 'displayStart'; id: number; displayId: string; sdp: string; quality: DisplayQuality; patches?: boolean }
   | { t: 'displayStop'; id: number }
   | { t: 'displayAlive'; id: number }
   | { t: 'displayFocus'; id: number }
