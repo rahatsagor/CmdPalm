@@ -56,7 +56,7 @@ final class DisplayService: Sendable {
 
     func command(session: UInt64, command: DisplayCommand) {
         switch command {
-        case let .start(generation, _, _, _, _, _, _):
+        case let .start(generation, _, _, _, _, _, _, _):
             guard gate.begin(generation) else {
                 reference.host?.displayFailed(session: session, generation: generation, message: "Unlock or wake the Mac, then start viewing again.")
                 return
@@ -111,9 +111,9 @@ private actor DisplayController {
             } catch {
                 reference.host?.displaySources(session: session, requestId: requestId, displays: [], message: (error as? DisplayError)?.message ?? "The Mac could not list its displays. Check Screen Recording permission, then refresh.")
             }
-        case let .start(generation, displayId, maxDimension, fps, bitrate, original, profile):
+        case let .start(generation, displayId, maxDimension, fps, bitrate, original, patches, profile):
             guard gate.contains(generation) else { return }
-            let config = DisplaySettings(session: session, generation: generation, id: displayId, dimension: Int(maxDimension), fps: Int(fps), bitrate: Int(bitrate), original: original, profile: profile)
+            let config = DisplaySettings(session: session, generation: generation, id: displayId, dimension: Int(maxDimension), fps: Int(fps), bitrate: Int(bitrate), original: original, patches: patches, profile: profile)
             await start(config)
         case let .configure(generation, fps, bitrate):
             guard gate.contains(generation), active?.generation == generation else { return }
@@ -241,6 +241,7 @@ struct DisplaySettings: Sendable {
     var fps: Int
     var bitrate: Int
     var original = false
+    var patches = false
     var profile: DisplayProfile = .constrainedBaseline
 }
 
@@ -795,7 +796,7 @@ final class DisplayCapture: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
 
         let sendFull: Bool
         let crop: CGRect?
-        if !originalHasSent || originalNeedsFull {
+        if !originalHasSent || originalNeedsFull || !settings.patches {
             sendFull = true
             crop = nil
         } else if let dirty = originalDirtyRect {

@@ -540,6 +540,7 @@ pub(crate) fn start(
     display_id: String,
     sdp: String,
     quality: DisplayQuality,
+    patches: bool,
 ) {
     let refuse = |message: &str| shared.send_to(session, state(request, "error", Some(message)));
     if let Err(message) = access(&shared, session) {
@@ -603,6 +604,7 @@ pub(crate) fn start(
             display_id,
             sdp,
             quality,
+            patches,
             rx,
             &latest,
             cancelled,
@@ -735,6 +737,7 @@ async fn run(
     display_id: String,
     offer_text: String,
     quality: DisplayQuality,
+    patches: bool,
     mut frames: mpsc::Receiver<Frame>,
     latest: &Latest,
     mut cancelled: watch::Receiver<bool>,
@@ -1016,6 +1019,7 @@ async fn run(
                         fps: 4,
                         bitrate: 0,
                         original: true,
+                        patches,
                         profile: DisplayProfile::ConstrainedBaseline,
                     },
                 );
@@ -1036,6 +1040,7 @@ async fn run(
                         fps: maximum_fps,
                         bitrate: current_bitrate,
                         original: false,
+                        patches: false,
                         profile,
                     },
                 );

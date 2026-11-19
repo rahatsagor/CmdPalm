@@ -674,8 +674,8 @@ impl Connection {
                 self.shared.displays.list(&self.shared, self.id, id);
                 None
             }
-            ClientMessage::DisplayStart { id, display_id, sdp, quality } => {
-                crate::display::start(self.shared.clone(), self.id, id, display_id, sdp, quality);
+            ClientMessage::DisplayStart { id, display_id, sdp, quality, patches } => {
+                crate::display::start(self.shared.clone(), self.id, id, display_id, sdp, quality, patches);
                 None
             }
             ClientMessage::DisplayStop { id } => {

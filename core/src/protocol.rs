@@ -358,6 +358,9 @@ pub enum ClientMessage {
         display_id: String,
         sdp: String,
         quality: DisplayQuality,
+        /// True when the client can composite `CPAT` dirty-rect lossless patches.
+        #[serde(default)]
+        patches: bool,
     },
     DisplayStop {
         id: u32,

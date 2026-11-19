@@ -56,7 +56,7 @@ const mode = computed({ get: () => settings.displayControls, set: value => { rel
 const placeholder = computed(() => {
   if (screen.status === 'loading') return 'Finding displays…'
   if (screen.needsPlay) return 'Tap to show the display'
-  if (screen.status === 'connecting') return 'Connecting video…'
+  if (screen.status === 'connecting') return screen.original ? 'Connecting HD view…' : 'Connecting video…'
   if (screen.message) return screen.message
   if (display.value) return 'Start viewing to see this display.'
   return 'Choose a display to start viewing.'
@@ -305,13 +305,14 @@ function up(event: PointerEvent) { pointers.delete(event.pointerId); beginGestur
           playsinline
           disablepictureinpicture
           class="h-full w-full object-contain"
+          :class="{ 'opacity-0': !live }"
           :style="{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }"
           aria-label="Live view of the selected Mac display"
           @loadedmetadata="clampPan"
         />
         <canvas
           ref="picture"
-          v-show="streaming && screen.original"
+          v-show="live && screen.original"
           role="img"
           aria-label="Lossless HD view of the selected Mac display"
           class="h-full w-full object-contain"

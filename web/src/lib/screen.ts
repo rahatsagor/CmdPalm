@@ -319,7 +319,8 @@ export async function startViewing() {
     await gathered(rtc)
     if (current !== generation || !canView()) return
     const sdp = rtc.localDescription?.sdp
-    if (!sdp || !send({ t: 'displayStart', id, displayId: settings.displayId, quality: settings.displayQuality, sdp })) {
+    const patches = screen.original && picture instanceof HTMLCanvasElement
+    if (!sdp || !send({ t: 'displayStart', id, displayId: settings.displayId, quality: settings.displayQuality, sdp, ...(patches ? { patches: true } : {}) })) {
       fail('The Mac is not connected.')
       return
     }
