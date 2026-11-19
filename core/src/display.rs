@@ -740,7 +740,7 @@ async fn run(
         let destination = endpoint.address;
         let incoming = incoming.clone();
         readers.spawn(async move {
-            let mut buffer = [0; 8192];
+            let mut buffer = [0; 2048];
             loop {
                 match socket.recv_from(&mut buffer).await {
                     Ok((size, source)) => {
@@ -779,7 +779,7 @@ async fn run(
         .set_sctp_max_message_size(1024)
         .set_sctp_max_buffered_amount(128 * 1024)
         .enable_bwe(Some(Bitrate::mbps(4)))
-        .set_stats_interval(Some(Duration::from_secs(1)));
+        .set_stats_interval(None);
     builder.codec_config().clear();
     // Prefer CABAC-capable H.264 profiles (no B-frames) when the browser
     // offers them, falling back to Constrained Baseline. The receiver's
@@ -826,7 +826,7 @@ async fn run(
     let mut waiting_for_keyframe = true;
     let mut frames_sent = 0u64;
     let mut send_failing: Option<Instant> = None;
-    let mut tick = tokio::time::interval(Duration::from_millis(250));
+    let mut tick = tokio::time::interval(Duration::from_secs(1));
     loop {
         if stopped.load(Ordering::Acquire) {
             return Ok(());

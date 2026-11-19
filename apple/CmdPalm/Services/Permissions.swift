@@ -14,7 +14,8 @@ final class Permissions {
 
     @ObservationIgnored var onChange: (() -> Void)?
     @ObservationIgnored private var timer: Timer?
-    @ObservationIgnored private var activation: NSObjectProtocol?
+    @ObservationIgnored private var pollInterval: TimeInterval = 0
+    @ObservationIgnored private var observers: [NSObjectProtocol] = []
 
     /// `CGPreflightPostEventAccess` keeps returning its first answer until the
     /// app relaunches, so a grant made in System Settings would go unnoticed.
@@ -24,18 +25,35 @@ final class Permissions {
     }
 
     func startMonitoring() {
-        guard timer == nil else { return }
-        // There is no notification for these; polling is cheap.
-        let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
+        guard observers.isEmpty else { return }
+        scheduleTimer()
+        // Coming back from System Settings should update at once; going to the
+        // background lets us back off polling when permissions are already set.
+        observers.append(NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.refresh()
+                self?.scheduleTimer()
+            }
+        })
+        observers.append(NotificationCenter.default.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.scheduleTimer() }
+        })
+    }
+
+    private func scheduleTimer() {
+        let needsFastPoll = !canControl || !canView || NSApp.isActive
+        let interval: TimeInterval = needsFastPoll ? 1 : 15
+        guard timer == nil || pollInterval != interval else { return }
+        timer?.invalidate()
+        pollInterval = interval
+        // There is no notification for these; poll briskly while active or
+        // waiting for a grant, and coalesce lazily when idle in the menu bar.
+        let timer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.refresh() }
         }
-        timer.tolerance = 0.3
+        timer.tolerance = needsFastPoll ? 0.3 : 5
         RunLoop.main.add(timer, forMode: .common)
         self.timer = timer
-        // Coming back from System Settings should update at once.
-        activation = NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.refresh() }
-        }
     }
 
     func refresh() {
@@ -46,6 +64,7 @@ final class Permissions {
         canControl = control
         self.speech = speech
         canView = view
+        if !observers.isEmpty { scheduleTimer() }
         onChange?()
     }
 

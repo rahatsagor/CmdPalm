@@ -40,8 +40,9 @@ const MAX_KEEP_ALIVE: Duration = Duration::from_secs(120);
 pub const MAX_MESSAGE: usize = 1 << 20;
 const IDENTITY_CHECK: Duration = Duration::from_secs(60 * 60);
 const IDENTITY_RETRY: Duration = Duration::from_secs(60);
-/// A failed write of the trusted devices is tried again about once a minute.
-const TRUST_RETRY_TICKS: u64 = 12;
+/// Upper bound between background interface/trust checks when idle.
+/// macOS wakes housekeeping immediately via NWPathMonitor on network changes.
+const HOUSEKEEPING_POLL: Duration = Duration::from_secs(60);
 
 #[derive(Debug, thiserror::Error)]
 pub enum SaveError {
@@ -184,14 +185,18 @@ async fn housekeeping(
     mut identity_due: Instant,
     mut shutdown: watch::Receiver<bool>,
 ) {
-    let mut ticker = tokio::time::interval(Duration::from_secs(5));
-    let mut ticks = 0u64;
+    let mut last_trust_retry = Instant::now();
     loop {
+        let now = Instant::now();
+        let pairing_due = now + shared.state().pairing.expires_in(now).max(Duration::from_secs(1));
+        let next_due = (now + HOUSEKEEPING_POLL).min(pairing_due).min(identity_due);
         tokio::select! {
-            _ = ticker.tick() => {}
+            _ = tokio::time::sleep_until(next_due.into()) => {}
+            _ = shared.housekeeping_wake.notified() => {}
             _ = shutdown.changed() => return,
         }
-        let rotated = shared.state().pairing.refresh(Instant::now());
+        let now = Instant::now();
+        let rotated = shared.state().pairing.refresh(now);
         let current = lan_addresses();
         let moved = current != addresses;
         if moved {
@@ -200,15 +205,15 @@ async fn housekeeping(
         // A new address, or the Mac renamed in System Settings, needs a
         // certificate that names it.
         let wanted = identity_names(&shared, &addresses);
-        if wanted != names || Instant::now() >= identity_due {
+        if wanted != names || now >= identity_due {
             names = wanted;
             identity_due = next_identity_check(refresh_identity(&shared, names.clone()).await);
         }
         if rotated || moved {
             shared.emit(HostEvent::PairingChanged);
         }
-        ticks += 1;
-        if ticks.is_multiple_of(TRUST_RETRY_TICKS) && shared.trust_unsaved() {
+        if last_trust_retry.elapsed() >= HOUSEKEEPING_POLL && shared.trust_unsaved() {
+            last_trust_retry = Instant::now();
             let saving = shared.clone();
             let _ = tokio::task::spawn_blocking(move || saving.save_trust()).await;
         }

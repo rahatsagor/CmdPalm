@@ -74,6 +74,11 @@ final class AppCatalog: Sendable {
         }
     }
 
+    /// True if `bundleID` is already present in the cached installed-app table.
+    func contains(bundleID: String) -> Bool {
+        cache.withLock { $0.apps[bundleID] != nil }
+    }
+
     /// Extra folders to scan besides the standard Applications folders.
     func setCustomFolders(_ paths: [String]) {
         let urls = paths.map { URL(fileURLWithPath: $0, isDirectory: true) }

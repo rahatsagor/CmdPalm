@@ -335,19 +335,30 @@ enum DisplayVideo {
     }
 
     static func annexB(_ data: Data, headerLength: Int, parameters: [Data]) -> Data? {
-        guard (1...4).contains(headerLength), !data.isEmpty else { return nil }
+        data.withUnsafeBytes { raw in
+            annexB(raw.bindMemory(to: UInt8.self), headerLength: headerLength, parameters: parameters)
+        }
+    }
+
+    static func annexB(_ bytes: UnsafeBufferPointer<UInt8>, headerLength: Int, parameters: [Data]) -> Data? {
+        guard (1...4).contains(headerLength), !bytes.isEmpty, let base = bytes.baseAddress else { return nil }
+        let parameterBytes = parameters.reduce(0) { $0 + 4 + $1.count }
+        // With 4-byte AVCC headers, Annex-B output is the exact same size as
+        // the input; shorter headers add up to 3 bytes per NAL.
         var result = Data()
+        result.reserveCapacity(parameterBytes + bytes.count + (headerLength < 4 ? 64 : 0))
         let marker: [UInt8] = [0, 0, 0, 1]
         for parameter in parameters { result.append(contentsOf: marker); result.append(parameter) }
         var offset = 0
-        while offset < data.count {
-            guard data.count - offset >= headerLength else { return nil }
+        let total = bytes.count
+        while offset < total {
+            guard total - offset >= headerLength else { return nil }
             var length = 0
-            for byte in data[offset..<(offset + headerLength)] { length = length << 8 | Int(byte) }
+            for index in 0..<headerLength { length = length << 8 | Int(base[offset + index]) }
             offset += headerLength
-            guard length > 0, length <= data.count - offset else { return nil }
+            guard length > 0, length <= total - offset else { return nil }
             result.append(contentsOf: marker)
-            result.append(data[offset..<(offset + length)])
+            result.append(base + offset, count: length)
             offset += length
         }
         return result
@@ -801,11 +812,23 @@ final class DisplayCapture: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
         }
         let length = CMBlockBufferGetDataLength(block)
         guard length > 0, length <= 1024 * 1024 else { fail("This frame could not be streamed at the selected quality. Choose Save battery and try again."); return }
-        var data = Data(count: length)
-        let copied = data.withUnsafeMutableBytes { CMBlockBufferCopyDataBytes(block, atOffset: 0, dataLength: length, destination: $0.baseAddress!) }
         let seconds = CMTimeGetSeconds(sample.presentationTimeStamp)
-        guard copied == noErr, seconds.isFinite, seconds >= 0,
-              let annexB = DisplayVideo.annexB(data, headerLength: Int(headerLength), parameters: parameters) else { requestKeyframe(); return }
+        guard seconds.isFinite, seconds >= 0 else { requestKeyframe(); return }
+        var lengthAtOffset = 0
+        var totalLength = 0
+        var pointer: UnsafeMutablePointer<CChar>?
+        let annexB: Data?
+        if CMBlockBufferGetDataPointer(block, atOffset: 0, lengthAtOffsetOut: &lengthAtOffset, totalLengthOut: &totalLength, dataPointerOut: &pointer) == kCMBlockBufferNoErr,
+           let pointer, lengthAtOffset == length {
+            annexB = pointer.withMemoryRebound(to: UInt8.self, capacity: length) {
+                DisplayVideo.annexB(UnsafeBufferPointer(start: $0, count: length), headerLength: Int(headerLength), parameters: parameters)
+            }
+        } else {
+            var data = Data(count: length)
+            let copied = data.withUnsafeMutableBytes { CMBlockBufferCopyDataBytes(block, atOffset: 0, dataLength: length, destination: $0.baseAddress!) }
+            annexB = copied == noErr ? DisplayVideo.annexB(data, headerLength: Int(headerLength), parameters: parameters) : nil
+        }
+        guard let annexB else { requestKeyframe(); return }
         guard annexB.count <= 1024 * 1024 else { fail("This frame could not be streamed at the selected quality. Choose Save battery and try again."); return }
         if !sendFrame(annexB, UInt64(seconds * 1_000_000), keyframe) {
             requestKeyframe()
