@@ -65,6 +65,17 @@ impl Latest {
         self.ready.notify_one();
     }
 
+    fn insert_if_empty(&self, frame: Frame) -> bool {
+        let mut guard = self.frame.lock().unwrap_or_else(|p| p.into_inner());
+        if guard.is_some() {
+            return false;
+        }
+        *guard = Some(frame);
+        drop(guard);
+        self.ready.notify_one();
+        true
+    }
+
     fn take(&self) -> Option<Frame> {
         self.frame.lock().unwrap_or_else(|p| p.into_inner()).take()
     }
@@ -488,8 +499,12 @@ impl DisplayHub {
             return false;
         };
         if active.original {
-            active.latest.replace(Frame { data, timestamp_us, queued: Instant::now(), keyframe });
-            return true;
+            let frame = Frame { data, timestamp_us, queued: Instant::now(), keyframe };
+            if keyframe {
+                active.latest.replace(frame);
+                return true;
+            }
+            return active.latest.insert_if_empty(frame);
         }
         if data.len() > MAX_FRAME {
             return false;
@@ -606,7 +621,7 @@ pub(crate) fn start(
 /// without raising idle bandwidth; BWE scales down on slower links.
 fn capture_limits(quality: DisplayQuality, level: u8) -> (u32, u32, u32) {
     if quality == DisplayQuality::Original {
-        return (3840, 1, 0);
+        return (3840, 4, 0);
     }
     if level < 31 {
         return (352, 15, 400_000);
@@ -777,7 +792,7 @@ async fn run(
         .set_ice_lite(true)
         .set_send_buffer_video(1024)
         .set_sctp_max_message_size(1024)
-        .set_sctp_max_buffered_amount(128 * 1024)
+        .set_sctp_max_buffered_amount(256 * 1024)
         .enable_bwe(Some(Bitrate::mbps(4)))
         .set_stats_interval(None);
     builder.codec_config().clear();
@@ -858,15 +873,16 @@ async fn run(
                 return Err("HD text could not keep up with the connection. Choose Sharper text and try again.".into());
             }
             if let Some(mut channel) = rtc.channel(channel) {
-                // One in-flight picture, the newest waiting picture, and 128 KiB of SCTP
+                // One in-flight picture, the newest waiting picture, and 256 KiB of SCTP
                 // buffering. Chunk writes yield regularly to network input and cancellation.
-                for _ in 0..4 {
-                    if *offset == frame.data.len() || channel.buffered_amount() >= 64 * 1024 {
+                let magic = if frame.keyframe { b"CPNG" } else { b"CPAT" };
+                for _ in 0..8 {
+                    if *offset == frame.data.len() || channel.buffered_amount() >= 128 * 1024 {
                         break;
                     }
                     let end = (*offset + 16 * 1024 - 16).min(frame.data.len());
                     let mut chunk = Vec::with_capacity(16 + end - *offset);
-                    chunk.extend_from_slice(b"CPNG");
+                    chunk.extend_from_slice(magic);
                     chunk.extend_from_slice(&sequence.to_le_bytes());
                     chunk.extend_from_slice(&(frame.data.len() as u32).to_le_bytes());
                     chunk.extend_from_slice(&(*offset as u32).to_le_bytes());
@@ -997,7 +1013,7 @@ async fn run(
                         generation,
                         display_id: display_id.clone(),
                         max_dimension: 3840,
-                        fps: 1,
+                        fps: 4,
                         bitrate: 0,
                         original: true,
                         profile: DisplayProfile::ConstrainedBaseline,
@@ -1072,7 +1088,7 @@ mod tests {
         assert_eq!(capture_limits(DisplayQuality::Battery, 31), (960, 30, 2_000_000));
         assert_eq!(capture_limits(DisplayQuality::Sharp, 31), (1280, 30, 6_000_000));
         assert_eq!(capture_limits(DisplayQuality::Sharp, 40), (1920, 30, 12_000_000));
-        assert_eq!(capture_limits(DisplayQuality::Original, 31), (3840, 1, 0));
+        assert_eq!(capture_limits(DisplayQuality::Original, 31), (3840, 4, 0));
         assert_eq!(receiver_level("a=fmtp:108 packetization-mode=1; profile-level-id=42e020\r\n", 108), 32);
         assert_eq!(receiver_level("a=fmtp:109 profile-level-id=42e02a\r\n", 108), 31);
     }

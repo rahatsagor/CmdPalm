@@ -14,7 +14,7 @@ import { settings } from '@/lib/settings'
 import KeyboardView from './KeyboardView.vue'
 
 const video = ref<HTMLVideoElement>()
-const picture = ref<HTMLImageElement>()
+const picture = ref<HTMLCanvasElement>()
 const displayArea = ref<HTMLElement>()
 const body = ref<HTMLElement>()
 const preview = ref<HTMLElement>()
@@ -168,8 +168,8 @@ function quality(value: typeof settings.displayQuality) {
 
 function clampPan() {
   const element = preview.value
-  const width = screen.original ? picture.value?.naturalWidth : video.value?.videoWidth
-  const height = screen.original ? picture.value?.naturalHeight : video.value?.videoHeight
+  const width = screen.original ? picture.value?.width : video.value?.videoWidth
+  const height = screen.original ? picture.value?.height : video.value?.videoHeight
   media.width = width || 0
   media.height = height || 0
   if (!element || !width || !height) { pan.x = 0; pan.y = 0; return }
@@ -283,7 +283,7 @@ function up(event: PointerEvent) { pointers.delete(event.pointerId); beginGestur
         :style="fullView ? undefined : previewStyle"
       >
         <div v-if="fullView" class="absolute inset-x-2 top-[env(safe-area-inset-top)] flex h-12 items-center justify-between gap-2 text-white">
-          <span class="min-w-0 truncate px-2 text-[13px]">{{ display?.name }}{{ screen.original ? ' · HD text · 1/sec' : '' }}</span>
+          <span class="min-w-0 truncate px-2 text-[13px]">{{ display?.name }}{{ screen.original ? ' · HD text · lossless' : '' }}</span>
           <button type="button" class="flex min-h-11 items-center gap-1.5 rounded-xl px-3 text-[13px]" @click="stopViewing()"><Square :size="15" />Stop</button>
           <button type="button" class="flex min-h-11 items-center gap-1.5 rounded-xl px-3 text-[13px]" @click="leaveFullscreen()"><Minimize :size="17" />Exit</button>
         </div>
@@ -309,15 +309,15 @@ function up(event: PointerEvent) { pointers.delete(event.pointerId); beginGestur
           aria-label="Live view of the selected Mac display"
           @loadedmetadata="clampPan"
         />
-        <img
+        <canvas
           ref="picture"
           v-show="streaming && screen.original"
-          alt="Lossless HD view of the selected Mac display"
-          draggable="false"
+          role="img"
+          aria-label="Lossless HD view of the selected Mac display"
           class="h-full w-full object-contain"
           :style="{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }"
           @load="clampPan"
-        >
+        />
         <div v-if="!live" class="absolute inset-0 flex flex-col items-center justify-center gap-3 overflow-y-auto px-5 py-3 text-center text-[#d7dce2]" role="status" aria-live="polite">
           <Monitor :size="28" :class="{ 'animate-pulse': screen.status === 'connecting' || screen.status === 'loading' }" class="shrink-0 opacity-50" aria-hidden="true" />
           <p class="max-w-sm text-[13px] leading-relaxed">{{ placeholder }}</p>

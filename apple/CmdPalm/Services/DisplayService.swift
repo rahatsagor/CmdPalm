@@ -364,14 +364,68 @@ enum DisplayVideo {
         return result
     }
 
-    static func png(_ image: CVPixelBuffer) -> Data? {
+    static func png(_ image: CVPixelBuffer, crop: CGRect? = nil) -> Data? {
         var cgImage: CGImage?
         guard VTCreateCGImageFromCVPixelBuffer(image, options: nil, imageOut: &cgImage) == noErr, let cgImage else { return nil }
+        let target: CGImage
+        if let crop {
+            guard let cropped = cgImage.cropping(to: crop) else { return nil }
+            target = cropped
+        } else {
+            target = cgImage
+        }
         let output = NSMutableData()
         guard let destination = CGImageDestinationCreateWithData(output, UTType.png.identifier as CFString, 1, nil) else { return nil }
-        CGImageDestinationAddImage(destination, cgImage, nil)
+        CGImageDestinationAddImage(destination, target, nil)
         guard CGImageDestinationFinalize(destination) else { return nil }
         return output as Data
+    }
+
+    static func patchPayload(x: Int, y: Int, fullWidth: Int, fullHeight: Int, png: Data) -> Data {
+        var payload = Data(capacity: 8 + png.count)
+        for value in [UInt16(x), UInt16(y), UInt16(fullWidth), UInt16(fullHeight)] {
+            var le = value.littleEndian
+            withUnsafeBytes(of: &le) { payload.append(contentsOf: $0) }
+        }
+        payload.append(png)
+        return payload
+    }
+
+    /// Bounding box of ScreenCaptureKit dirty rectangles in clamped pixel
+    /// coordinates. Returns `nil` when dirty metadata is unavailable (full
+    /// frame required) and `.zero` when nothing changed.
+    static func dirtyUnion(_ dirtyRects: Any?, width: Int, height: Int) -> CGRect? {
+        guard width > 0, height > 0 else { return nil }
+        guard let rects = dirtyRects as? [Any] else { return nil }
+        if rects.isEmpty { return .zero }
+        var minX = Double(width), minY = Double(height), maxX = 0.0, maxY = 0.0
+        for item in rects {
+            let rect: CGRect
+            if let value = item as? NSValue {
+                rect = value.rectValue
+            } else if CFGetTypeID(item as CFTypeRef) == CFDictionaryGetTypeID(),
+                      let parsed = CGRect(dictionaryRepresentation: item as! CFDictionary) {
+                rect = parsed
+            } else {
+                return nil
+            }
+            guard rect.origin.x.isFinite && rect.origin.y.isFinite && rect.width.isFinite && rect.height.isFinite else {
+                return nil
+            }
+            guard rect.width > 0 && rect.height > 0 else { continue }
+            let x0 = max(0, min(Double(width), floor(rect.minX)))
+            let y0 = max(0, min(Double(height), floor(rect.minY)))
+            let x1 = max(0, min(Double(width), ceil(rect.maxX)))
+            let y1 = max(0, min(Double(height), ceil(rect.maxY)))
+            if x1 > x0 && y1 > y0 {
+                minX = min(minX, x0)
+                minY = min(minY, y0)
+                maxX = max(maxX, x1)
+                maxY = max(maxY, y1)
+            }
+        }
+        guard maxX > minX && maxY > minY else { return .zero }
+        return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
     }
 
     static func hasDirtyContent(_ dirtyRects: Any?) -> Bool {
@@ -480,6 +534,11 @@ final class DisplayCapture: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
     private var keyframeWorkQueued = false
     private var paceWorkQueued = false
     private var originalHasSent = false
+    private var originalDirtyRect: CGRect?
+    private var originalNeedsFull = true
+    private var originalPendingImage: CVPixelBuffer?
+    private var originalPendingTime = CMTime.invalid
+    private var originalRetryQueued = false
     private var bucket: CaptureBucket
     private var wideRateLimit = false
     private var refinementToken: UInt64 = 0
@@ -584,6 +643,11 @@ final class DisplayCapture: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
                 self.keyframeWorkQueued = false
                 self.paceWorkQueued = false
                 self.originalHasSent = false
+                self.originalDirtyRect = nil
+                self.originalNeedsFull = true
+                self.originalPendingImage = nil
+                self.originalPendingTime = .invalid
+                self.originalRetryQueued = false
                 self.wideRateLimit = false
                 self.refinementToken &+= 1
                 self.refinementPasses = 0
@@ -696,29 +760,89 @@ final class DisplayCapture: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
         default: return
         }
         guard sampleBuffer.isValid, let image = sampleBuffer.imageBuffer else { return }
-        let dirty = DisplayVideo.hasDirtyContent(attachments.first?[.dirtyRects])
         if settings.original {
-            if !dirty && originalHasSent { return }
-            guard !flags.withLock({ $0.stopped }) else { return }
-            guard let png = autoreleasepool(invoking: { DisplayVideo.png(image) }) else {
-                fail("The HD picture could not be prepared. Try Sharper text or start viewing again.")
-                return
+            let width = CVPixelBufferGetWidth(image)
+            let height = CVPixelBufferGetHeight(image)
+            let rect = DisplayVideo.dirtyUnion(attachments.first?[.dirtyRects], width: width, height: height)
+            if rect == .zero && originalHasSent && originalDirtyRect == nil && !originalNeedsFull { return }
+            if !originalHasSent || rect == nil {
+                originalNeedsFull = true
+                originalDirtyRect = nil
+            } else if !originalNeedsFull, let rect, rect != .zero {
+                originalDirtyRect = originalDirtyRect.map { $0.union(rect) } ?? rect
             }
-            guard gate.contains(generation) else { return }
-            guard png.count <= 16 * 1024 * 1024 else { fail("This HD picture is too large. Choose Sharper text for this screen content."); return }
-            let seconds = CMTimeGetSeconds(sampleBuffer.presentationTimeStamp)
-            guard seconds.isFinite, seconds >= 0 else { return }
-            if sendFrame(png, UInt64(seconds * 1_000_000), true) {
-                originalHasSent = true
-            }
+            originalPendingImage = image
+            originalPendingTime = sampleBuffer.presentationTimeStamp
+            sendPendingOriginal()
             return
         }
+        let dirty = DisplayVideo.hasDirtyContent(attachments.first?[.dirtyRects])
         if !dirty && latestImage != nil { return }
         cancelRefinement()
         latestImage = image
         latestTime = sampleBuffer.presentationTimeStamp
         pendingImage = true
         encodePendingImage()
+    }
+
+    private func sendPendingOriginal() {
+        guard gate.contains(generation), !flags.withLock({ $0.stopped }), let image = originalPendingImage else { return }
+        let width = CVPixelBufferGetWidth(image)
+        let height = CVPixelBufferGetHeight(image)
+        guard width > 0, height > 0 else { return }
+        let seconds = CMTimeGetSeconds(originalPendingTime)
+        guard seconds.isFinite, seconds >= 0 else { return }
+
+        let sendFull: Bool
+        let crop: CGRect?
+        if !originalHasSent || originalNeedsFull {
+            sendFull = true
+            crop = nil
+        } else if let dirty = originalDirtyRect {
+            let areaRatio = (dirty.width * dirty.height) / Double(width * height)
+            if areaRatio > 0.55 || (Int(dirty.width) >= width && Int(dirty.height) >= height) {
+                sendFull = true
+                crop = nil
+            } else {
+                sendFull = false
+                crop = dirty
+            }
+        } else {
+            return
+        }
+
+        guard let png = autoreleasepool(invoking: { DisplayVideo.png(image, crop: crop) }) else {
+            fail("The HD picture could not be prepared. Try Sharper text or start viewing again.")
+            return
+        }
+        guard gate.contains(generation) else { return }
+        let payload: Data
+        if sendFull {
+            payload = png
+        } else if let crop {
+            payload = DisplayVideo.patchPayload(
+                x: Int(crop.minX), y: Int(crop.minY),
+                fullWidth: width, fullHeight: height, png: png
+            )
+        } else {
+            return
+        }
+        guard payload.count <= 16 * 1024 * 1024 else { fail("This HD picture is too large. Choose Sharper text for this screen content."); return }
+        if sendFrame(payload, UInt64(seconds * 1_000_000), sendFull) {
+            originalHasSent = true
+            originalNeedsFull = false
+            originalDirtyRect = nil
+            originalPendingImage = nil
+        } else if !originalRetryQueued {
+            // Transport is still sending a previous patch/picture; keep the
+            // accumulated dirty rect so no changed pixels are lost and retry shortly.
+            originalRetryQueued = true
+            queue.asyncAfter(deadline: .now() + .milliseconds(60)) { [weak self] in
+                guard let self else { return }
+                self.originalRetryQueued = false
+                self.sendPendingOriginal()
+            }
+        }
     }
 
     private func encodePendingImage() {

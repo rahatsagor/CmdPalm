@@ -124,6 +124,18 @@ import ImageIO
         #expect(DisplayVideo.hasDirtyContent([CGRect(x: 0, y: 0, width: 4, height: 4).dictionaryRepresentation]))
     }
 
+    @Test func dirtyUnionClampsMergesAndEncodesPatchPayload() {
+        #expect(DisplayVideo.dirtyUnion(nil, width: 1920, height: 1080) == nil)
+        #expect(DisplayVideo.dirtyUnion([] as [Any], width: 1920, height: 1080) == .zero)
+        let union = DisplayVideo.dirtyUnion([
+            NSValue(rect: NSRect(x: 10.4, y: 20.6, width: 30.2, height: 40.2)),
+            CGRect(x: 1900, y: 1050, width: 100, height: 100).dictionaryRepresentation,
+        ], width: 1920, height: 1080)
+        #expect(union == CGRect(x: 10, y: 20, width: 1910, height: 1060))
+        let payload = DisplayVideo.patchPayload(x: 100, y: 50, fullWidth: 1920, fullHeight: 1080, png: Data([1, 2, 3]))
+        #expect(payload == Data([100, 0, 50, 0, 0x80, 0x07, 0x38, 0x04, 1, 2, 3]))
+    }
+
     @Test func captureBucketAllowsTwoFrameBurstThenPacesAtConfiguredFps() {
         var bucket = CaptureBucket(fps: 60, now: 10.0)
         #expect(bucket.ready(now: 10.0))

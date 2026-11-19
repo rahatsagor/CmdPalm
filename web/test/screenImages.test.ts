@@ -54,4 +54,25 @@ describe('lossless screen pictures', () => {
     const png = picture(100, 100, 33); png[0] = 0
     expect(() => new ScreenImageAssembler().push(chunk(png, 0, png.length))).toThrow('not a PNG')
   })
+
+  it('reassembles dirty-rect lossless patches and rejects out-of-bounds patches', () => {
+    const patchPng = picture(200, 120, 64)
+    const payload = new Uint8Array(8 + patchPng.length)
+    const header = new DataView(payload.buffer)
+    header.setUint16(0, 100, true); header.setUint16(2, 50, true)
+    header.setUint16(4, 1920, true); header.setUint16(6, 1080, true)
+    payload.set(patchPng, 8)
+    const message = new Uint8Array(16 + payload.length)
+    message.set([67, 80, 65, 84]) // CPAT
+    const outer = new DataView(message.buffer)
+    outer.setUint32(4, 3, true); outer.setUint32(8, payload.length, true); outer.setUint32(12, 0, true)
+    message.set(payload, 16)
+
+    const frame = new ScreenImageAssembler().pushFrame(message.buffer)
+    expect(frame).toEqual({ kind: 'patch', png: patchPng, x: 100, y: 50, width: 200, height: 120, fullWidth: 1920, fullHeight: 1080 })
+
+    // Out-of-bounds patch (x + width > fullWidth)
+    new DataView(message.buffer, 16, 8).setUint16(0, 1800, true)
+    expect(() => new ScreenImageAssembler().pushFrame(message.buffer)).toThrow('out of bounds')
+  })
 })
