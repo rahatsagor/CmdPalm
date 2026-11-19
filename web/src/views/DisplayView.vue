@@ -42,7 +42,16 @@ const previewLength = computed(() => {
 const previewStyle = computed(() => settings.displayControls === 'view' ? { flex: '1 1 0%' } : { flex: `0 0 ${previewLength.value}px` })
 const controlsHeight = computed(() => wide.value ? size.height : Math.max(0, size.height - previewLength.value - 8))
 const compactPreview = computed(() => !fullView.value && settings.displayControls !== 'view' && (wide.value ? size.height : previewLength.value) < 140)
-const maxZoom = computed(() => screen.original ? 8 : 4)
+const media = reactive({ width: 0, height: 0 })
+const maxZoom = computed(() => {
+  const floor = screen.original ? 8 : 4
+  const ceiling = screen.original ? 12 : 8
+  const element = preview.value
+  if (!element || !media.width || !media.height || !element.clientWidth || !element.clientHeight) return floor
+  const fit = Math.min(element.clientWidth / media.width, element.clientHeight / media.height)
+  if (!Number.isFinite(fit) || fit <= 0) return floor
+  return Math.max(floor, Math.min(ceiling, Math.round((4 / fit) * 10) / 10))
+})
 const mode = computed({ get: () => settings.displayControls, set: value => { releaseAll(); settings.displayControls = value } })
 const placeholder = computed(() => {
   if (screen.status === 'loading') return 'Finding displays…'
@@ -161,7 +170,10 @@ function clampPan() {
   const element = preview.value
   const width = screen.original ? picture.value?.naturalWidth : video.value?.videoWidth
   const height = screen.original ? picture.value?.naturalHeight : video.value?.videoHeight
+  media.width = width || 0
+  media.height = height || 0
   if (!element || !width || !height) { pan.x = 0; pan.y = 0; return }
+  if (zoom.value > maxZoom.value) zoom.value = maxZoom.value
   const fit = Math.min(element.clientWidth / width, element.clientHeight / height)
   const x = Math.max(0, (width * fit * zoom.value - element.clientWidth) / 2)
   const y = Math.max(0, (height * fit * zoom.value - element.clientHeight) / 2)

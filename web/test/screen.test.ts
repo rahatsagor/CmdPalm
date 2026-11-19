@@ -19,7 +19,7 @@ class FakePeer extends EventTarget {
   connectionState = 'new'
   localDescription: { type: string; sdp: string } | null = null
   remoteDescription: unknown = null
-  ontrack: ((event: { track: { stop: () => void }; streams: unknown[] }) => void) | null = null
+  ontrack: ((event: { track: { stop: () => void }; streams: unknown[]; receiver?: { playoutDelayHint?: number; jitterBufferTarget?: number | null } }) => void) | null = null
   onconnectionstatechange: (() => void) | null = null
   closed = false
   transceiver = { setCodecPreferences: vi.fn() }
@@ -86,6 +86,19 @@ describe('receive-only display viewing', () => {
     socket.receive({ t: 'displayState', id: start.id, state: 'answer', sdp: 'answer', message: null })
     expect(rtc.setRemoteDescription).toHaveBeenCalledWith({ type: 'answer', sdp: 'answer' })
     expect(library.screen.status).toBe('connecting')
+  })
+
+  it('sets zero playout delay hints on incoming video receivers when supported', async () => {
+    const socket = connect()
+    library.activateScreen(video)
+    list(socket)
+    await library.startViewing()
+    const rtc = FakePeer.all[0]!
+    const receiver = { playoutDelayHint: 0.25, jitterBufferTarget: 150 }
+    const stream = Object.assign(new MediaStream(), { getTracks: () => [] })
+    rtc.ontrack!({ track: { stop: vi.fn() }, streams: [stream], receiver })
+    expect(receiver.playoutDelayHint).toBe(0)
+    expect(receiver.jitterBufferTarget).toBe(0)
   })
 
   it('ignores a late answer, stop, and track from the previous viewer', async () => {

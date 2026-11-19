@@ -226,6 +226,15 @@ export async function startViewing() {
     if (codecs?.some(codec => codec.mimeType.toLowerCase() === 'video/h264') && typeof transceiver.setCodecPreferences === 'function') transceiver.setCodecPreferences(codecs)
     rtc.ontrack = event => {
       if (current !== generation || !canView() || !video) { event.track.stop(); return }
+      const receiver = event.receiver as (RTCRtpReceiver & { playoutDelayHint?: number; jitterBufferTarget?: number | null }) | undefined
+      if (receiver) {
+        try {
+          if ('playoutDelayHint' in receiver) receiver.playoutDelayHint = 0
+          if ('jitterBufferTarget' in receiver) receiver.jitterBufferTarget = 0
+        } catch {
+          // Ignore browsers that expose read-only or stricter jitter-buffer hints.
+        }
+      }
       video.srcObject = event.streams[0] ?? new MediaStream([event.track])
       video.onplaying = () => {
         if (current !== generation || !canView()) return
