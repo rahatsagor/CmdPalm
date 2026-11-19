@@ -720,7 +720,7 @@ fn original_pictures_cross_encrypted_data_channels_with_bounded_chunks_and_stop_
                     send(&mut ws, json!({"t":"displayAlive", "id":2})).await;
                     generation = f.delegate.display_commands.lock().unwrap().iter().find_map(|(_, command)| {
                         if let DisplayCommand::Start { generation, original: true, max_dimension, fps, .. } = command {
-                            assert_eq!((*max_dimension, *fps), (3840, 1)); Some(*generation)
+                            assert_eq!((*max_dimension, *fps), (3840, 4)); Some(*generation)
                         } else { None }
                     }).or(generation);
                     if !sent && let Some(generation) = generation { sent = f.host.display_frame(session, generation, image.clone(), 0, true); }

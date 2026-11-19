@@ -20,7 +20,7 @@ const qualities = [
   { value: 'auto', label: 'Automatic', detail: 'Smooth motion that adjusts to your connection.' },
   { value: 'battery', label: 'Save battery', detail: 'Less bandwidth and a lower frame rate.' },
   { value: 'sharp', label: 'Sharper text', detail: 'More detail for reading and typing.' },
-  { value: 'original', label: 'HD text · lossless', detail: 'Original detail up to 4K. Updates up to once a second and uses more bandwidth.' },
+  { value: 'original', label: 'HD text · lossless', detail: 'Original detail up to 4K. Updates up to 4× a second and uses more bandwidth.' },
 ] as const
 </script>
 
