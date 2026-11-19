@@ -362,7 +362,7 @@ dependencies = [
 
 [[package]]
 name = "cmdpalm-core"
-version = "0.8.1"
+version = "1.0.0"
 dependencies = [
  "base64",
  "futures-util",
@@ -1817,7 +1817,7 @@ dependencies = [
 
 [[package]]
 name = "uniffi-bindgen"
-version = "0.8.1"
+version = "1.0.0"
 dependencies = [
  "uniffi",
 ]

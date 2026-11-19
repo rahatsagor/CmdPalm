@@ -9,6 +9,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-11-20
+
 See your Mac's screen on your phone while you use the trackpad or keyboard.
 This update also reorganizes phone settings and improves recovery when
 reconnecting or setting up HTTPS.
@@ -777,7 +779,7 @@ The first release.
   device, so they survive a cleared browser, and you can copy them from
   another device.
 
-[Unreleased]: https://github.com/rahatsagor/CmdPalm/compare/v0.8.1...HEAD
+[Unreleased]: https://github.com/rahatsagor/CmdPalm/compare/v1.0.0...HEAD
 [0.7.0]: https://github.com/rahatsagor/CmdPalm/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/rahatsagor/CmdPalm/compare/v0.5.2...v0.6.0
 [0.5.2]: https://github.com/rahatsagor/CmdPalm/compare/v0.5.1...v0.5.2
@@ -792,3 +794,4 @@ The first release.
 [0.1.0]: https://github.com/rahatsagor/CmdPalm/releases/tag/v0.1.0
 [0.8.0]: https://github.com/rahatsagor/CmdPalm/compare/v0.7.0...v0.8.0
 [0.8.1]: https://github.com/rahatsagor/CmdPalm/compare/v0.8.0...v0.8.1
+[1.0.0]: https://github.com/rahatsagor/CmdPalm/compare/v0.8.1...v1.0.0
