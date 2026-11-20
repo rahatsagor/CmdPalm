@@ -181,29 +181,9 @@ on the Mac itself and never sent to a server.
 </tr>
 </table>
 
-Pair as many phones and tablets as you like. Each one's settings, custom
-keyboards and gestures are kept on your Mac too, so they survive a cleared
-browser. Use **Copy settings from another device** to choose individual
-settings sections and custom keyboards. Only your selection is added or
-updated; the rest of your setup stays as it is. Deck pages and buttons are
-already shared by all devices paired with the same Mac.
-
-Phone settings use tabs for Trackpad, Gestures, Keyboard, Display and Deck.
-Device preferences, backups and connection actions stay below the feature
-settings. Changes save automatically, and every section is visible within its
-tab. Dictation setup is in Keyboard.
-
-<p align="center">
-<img src="docs/media/phone-settings-trackpad.webp" width="260" alt="Phone Settings with the Encrypted badge, five feature tabs and Trackpad preferences" />
-&nbsp;
-<img src="docs/media/phone-settings-keyboard.webp" width="260" alt="Keyboard preferences grouped in the phone Settings Keyboard tab" />
-</p>
-
-Use **Settings → Back up or restore this device** on the phone to export
-your settings and custom keyboards as a file, or review and restore a saved
-setup. Device backups leave your name and pairing as they are and never
-contain pairing tokens. Export the shared Deck separately from **Settings →
-Deck** on the Mac.
+Pair multiple phones and tablets with one Mac. Each device keeps its own
+preferences, gestures and custom keyboards. All paired devices share the
+shortcut Deck. [Manage device settings and backups →](https://cmdpalm.app/docs/settings-and-devices/)
 
 <div align="center">
 
