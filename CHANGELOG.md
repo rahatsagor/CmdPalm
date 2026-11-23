@@ -37,6 +37,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
   dropped the connection without an answer. Larger decks saved earlier still
   open and can be exported, and you can trim them on the phone: remove pages
   or buttons until the deck fits, and it saves then.
+- Deck exports always import again, including decks with many nested
+  sequences that grew past the import limit when indented.
 
 ### Phone client
 

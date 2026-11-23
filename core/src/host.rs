@@ -15,7 +15,7 @@ use crate::api::{
     VoiceUpdate,
 };
 use crate::auth::{self, Pairing, TrustStore, TrustedDevice};
-use crate::deck::Deck;
+use crate::deck::{Deck, MAX_DECK_FILE_BYTES};
 use crate::input::{Command, InputEngine, Interrupts, LayoutMap, Notice, SessionId, Tuning};
 use crate::prefs::{DeviceSettings, SavedSettings, SettingsError};
 use crate::protocol::{Features, KeyboardLayout, NoticeLevel, ServerMessage, VolumeState};
@@ -1038,7 +1038,10 @@ impl CoreHost {
     }
 
     pub fn deck_json(&self) -> String {
-        serde_json::to_string_pretty(&self.shared.state().deck).unwrap_or_default()
+        let deck = &self.shared.state().deck;
+        let pretty = serde_json::to_string_pretty(deck).unwrap_or_default();
+        // Deeply nested decks grow several times when indented; keep the export importable.
+        if pretty.len() < MAX_DECK_FILE_BYTES { pretty } else { serde_json::to_string(deck).unwrap_or_default() }
     }
 
     pub fn set_deck_json(&self, json: String) -> Result<(), HostError> {

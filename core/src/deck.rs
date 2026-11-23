@@ -20,6 +20,8 @@ const MAX_NAME: usize = 512;
 /// The most a whole deck may take as compact JSON in UTF-8. It leaves room for
 /// the `deckSave` envelope within the WebSocket message limit.
 pub(crate) const MAX_DECK_BYTES: usize = crate::server::MAX_MESSAGE - 4 * 1024;
+/// Largest deck file the Mac imports. Exports stay under it.
+pub(crate) const MAX_DECK_FILE_BYTES: usize = 4 * 1024 * 1024;
 pub(crate) const MAX_DEPTH: usize = 3;
 pub(crate) const MAX_DELAY_MS: u32 = 10_000;
 

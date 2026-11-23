@@ -37,6 +37,12 @@ pub fn input_event_marker() -> i64 {
     input::EVENT_MARKER
 }
 
+/// Largest deck file the Mac imports; exports stay under it.
+#[uniffi::export]
+pub fn max_deck_file_bytes() -> u64 {
+    deck::MAX_DECK_FILE_BYTES as u64
+}
+
 /// Route `tracing` output to stderr (and so to Console.app via the app's
 /// log capture). `filter` uses `RUST_LOG` syntax, e.g. `info,cmdpalm_core=debug`.
 #[uniffi::export]

@@ -1715,6 +1715,40 @@ fn deck_of_size(bytes: usize) -> crate::deck::Deck {
     deck
 }
 
+/// Valid, within the save limit, and several times larger once indented.
+fn deeply_nested_deck() -> crate::deck::Deck {
+    let leaves: Vec<Value> = (0..8).map(|_| json!({"kind": "delay", "ms": 0})).collect();
+    let level =
+        |steps: &Vec<Value>| -> Vec<Value> { (0..8).map(|_| json!({"kind": "sequence", "steps": steps})).collect() };
+    let innermost = level(&leaves);
+    let middle = level(&innermost);
+    let tiles: Vec<Value> = (0..64)
+        .map(|i| json!({"id": format!("t{i}"), "label": "x", "action": {"kind": "sequence", "steps": middle}}))
+        .collect();
+    serde_json::from_value(json!({"version": 1, "pages": [{"id": "p", "name": "P", "columns": 4, "tiles": tiles}]}))
+        .unwrap()
+}
+
+#[test]
+fn exports_stay_importable_when_indenting_would_exceed_the_file_limit() {
+    use crate::deck::{MAX_DECK_BYTES, MAX_DECK_FILE_BYTES};
+    let f = fixture();
+    let deck = deeply_nested_deck();
+    assert!(serde_json::to_vec(&deck).unwrap().len() <= MAX_DECK_BYTES);
+    assert!(serde_json::to_string_pretty(&deck).unwrap().len() > MAX_DECK_FILE_BYTES);
+    f.host.set_deck_json(serde_json::to_string(&deck).unwrap()).unwrap();
+    let exported = f.host.deck_json();
+    assert!(exported.len() < MAX_DECK_FILE_BYTES);
+    assert!(!exported.contains('\n'));
+    f.host.set_deck_json(exported).unwrap();
+}
+
+#[test]
+fn the_default_deck_still_exports_indented() {
+    let f = fixture();
+    assert!(f.host.deck_json().contains("\n  "));
+}
+
 #[test]
 fn deck_size_limit_is_exact() {
     use crate::deck::{DeckError, MAX_DECK_BYTES};
