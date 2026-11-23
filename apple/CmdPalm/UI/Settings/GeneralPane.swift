@@ -67,7 +67,7 @@ struct GeneralPane: View {
                 DescribedToggle(
                     "Allow screen mirroring",
                     detail: "Show a Mac display on devices you allow. Capture stops when you leave the Display tab on your phone.",
-                    isOn: $preferences.displayEnabled
+                    isOn: $preferences.displayEnabled.grantedLocally(host)
                 )
                 PermissionRow(
                     title: "Screen Recording",

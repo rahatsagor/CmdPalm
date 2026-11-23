@@ -9,6 +9,13 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Security
+
+- A paired device can no longer approve its own access. Pairing and
+  screen-mirroring prompts, and the settings that turn on screen mirroring or
+  shell commands, ignore clicks and keys CmdPalm sends for a phone. Approve
+  them with the Mac's own trackpad, mouse or keyboard.
+
 ## [1.0.0] - 2026-11-20
 
 See your Mac's screen on your phone while you use the trackpad or keyboard.

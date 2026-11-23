@@ -171,6 +171,7 @@ struct DisplayApprovalRow: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            if host.refusedRemoteGrant { GrantRefusedCaption() }
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 8) {
                     if waitingCount > 0 {
@@ -209,6 +210,15 @@ struct DisplayApprovalRow: View {
     }
 }
 
+struct GrantRefusedCaption: View {
+    var body: some View {
+        Text("Use this Mac’s own trackpad, mouse or keyboard to allow access.")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
 struct ApprovalRow: View {
     @Environment(HostController.self) private var host
     let request: ApprovalRequest
@@ -230,6 +240,7 @@ struct ApprovalRow: View {
                         .foregroundStyle(.secondary)
                 }
             }
+            if host.refusedRemoteGrant { GrantRefusedCaption() }
             HStack(spacing: 8) {
                 Spacer()
                 Button("Don’t Allow") { host.respond(to: request, allow: false) }

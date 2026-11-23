@@ -31,6 +31,12 @@ pub fn core_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
 }
 
+/// Value CmdPalm writes to the user data of every input event it generates.
+#[uniffi::export]
+pub fn input_event_marker() -> i64 {
+    input::EVENT_MARKER
+}
+
 /// Route `tracing` output to stderr (and so to Console.app via the app's
 /// log capture). `filter` uses `RUST_LOG` syntax, e.g. `info,cmdpalm_core=debug`.
 #[uniffi::export]

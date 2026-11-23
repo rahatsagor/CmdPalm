@@ -48,7 +48,7 @@ struct DeckPane: View {
                     isOn: Binding(
                         get: { preferences.allowShell },
                         set: { newValue in
-                            if newValue { confirmShell = true } else { preferences.allowShell = false }
+                            if !newValue { preferences.allowShell = false } else if host.allowsGrant() { confirmShell = true }
                         }
                     )
                 )
@@ -73,7 +73,7 @@ struct DeckPane: View {
             Text("Every page and button is replaced with the defaults on all devices. Export first to keep a copy.")
         }
         .confirmationDialog("Allow shell commands?", isPresented: $confirmShell) {
-            Button("Allow Shell Commands", role: .destructive) { preferences.allowShell = true }
+            Button("Allow Shell Commands", role: .destructive) { if host.allowsGrant() { preferences.allowShell = true } }
         } message: {
             Text("Deck buttons will be able to run commands with full access to your files. Paired devices can create such buttons.")
         }

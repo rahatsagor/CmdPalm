@@ -1881,3 +1881,8 @@ fn a_slow_voice_start_does_not_block_another_devices_audio() {
         assert!(f.delegate.voice.lock().unwrap().contains(&"audio"));
     });
 }
+
+#[test]
+fn input_event_marker_is_cmdp() {
+    assert_eq!(crate::input_event_marker(), 0x434D_4450);
+}

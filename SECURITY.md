@@ -99,8 +99,12 @@ voice typing is unavailable rather than sent to a server.
 
 ## What a paired device can do
 
-A paired device can do anything you can do with a keyboard and mouse. Beyond
-that:
+A paired device can do anything you can do with a keyboard and mouse, except
+approve access in CmdPalm itself: CmdPalm's approval prompts, and the settings
+that turn on screen mirroring or shell commands, ignore clicks and keys CmdPalm
+generates for a device. Approve them with this Mac's own trackpad, mouse or
+keyboard. A device can still use other apps on the Mac, so pair only devices
+you trust. Beyond that:
 
 - **Shell commands** from deck buttons are off until you allow them in
   **Settings → Deck**, and turning them on asks for confirmation.
@@ -120,9 +124,10 @@ that:
   Existing pairings do not receive that grant automatically. Remembered
   device grants reset on re-pairing; temporary grants end with the connection.
   A phone can request access but cannot grant it. The Mac owner must approve
-  the named device in the native panel; approval can also enable the global
-  screen-mirroring setting. Requests are bound to the authenticated connection,
-  expire after one minute, and are rate limited across token reconnects.
+  the named device in the native panel with the Mac's own input; approval can
+  also enable the global screen-mirroring setting. Requests are bound to the
+  authenticated connection, expire after one minute, and are rate limited
+  across token reconnects.
   Disconnect, cancellation, revocation, pause, lock, and sleep invalidate them.
   One allowed device can view one selected display at a time. No video is
   written to disk or sent through an external server.

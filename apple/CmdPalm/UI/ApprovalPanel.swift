@@ -104,6 +104,7 @@ private struct ApprovalPrompt: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
+                if host.refusedRemoteGrant { GrantRefusedCaption() }
                 HStack {
                     if waiting > 0 {
                         Text("\(waiting) more waiting")

@@ -18,8 +18,18 @@ final class HostController {
     private(set) var pairingExpiry = Date.distantPast
     private(set) var connected: [ConnectedDevice] = []
     private(set) var trusted: [TrustedDevice] = []
-    private(set) var approvals: [ApprovalRequest] = []
-    private(set) var displayApprovals: [DisplayApprovalRequest] = []
+    private(set) var approvals: [ApprovalRequest] = [] {
+        didSet {
+            if Self.shownKey(oldValue.first, displayApprovals.first) != Self.shownKey(approvals.first, displayApprovals.first) { refusedRemoteGrant = false }
+        }
+    }
+    private(set) var displayApprovals: [DisplayApprovalRequest] = [] {
+        didSet {
+            if Self.shownKey(approvals.first, oldValue.first) != Self.shownKey(approvals.first, displayApprovals.first) { refusedRemoteGrant = false }
+        }
+    }
+    /// A grant was just refused because CmdPalm itself generated the click or key.
+    private(set) var refusedRemoteGrant = false
     private(set) var paused = false
     private(set) var preferredPortTaken = false
     private(set) var layoutName = ""
@@ -187,12 +197,27 @@ final class HostController {
         refreshPairing()
     }
 
+    private static func shownKey(_ pairing: ApprovalRequest?, _ display: DisplayApprovalRequest?) -> String? {
+        pairing.map { "p\($0.id)" } ?? display.map { "d\($0.id)" }
+    }
+
+    /// Whether the input being handled may turn something on. Clicks and keys
+    /// CmdPalm generates for a phone must not be able to approve that phone.
+    func allowsGrant() -> Bool {
+        guard InputOrigin.currentIsFromCmdPalm else { return true }
+        NSSound.beep()
+        refusedRemoteGrant = true
+        return false
+    }
+
     func respond(to request: ApprovalRequest, allow: Bool) {
+        if allow, !allowsGrant() { return }
         host.respondApproval(id: request.id, allow: allow)
         removeApproval(request.id)
     }
 
     func respond(to request: DisplayApprovalRequest, allow: Bool) {
+        if allow, !allowsGrant() { return }
         let valid = host.respondDisplayApproval(id: request.id, allow: allow)
         displayApprovals.removeAll { $0.id == request.id }
         onApprovalsChanged?()
@@ -215,10 +240,12 @@ final class HostController {
     }
 
     func setDisplayAllowed(_ id: String, allowed: Bool) {
+        guard !allowed || allowsGrant() else { return }
         enqueue { host in host.setDisplayAllowed(id: id, allowed: allowed) }
     }
 
     func setTemporaryDisplayAllowed(_ session: UInt64, allowed: Bool) {
+        guard !allowed || allowsGrant() else { return }
         enqueue { host in host.setSessionDisplayAllowed(session: session, allowed: allowed) }
     }
 

@@ -9,13 +9,9 @@ use objc2_core_graphics::{
     CGEventTapLocation, CGEventType, CGGetActiveDisplayList, CGMouseButton, CGScrollEventUnit,
 };
 
-use super::{EventSink, GestureKind, Synth};
+use super::{EVENT_MARKER, EventSink, GestureKind, Synth};
 use crate::keycodes::{self, flags};
 use crate::protocol::{MediaKey, MouseButton};
-
-/// Written to `kCGEventSourceUserData` on every event CmdPalm posts so they
-/// can be told apart from hardware events ("CMDP").
-pub const EVENT_MARKER: i64 = 0x434D_4450;
 
 const CACHE_TTL: Duration = Duration::from_millis(750);
 const DISPLAY_TTL: Duration = Duration::from_secs(2);

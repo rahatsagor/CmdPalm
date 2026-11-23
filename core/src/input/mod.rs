@@ -24,6 +24,10 @@ pub use engine::{InputEngine, Notice};
 
 pub type SessionId = u64;
 
+/// Written to `kCGEventSourceUserData` on every event CmdPalm posts so they
+/// can be told apart from hardware events ("CMDP").
+pub const EVENT_MARKER: i64 = 0x434D_4450;
+
 /// `kCGScrollWheelEventScrollPhase` values (`CGScrollPhase`).
 pub mod scroll_phase {
     pub const NONE: u8 = 0;
