@@ -79,22 +79,22 @@ final class SpeechService: @unchecked Sendable {
     }
 
     func start(session id: UInt64, locale: String?, requestId: UInt32?) -> Bool {
-        let recognizer = Self.recognizer(for: locale)
-        // Do not request permission for a language that cannot be transcribed locally.
-        let failure: String? = if !Self.mayBeAvailable {
-            Self.notAllowedMessage
-        } else if let recognizer {
-            recognizer.supportsOnDeviceRecognition ? nil : Self.onDeviceMessage(for: recognizer.locale)
-        } else {
-            "Speech recognition isn’t available on this Mac."
-        }
-        recognizer?.queue = handlerQueue
         queue.async { [self] in
             if let old = sessions.removeValue(forKey: id) {
                 if old.stopping { deliverPending(id, old) }
                 discard(old)
                 send(id, old, .stopped)
             }
+            let recognizer = Self.recognizer(for: locale)
+            // Do not request permission for a language that cannot be transcribed locally.
+            let failure: String? = if !Self.mayBeAvailable {
+                Self.notAllowedMessage
+            } else if let recognizer {
+                recognizer.supportsOnDeviceRecognition ? nil : Self.onDeviceMessage(for: recognizer.locale)
+            } else {
+                "Speech recognition isn’t available on this Mac."
+            }
+            recognizer?.queue = handlerQueue
             guard failure == nil, let recognizer else {
                 update(id, VoiceUpdate(requestId: requestId, state: .unavailable, text: nil, isFinal: false, message: failure))
                 return
