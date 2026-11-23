@@ -61,8 +61,8 @@ function onUp() {
 // A hold that outlives the tab would open the menu over another tab.
 onDeactivated(onUp)
 onBeforeUnmount(onUp)
-function onClick(app: AppEntry) {
-  if (longFired) return
+function onClick(app: AppEntry, event: MouseEvent) {
+  if (longFired && event.detail !== 0) return
   act(app, 'toggle')
 }
 </script>
@@ -101,7 +101,7 @@ function onClick(app: AppEntry) {
           @pointerup="onUp"
           @pointercancel="onUp"
           @pointerleave="onUp"
-          @click="onClick(app)"
+          @click="onClick(app, $event)"
           @contextmenu.prevent="menu = app"
         >
           <span class="relative">

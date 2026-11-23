@@ -67,3 +67,33 @@ describe('AppsView empty-state recovery', () => {
     expect(view.get('button[role="radio"]:nth-child(2)').attributes('aria-checked')).toBe('true')
   })
 })
+
+describe('AppsView long press', () => {
+  const toggles = () => lastSocket().sent.filter((m) => m.t === 'appAction' && m.op === 'toggle')
+
+  async function longPress() {
+    const view = await mountApps()
+    await view.get('button[role="radio"]:nth-child(2)').trigger('click')
+    const button = view.get('button[aria-label="Notes"]')
+    await button.trigger('pointerdown')
+    vi.advanceTimersByTime(600)
+    await nextTick()
+    expect(document.querySelector('[role="dialog"]')).not.toBeNull()
+    await button.trigger('pointerup')
+    return button
+  }
+
+  it('activates with the keyboard after the sheet from a long press is closed', async () => {
+    const button = await longPress()
+    ;(document.querySelector('[aria-label="Close"]') as HTMLElement).click()
+    await nextTick()
+    await button.trigger('click', { detail: 0 })
+    expect(toggles()).toHaveLength(1)
+  })
+
+  it('still swallows the pointer click that follows a long press', async () => {
+    const button = await longPress()
+    await button.trigger('click', { detail: 1 })
+    expect(toggles()).toHaveLength(0)
+  })
+})
