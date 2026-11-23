@@ -50,6 +50,9 @@ and versions follow [Semantic Versioning](https://semver.org/).
   so high-pitched sounds no longer fold into distortion the recognizer hears.
 - App icons are kept after a reconnect instead of downloading again each time
   the phone reconnects to the Mac.
+- Caps Lock on a hardware keyboard now stays in step with the Mac in browsers
+  that only report it turning on or off, such as Safari and Chrome on a Mac.
+  Before, every second press was lost.
 
 ## [1.0.0] - 2026-11-20
 

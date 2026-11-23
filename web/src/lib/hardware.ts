@@ -7,10 +7,11 @@ import { Key, fromDomCode } from './keys'
 const MODIFIERS: Record<string, number> = {
   ShiftLeft: Key.Shift, ShiftRight: Key.RightShift, ControlLeft: Key.Control, ControlRight: Key.RightControl,
   AltLeft: Key.Option, AltRight: Key.RightOption, MetaLeft: Key.Command, MetaRight: Key.RightCommand,
-  CapsLock: Key.CapsLock,
 }
 
 const down = new Set<number>()
+// The attached keyboard's Caps Lock state as last reported by a key event.
+let capsLock: boolean | undefined
 
 const INTERACTIVE = 'button, a[href], summary, [role="button"], [role="switch"], [role="tab"], [role="radio"], [role="option"], [role="menuitem"], [role="checkbox"]'
 const REMOTE_TAB_MODS = [Key.Command, Key.RightCommand, Key.Control, Key.RightControl, Key.Option, Key.RightOption]
@@ -37,7 +38,30 @@ function codeFor(event: KeyboardEvent): number | undefined {
   return MODIFIERS[event.code] ?? fromDomCode(event.code)
 }
 
+function observeCapsLock(event: KeyboardEvent): boolean | undefined {
+  const before = capsLock
+  if (typeof event.getModifierState === 'function') capsLock = event.getModifierState('CapsLock')
+  return before
+}
+
+function ignored(event: KeyboardEvent): boolean {
+  return event.isComposing || event.defaultPrevented || !!document.querySelector('[role="dialog"]') || editable(event.target)
+}
+
+// Browsers disagree on which Caps Lock events fire (Chrome and Safari on a Mac
+// send only keydown when it turns on and only keyup when it turns off), so
+// the lock state is watched instead of pairing key-downs with key-ups.
+function forwardCapsLock(event: KeyboardEvent, before: boolean | undefined) {
+  if (ignored(event)) return
+  event.preventDefault()
+  const known = typeof event.getModifierState === 'function'
+  const toggled = known ? before === undefined || capsLock !== before : event.type === 'keydown' && !event.repeat
+  if (toggled) send({ t: 'tap', code: Key.CapsLock, mods: 0 })
+}
+
 function onKeyDown(event: KeyboardEvent) {
+  const before = observeCapsLock(event)
+  if (event.code === 'CapsLock') return forwardCapsLock(event, before)
   // Sheets keep the keyboard for their own fields and Escape-to-close; unmodified
   // Tab moves between phone controls, and focused controls keep Enter and Space.
   if (event.isComposing || event.defaultPrevented || document.querySelector('[role="dialog"]')) return
@@ -52,6 +76,8 @@ function onKeyDown(event: KeyboardEvent) {
 }
 
 function onKeyUp(event: KeyboardEvent) {
+  const before = observeCapsLock(event)
+  if (event.code === 'CapsLock') return forwardCapsLock(event, before)
   const code = codeFor(event)
   if (code === undefined || !down.delete(code)) return
   event.preventDefault()
@@ -67,12 +93,18 @@ export function installHardwareKeyboard() {
   const host = globalThis as unknown as { [CLEANUP_KEY]?: () => void }
   host[CLEANUP_KEY]?.()
   const onVisibility = () => {
-    if (document.visibilityState === 'hidden') down.clear()
+    if (document.visibilityState !== 'hidden') return
+    down.clear()
+    capsLock = undefined
+  }
+  const onBlur = () => {
+    capsLock = undefined
+    releaseHardwareKeys()
   }
   addEventListener('keydown', onKeyDown)
   addEventListener('keyup', onKeyUp)
   // Key-up events are lost when focus leaves the page mid-press.
-  addEventListener('blur', releaseHardwareKeys)
+  addEventListener('blur', onBlur)
   // The Mac lets go of every key on reconnect, on pause and when the page
   // hides. Forgetting them here lets a key still held press again on its
   // next repeat instead of being ignored.
@@ -83,7 +115,7 @@ export function installHardwareKeyboard() {
   host[CLEANUP_KEY] = () => {
     removeEventListener('keydown', onKeyDown)
     removeEventListener('keyup', onKeyUp)
-    removeEventListener('blur', releaseHardwareKeys)
+    removeEventListener('blur', onBlur)
     document.removeEventListener('visibilitychange', onVisibility)
     offMessage()
     releaseHardwareKeys()
