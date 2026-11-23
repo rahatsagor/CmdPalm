@@ -40,6 +40,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
   icon and label instead of breaking the Deck.
 - Voice typing filters microphone audio before converting it for the Mac,
   so high-pitched sounds no longer fold into distortion the recognizer hears.
+- App icons are kept after a reconnect instead of downloading again each time
+  the phone reconnects to the Mac.
 
 ## [1.0.0] - 2026-11-20
 

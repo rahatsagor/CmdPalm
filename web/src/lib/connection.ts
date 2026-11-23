@@ -3,6 +3,7 @@
 
 import { reactive, shallowRef } from 'vue'
 import { deviceInfo, lastHost, token } from './device'
+import { clearAppIcons } from './icons'
 import { LabelMap } from './keys'
 import {
   PROTOCOL_VERSION,
@@ -270,6 +271,7 @@ export function disconnect(forget: boolean) {
   if (forget) {
     token.set(null)
     lastHost.set('')
+    clearAppIcons()
   }
   state.status = 'idle'
   teardown()
@@ -285,7 +287,10 @@ export function disconnect(forget: boolean) {
 function handle(message: ServerMessage) {
   switch (message.t) {
     case 'welcome': {
-      if (message.token) token.set(message.token)
+      if (message.token) {
+        token.set(message.token)
+        clearAppIcons()
+      }
       state.status = 'connected'
       state.attempts = 0
       state.hostName = message.host.name
@@ -307,7 +312,10 @@ function handle(message: ServerMessage) {
       break
     case 'denied':
       // Other reasons (a version mismatch after a Mac update, a busy Mac) leave the pairing intact.
-      if (pendingAuth?.method === 'token' && message.reason === 'unknown') token.set(null)
+      if (pendingAuth?.method === 'token' && message.reason === 'unknown') {
+        token.set(null)
+        clearAppIcons()
+      }
       state.denied = { reason: message.reason, retryAfter: message.retryAfter }
       state.status = message.reason === 'unknown' ? 'idle' : 'denied'
       if (message.reason === 'unknown') state.byeReason = 'This device is no longer paired with the Mac. Pair it again.'
@@ -443,8 +451,12 @@ export function runAction(action: Action): Promise<{ ok: boolean; message?: stri
   })
 }
 
+export function iconPixels(size = 128): number {
+  return Math.round(size * Math.min(devicePixelRatio || 2, 3))
+}
+
 export function iconUrl(appId: string, size = 128): string {
-  const params = new URLSearchParams({ id: appId, size: String(Math.round(size * Math.min(devicePixelRatio || 2, 3))), k: state.sessionKey })
+  const params = new URLSearchParams({ id: appId, size: String(iconPixels(size)), k: state.sessionKey })
   return `/api/icon?${params}`
 }
 
