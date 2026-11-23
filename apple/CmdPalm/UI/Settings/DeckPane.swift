@@ -5,7 +5,6 @@ struct DeckPane: View {
     @Environment(HostController.self) private var host
     @Environment(Preferences.self) private var preferences
     @State private var summary = ""
-    @State private var deckHash: Int?
     @State private var error: String?
     @State private var confirmReset = false
     @State private var confirmShell = false
@@ -87,17 +86,10 @@ struct DeckPane: View {
     }
 
     private func refresh() {
-        let json = host.deckJSON()
-        guard json.hashValue != deckHash else { return }
-        deckHash = json.hashValue
-        guard let object = try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any],
-              let pages = object["pages"] as? [[String: Any]]
-        else {
-            summary = ""
-            return
-        }
-        let tiles = pages.reduce(0) { $0 + (($1["tiles"] as? [Any])?.count ?? 0) }
-        let pageText = pages.count == 1 ? "1 page" : "\(pages.count) pages"
+        let deck = host.deckSummary()
+        let pages = Int(deck.pages)
+        let tiles = Int(deck.buttons)
+        let pageText = pages == 1 ? "1 page" : "\(pages) pages"
         let tileText = tiles == 1 ? "1 button" : "\(tiles) buttons"
         summary = "\(pageText), \(tileText)"
     }

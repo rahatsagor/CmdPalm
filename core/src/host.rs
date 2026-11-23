@@ -11,8 +11,8 @@ use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, oneshot, watch};
 
 use crate::api::{
-    ApprovalRequest, ConnectedDevice, HostConfig, HostDelegate, HostError, HostEvent, LinkHost, PairingInfo,
-    VoiceUpdate,
+    ApprovalRequest, ConnectedDevice, DeckSummary, HostConfig, HostDelegate, HostError, HostEvent, LinkHost,
+    PairingInfo, VoiceUpdate,
 };
 use crate::auth::{self, Pairing, TrustStore, TrustedDevice};
 use crate::deck::{Deck, MAX_DECK_FILE_BYTES};
@@ -1042,6 +1042,12 @@ impl CoreHost {
         let pretty = serde_json::to_string_pretty(deck).unwrap_or_default();
         // Deeply nested decks grow several times when indented; keep the export importable.
         if pretty.len() < MAX_DECK_FILE_BYTES { pretty } else { serde_json::to_string(deck).unwrap_or_default() }
+    }
+
+    pub fn deck_summary(&self) -> DeckSummary {
+        let state = self.shared.state();
+        let pages = &state.deck.pages;
+        DeckSummary { pages: pages.len() as u32, buttons: pages.iter().map(|page| page.tiles.len() as u32).sum() }
     }
 
     pub fn set_deck_json(&self, json: String) -> Result<(), HostError> {

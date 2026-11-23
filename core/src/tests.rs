@@ -10,7 +10,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio_tungstenite::tungstenite::Message;
 
-use crate::api::{DisplayCommand, HostConfig, HostDelegate, HostEvent, LinkHost, NativeCommand};
+use crate::api::{DeckSummary, DisplayCommand, HostConfig, HostDelegate, HostEvent, LinkHost, NativeCommand};
 use crate::host::{CoreHost, Shared};
 use crate::input::{EventSink, InputEngine, SharedRecorder, Synth};
 use crate::keycodes::{KEY_C, KEY_COMMAND, KEY_Q, KEY_RETURN, KEY_RIGHT_COMMAND, KEY_V, flags, mods};
@@ -1843,6 +1843,23 @@ fn exports_stay_importable_when_indenting_would_exceed_the_file_limit() {
 fn the_default_deck_still_exports_indented() {
     let f = fixture();
     assert!(f.host.deck_json().contains("\n  "));
+}
+
+#[test]
+fn deck_summary_counts_pages_and_buttons_without_the_json() {
+    let f = fixture();
+    let default: Value = serde_json::from_str(&f.host.deck_json()).unwrap();
+    let pages = default["pages"].as_array().unwrap();
+    let buttons: usize = pages.iter().map(|page| page["tiles"].as_array().unwrap().len()).sum();
+    assert_eq!(f.host.deck_summary(), DeckSummary { pages: pages.len() as u32, buttons: buttons as u32 });
+
+    let tile = |id: &str| json!({"id": id, "label": "x", "action": {"kind": "delay", "ms": 10}});
+    let deck = json!({"version": 1, "pages": [
+        {"id": "a", "name": "A", "columns": 4, "tiles": [tile("t1"), tile("t2")]},
+        {"id": "b", "name": "B", "columns": 4, "tiles": [tile("t3")]},
+    ]});
+    f.host.set_deck_json(deck.to_string()).unwrap();
+    assert_eq!(f.host.deck_summary(), DeckSummary { pages: 2, buttons: 3 });
 }
 
 #[test]

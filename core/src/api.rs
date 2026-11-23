@@ -83,6 +83,12 @@ pub struct ApprovalRequest {
 }
 
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct DeckSummary {
+    pub pages: u32,
+    pub buttons: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
 pub struct DisplayApprovalRequest {
     pub id: u64,
     pub session: u64,

@@ -257,6 +257,8 @@ final class HostController {
 
     func deckJSON() -> String { host.deckJson() }
 
+    func deckSummary() -> DeckSummary { host.deckSummary() }
+
     func importDeck(_ json: String) async throws {
         let host = host!
         try await Task.detached { try host.setDeckJson(json: json) }.value
