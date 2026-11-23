@@ -175,15 +175,47 @@ final class AppCatalog: Sendable {
         }
     }
 
+    /// How long a menu bar app must stay out of the Dock before opening it counts as done.
+    static let menuBarSettle: Duration = .seconds(2)
+
+    enum ActivationCheck: Equatable {
+        case done(Bool)
+        case waiting(menuBarSince: ContinuousClock.Instant?)
+    }
+
+    /// Menu bar apps never become frontmost, but some of them turn into
+    /// regular apps shortly after launch, so one counts as open only after it
+    /// has stayed out of the Dock for a while.
+    static func activationCheck(
+        terminated: Bool, frontmost: Bool, hidden: Bool, regular: Bool, finishedLaunching: Bool,
+        menuBarSince: ContinuousClock.Instant?, now: ContinuousClock.Instant
+    ) -> ActivationCheck {
+        if terminated { return .done(false) }
+        if frontmost, !hidden { return .done(true) }
+        if !regular, finishedLaunching {
+            let since = menuBarSince ?? now
+            return now - since >= menuBarSettle ? .done(true) : .waiting(menuBarSince: since)
+        }
+        return .waiting(menuBarSince: nil)
+    }
+
     @MainActor
-    private static func waitForActivation(of app: NSRunningApplication, completion: AppActionCompletion) {
+    private static func waitForActivation(
+        of app: NSRunningApplication, completion: AppActionCompletion, menuBarSince: ContinuousClock.Instant? = nil
+    ) {
         guard completion.isPending else { return }
-        if app.isTerminated { completion.finish(false) }
-        else if NSWorkspace.shared.frontmostApplication?.processIdentifier == app.processIdentifier, !app.isHidden {
-            completion.finish(true)
-        } else {
+        let check = activationCheck(
+            terminated: app.isTerminated,
+            frontmost: NSWorkspace.shared.frontmostApplication?.processIdentifier == app.processIdentifier,
+            hidden: app.isHidden, regular: app.activationPolicy == .regular,
+            finishedLaunching: app.isFinishedLaunching, menuBarSince: menuBarSince, now: .now
+        )
+        switch check {
+        case .done(let success):
+            completion.finish(success)
+        case .waiting(let since):
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.025) {
-                waitForActivation(of: app, completion: completion)
+                waitForActivation(of: app, completion: completion, menuBarSince: since)
             }
         }
     }

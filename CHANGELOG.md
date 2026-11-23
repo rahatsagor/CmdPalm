@@ -48,6 +48,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
   sequences that grew past the import limit when indented.
 - Right-click or Control-click the menu bar icon for a quick menu to pause or
   resume devices, open Settings, check for updates or quit.
+- Opening a menu bar app from the phone no longer waits ten seconds and
+  then reports that it couldn't finish.
 
 ### Phone client
 

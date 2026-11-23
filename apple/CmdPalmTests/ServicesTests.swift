@@ -107,6 +107,48 @@ import Testing
     }
 }
 
+@Suite struct AppActivationTests {
+    let t0 = ContinuousClock.now
+
+    private func check(
+        terminated: Bool = false, frontmost: Bool = false, hidden: Bool = false, regular: Bool = false,
+        finishedLaunching: Bool = true, since: ContinuousClock.Instant? = nil, at now: ContinuousClock.Instant
+    ) -> AppCatalog.ActivationCheck {
+        AppCatalog.activationCheck(
+            terminated: terminated, frontmost: frontmost, hidden: hidden, regular: regular,
+            finishedLaunching: finishedLaunching, menuBarSince: since, now: now
+        )
+    }
+
+    @Test func terminatedAppsFail() {
+        #expect(check(terminated: true, frontmost: true, at: t0) == .done(false))
+    }
+
+    @Test func visibleFrontmostAppsSucceed() {
+        #expect(check(frontmost: true, regular: true, at: t0) == .done(true))
+        #expect(check(frontmost: true, hidden: true, regular: true, at: t0) == .waiting(menuBarSince: nil))
+    }
+
+    @Test func regularAppsWaitForFrontmost() {
+        #expect(check(regular: true, at: t0) == .waiting(menuBarSince: nil))
+    }
+
+    @Test func menuBarAppsStillLaunchingKeepWaiting() {
+        #expect(check(finishedLaunching: false, at: t0) == .waiting(menuBarSince: nil))
+    }
+
+    @Test func menuBarAppsSucceedOnceSettled() {
+        #expect(check(at: t0) == .waiting(menuBarSince: t0))
+        #expect(check(since: t0, at: t0 + .milliseconds(1900)) == .waiting(menuBarSince: t0))
+        #expect(check(since: t0, at: t0 + AppCatalog.menuBarSettle) == .done(true))
+    }
+
+    @Test func appsThatTurnRegularKeepWaiting() {
+        #expect(check(regular: true, since: t0, at: t0 + .seconds(1)) == .waiting(menuBarSince: nil))
+        #expect(check(regular: true, since: nil, at: t0 + .seconds(3)) == .waiting(menuBarSince: nil))
+    }
+}
+
 @Suite @MainActor struct KeyboardLayoutTests {
     @Test func readsTheActiveLayout() throws {
         let layout = try #require(KeyboardLayouts.current())
