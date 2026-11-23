@@ -642,7 +642,18 @@ export class GestureRecognizer {
 
   cancel(id: number) {
     if (!this.points.delete(id)) return
-    if (this.points.size > 0) return
+    if (this.points.size > 0) {
+      if (this.mode === 'scrolling') {
+        this.handler.scroll(ScrollPhase.Cancelled, 0, 0)
+        this.mode = 'done'
+      }
+      if (this.mode === 'transforming') {
+        this.endTransform(ScrollPhase.Cancelled)
+        this.mode = 'done'
+      }
+      if (this.mode === 'dragging' && id === this.primary) this.primary = this.points.keys().next().value!
+      return
+    }
     this.cancelLongPress()
     this.releaseHeldTap()
     if ((this.mode === 'dragging' && !this.dragLocked) || this.mode === 'dragging3') this.handler.buttonUp('left')

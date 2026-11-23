@@ -399,3 +399,53 @@ it('cancel and reset release held buttons', () => {
   g.cancel(1)
   expect(names()).toEqual(['buttonDown', 'buttonUp'])
 })
+
+describe('one finger cancelled among several', () => {
+  it('ends a two-finger scroll without scrolling on or flinging', () => {
+    const { g, calls } = setup()
+    g.down(1, 100, 300, 0)
+    g.down(2, 160, 300, 5)
+    let t = 10
+    for (let y = 300; y >= 200; y -= 10) {
+      t += 8
+      g.move(1, 100, y, t)
+      g.move(2, 160, y, t)
+    }
+    g.cancel(1)
+    const scrolls = () => calls.filter((c) => c[0] === 'scroll')
+    expect(scrolls().at(-1)![1]).toBe(ScrollPhase.Cancelled)
+    const before = scrolls().length
+    for (let y = 190; y >= 150; y -= 10) g.move(2, 160, y, (t += 8))
+    g.up(2, t + 4)
+    expect(scrolls()).toHaveLength(before)
+    expect(scrolls().filter((c) => c[1] === ScrollPhase.Cancelled)).toHaveLength(1)
+    expect(scrolls().some((c) => c[1] === ScrollPhase.Ended)).toBe(false)
+    expect(calls.some((c) => c[0] === 'fling')).toBe(false)
+  })
+
+  it('ends a rotation without a stray turn from the remaining finger', () => {
+    const { g, calls } = setup()
+    g.down(1, 200, 300, 0)
+    g.down(2, 300, 300, 5)
+    const at = (deg: number) => [250 + 50 * Math.cos((deg * Math.PI) / 180), 300 + 50 * Math.sin((deg * Math.PI) / 180)] as const
+    for (let n = 1; n <= 6; n++) frame(g, n, [2, ...at(n * 5)], [1, ...at(180 + n * 5)])
+    g.cancel(1)
+    const turns = () => calls.filter((c) => c[0] === 'rotate')
+    expect(turns().at(-1)![1]).toBe(ScrollPhase.Cancelled)
+    const before = turns().length
+    frame(g, 7, [2, ...at(60)])
+    frame(g, 8, [2, ...at(70)])
+    expect(turns()).toHaveLength(before)
+  })
+
+  it('keeps a long-press drag going with a remaining finger when the primary is cancelled', () => {
+    const { g, calls } = setup()
+    g.down(1, 100, 100, 0)
+    vi.advanceTimersByTime(LONG_PRESS_MS + 5)
+    g.down(2, 200, 100, 600)
+    g.down(3, 300, 100, 600)
+    g.cancel(1)
+    g.move(2, 230, 100, 620)
+    expect(calls.filter((c) => c[0] === 'move')).toEqual([['move', 30, 0, 20]])
+  })
+})

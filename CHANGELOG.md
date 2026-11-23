@@ -53,6 +53,9 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - Caps Lock on a hardware keyboard now stays in step with the Mac in browsers
   that only report it turning on or off, such as Safari and Chrome on a Mac.
   Before, every second press was lost.
+- Scrolling, pinching and rotating on the trackpad stop cleanly when the
+  browser cancels one finger, instead of scrolling on with the other finger or
+  jumping.
 
 ## [1.0.0] - 2026-11-20
 
