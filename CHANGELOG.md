@@ -21,6 +21,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - Voice typing says when the Mac can't transcribe your phone's language on
   the device, and how to add it to Dictation or use the microphone on your
   phone's keyboard instead.
+- Screen mirroring shows a clear message instead of a technical error when
+  it stops because of a problem on the Mac.
 
 ### Phone client
 

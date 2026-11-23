@@ -617,6 +617,13 @@ pub(crate) fn start(
     });
 }
 
+/// WebRTC and socket errors mean nothing on the phone. Log them on the Mac
+/// and tell the phone what to do.
+fn internal(err: impl std::fmt::Display) -> String {
+    tracing::warn!(%err, "screen mirroring failed");
+    "Screen mirroring stopped because of a problem on the Mac. Start viewing again.".into()
+}
+
 /// Conservative receiver limits, including the macroblock rate. Many phone
 /// offers advertise level 3.1 even when their hardware can decode more.
 /// Desktop streams are idle when still, so higher LAN ceilings improve scrolling
@@ -718,7 +725,7 @@ async fn endpoints() -> Result<Vec<Endpoint>, String> {
             break;
         }
         if let Ok(socket) = UdpSocket::bind(SocketAddr::new(ip, 0)).await {
-            let address = socket.local_addr().map_err(|e| e.to_string())?;
+            let address = socket.local_addr().map_err(internal)?;
             endpoints.push(Endpoint { address, socket: Arc::new(socket) });
         }
     }
@@ -809,10 +816,10 @@ async fn run(
     let started = Instant::now();
     let mut rtc = builder.build(started);
     for endpoint in &endpoints {
-        let candidate = Candidate::host(endpoint.address, "udp").map_err(|e| e.to_string())?;
+        let candidate = Candidate::host(endpoint.address, "udp").map_err(internal)?;
         rtc.add_local_candidate(candidate);
         loop {
-            match rtc.poll_output().map_err(|e| e.to_string())? {
+            match rtc.poll_output().map_err(internal)? {
                 Output::Timeout(_) => break,
                 _ => continue,
             }
@@ -890,7 +897,7 @@ async fn run(
                     chunk.extend_from_slice(&(frame.data.len() as u32).to_le_bytes());
                     chunk.extend_from_slice(&(*offset as u32).to_le_bytes());
                     chunk.extend_from_slice(&frame.data[*offset..end]);
-                    if !channel.write(true, &chunk).map_err(|e| e.to_string())? {
+                    if !channel.write(true, &chunk).map_err(internal)? {
                         break;
                     }
                     *offset = end;
@@ -904,7 +911,7 @@ async fn run(
             if stopped.load(Ordering::Acquire) {
                 return Ok(());
             }
-            match rtc.poll_output().map_err(|e| e.to_string())? {
+            match rtc.poll_output().map_err(internal)? {
                 Output::Timeout(deadline) => break deadline,
                 Output::Transmit(packet) => {
                     let endpoint = endpoints
@@ -1071,11 +1078,11 @@ async fn run(
                 if waiting_for_keyframe && !frame.keyframe { continue; }
                 if frame.keyframe { waiting_for_keyframe = false; }
                 if let Some((mid, pt, _, _)) = media {
-                    rtc.writer(mid).ok_or("The video track ended.")?.write(pt, Instant::now(), MediaTime::from_micros(frame.timestamp_us), frame.data).map_err(|e| e.to_string())?;
+                    rtc.writer(mid).ok_or("The video track ended.")?.write(pt, Instant::now(), MediaTime::from_micros(frame.timestamp_us), frame.data).map_err(internal)?;
                     sent_video = true;
                 }
             }
-            _ = tokio::time::sleep_until(deadline.into()) => { rtc.handle_input(Input::Timeout(Instant::now())).map_err(|e| e.to_string())?; }
+            _ = tokio::time::sleep_until(deadline.into()) => { rtc.handle_input(Input::Timeout(Instant::now())).map_err(internal)?; }
         }
     }
 }
@@ -1083,6 +1090,12 @@ async fn run(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn internal_errors_are_friendly_not_raw() {
+        let message = internal("ICE agent: socket 10.0.0.2:5000 reset");
+        assert_eq!(message, "Screen mirroring stopped because of a problem on the Mac. Start viewing again.");
+        assert!(!message.contains("socket"));
+    }
     #[test]
     fn levels_limit_resolution_and_macroblock_rate() {
         assert_eq!(capture_limits(DisplayQuality::Auto, 31), (896, 60, 4_500_000));
