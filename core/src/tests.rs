@@ -828,6 +828,65 @@ fn repeated_display_list_requests_share_one_answer_instead_of_failing() {
 }
 
 #[test]
+fn display_start_during_a_list_refresh_keeps_the_displays_already_offered() {
+    let f = fixture();
+    let mut config = f.config.clone();
+    config.display_enabled = true;
+    f.host.update_config(config);
+    f.host.set_pin_shown(true);
+    f.rt.block_on(async {
+        let mut ws = connect(f.port).await;
+        send(&mut ws, hello("refresher", json!({"method":"pin", "pin":f.host.pairing_info().pin}))).await;
+        recv_kind(&mut ws, "welcome").await;
+        f.host.set_display_allowed("refresher".into(), true);
+        recv_kind(&mut ws, "displayAccess").await;
+        let session = f.host.connected_devices()[0].session;
+        let lists = || {
+            let commands = f.delegate.display_commands.lock().unwrap();
+            commands.iter().filter(|(_, command)| matches!(command, DisplayCommand::List { .. })).count()
+        };
+        let display = crate::protocol::DisplayInfo {
+            id: "monitor".into(),
+            name: "Test".into(),
+            width: 1920,
+            height: 1080,
+            main: true,
+        };
+
+        send(&mut ws, json!({"t":"displays", "id":1})).await;
+        for _ in 0..100 {
+            if lists() == 1 {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        f.host.display_sources(session, 1, vec![display], None);
+        recv_kind(&mut ws, "displays").await;
+
+        tokio::time::sleep(Duration::from_millis(350)).await;
+        send(&mut ws, json!({"t":"displays", "id":2})).await;
+        for _ in 0..100 {
+            if lists() == 2 {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        assert_eq!(lists(), 2, "the refresh must start a second native query that stays unanswered");
+
+        let offer = "v=0\r\no=- 1 1 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\nm=video 9 UDP/TLS/RTP/SAVPF 96\r\n";
+        send(&mut ws, json!({"t":"displayStart", "id":3, "displayId":"monitor", "quality":"auto", "sdp":offer})).await;
+        let state = recv_kind(&mut ws, "displayState").await;
+        assert_eq!(state["state"], "connecting", "{state}");
+        send(&mut ws, json!({"t":"displayStop", "id":3})).await;
+        loop {
+            if recv_kind(&mut ws, "displayState").await["state"] == "stopped" {
+                break;
+            }
+        }
+    });
+}
+
+#[test]
 fn pin_pairing_then_token_reconnect() {
     let f = fixture();
     let pin = f.host.pairing_info().pin;

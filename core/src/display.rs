@@ -373,12 +373,14 @@ impl DisplayHub {
                 return;
             }
         }
+        // Displays already offered stay selectable until the answer replaces them.
+        let ids = sources.remove(&session).map(|source| source.ids).unwrap_or_default();
         sources.insert(
             session,
             Sources {
                 request,
                 native: request,
-                ids: HashSet::new(),
+                ids,
                 displays: vec![],
                 message: None,
                 requested: Instant::now(),

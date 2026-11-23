@@ -25,6 +25,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ### Mac app
 
+- Starting screen mirroring right after refreshing the display list no
+  longer fails with a message to refresh the list.
 - Voice typing says when the Mac can't transcribe your phone's language on
   the device, and how to add it to Dictation or use the microphone on your
   phone's keyboard instead.
