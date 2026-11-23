@@ -118,7 +118,7 @@ final class SpeechService: @unchecked Sendable {
                 }
             default:
                 sessions[id] = nil
-                send(id, started, .unavailable, message: "Speech recognition isn’t allowed on the Mac.")
+                send(id, started, .unavailable, message: Self.notAllowedMessage)
             }
         }
         return true
