@@ -23,6 +23,9 @@ and versions follow [Semantic Versioning](https://semver.org/).
   phone's keyboard instead.
 - Screen mirroring shows a clear message instead of a technical error when
   it stops because of a problem on the Mac.
+- HTTPS keeps the existing certificate authority if its settings file is
+  lost, and issues a matching server certificate after an interrupted update,
+  so devices don't have to trust a new certificate.
 
 ### Phone client
 

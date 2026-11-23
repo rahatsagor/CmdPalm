@@ -137,6 +137,29 @@ fn ca_matches_key(der: &[u8], key: &KeyPair) -> bool {
     .is_ok()
 }
 
+/// Whether `leaf` chains to `ca` and is valid for every one of `names`.
+fn leaf_verifies(leaf: &[u8], ca: &[u8], names: &[String]) -> bool {
+    use rustls::client::danger::ServerCertVerifier;
+
+    let mut roots = rustls::RootCertStore::empty();
+    if roots.add(pki_types::CertificateDer::from(ca.to_vec())).is_err() {
+        return false;
+    }
+    rustls::client::WebPkiServerVerifier::builder_with_provider(
+        Arc::new(roots),
+        Arc::new(rustls::crypto::ring::default_provider()),
+    )
+    .build()
+    .is_ok_and(|verifier| {
+        let leaf = pki_types::CertificateDer::from(leaf.to_vec());
+        names.iter().all(|name| {
+            pki_types::ServerName::try_from(name.as_str()).is_ok_and(|name| {
+                verifier.verify_server_cert(&leaf, &[], &name, &[], pki_types::UnixTime::now()).is_ok()
+            })
+        })
+    })
+}
+
 /// Names the server certificate must cover: the Bonjour name, localhost and
 /// every current LAN address the authority is allowed to vouch for.
 pub fn server_names(host_name: &str, addresses: &[IpAddr]) -> Vec<String> {
@@ -177,11 +200,24 @@ fn build_identity(dir: &Path, names: &[String], reissue: bool) -> Result<Identit
     let ca_key = std::fs::read_to_string(&paths.ca_key).ok().and_then(|pem| KeyPair::from_pem(&pem).ok());
     let ca_der = std::fs::read(&paths.ca_cert).ok();
 
-    let (ca_key, ca_der, mut current) = match (ca_key, ca_der, meta.take()) {
-        (Some(key), Some(der), Some(meta)) if meta.ca_expires > renew_cutoff && ca_matches_key(&der, &key) => {
-            (key, der, meta)
+    let saved = match (ca_key, ca_der) {
+        (Some(key), Some(der)) if ca_matches_key(&der, &key) => {
+            let issuer = Issuer::from_ca_cert_der(&pki_types::CertificateDer::from(der.as_slice()), &key);
+            x509_parser::parse_x509_certificate(&der)
+                .ok()
+                .filter(|_| issuer.is_ok())
+                .map(|(_, cert)| {
+                    let name = cert.subject().iter_common_name().next().and_then(|cn| cn.as_str().ok());
+                    (name.unwrap_or_default().to_string(), cert.validity().not_after.timestamp())
+                })
+                .filter(|(_, expires)| *expires > renew_cutoff)
+                .map(|(name, expires)| (key, der, name, expires))
         }
-        _ => {
+        _ => None,
+    };
+    let (ca_key, ca_der, ca_name, ca_expires) = match saved {
+        Some(saved) => saved,
+        None => {
             changed = true;
             let key = KeyPair::generate()?;
             let suffix = &crate::auth::random_token(4)[..4];
@@ -190,16 +226,27 @@ fn build_identity(dir: &Path, names: &[String], reissue: bool) -> Result<Identit
             let cert = ca_params(&name, expires).self_signed(&key)?;
             store::save_bytes(&paths.ca_key, key.serialize_pem().as_bytes())?;
             store::save_bytes(&paths.ca_cert, cert.der())?;
-            let meta =
-                Meta { ca_name: name, ca_expires: expires.unix_timestamp(), leaf_names: vec![], leaf_expires: 0 };
-            (key, cert.der().to_vec(), meta)
+            meta = None;
+            (key, cert.der().to_vec(), name, expires.unix_timestamp())
         }
     };
+    let mut current =
+        meta.take().unwrap_or(Meta { ca_name: ca_name.clone(), ca_expires, leaf_names: vec![], leaf_expires: 0 });
+    if current.ca_name != ca_name || current.ca_expires != ca_expires {
+        changed = true;
+        current.ca_name = ca_name;
+        current.ca_expires = ca_expires;
+    }
 
     let leaf_key = std::fs::read_to_string(&paths.leaf_key).ok().and_then(|pem| KeyPair::from_pem(&pem).ok());
     let leaf_der = std::fs::read(&paths.leaf_cert).ok();
     let (leaf_key, leaf_der) = match (leaf_key, leaf_der) {
-        (Some(key), Some(der)) if !reissue && current.leaf_names == names && current.leaf_expires > renew_cutoff => {
+        (Some(key), Some(der))
+            if !reissue
+                && current.leaf_names == names
+                && current.leaf_expires > renew_cutoff
+                && leaf_verifies(&der, &ca_der, names) =>
+        {
             (key, der)
         }
         _ => {
@@ -218,10 +265,7 @@ fn build_identity(dir: &Path, names: &[String], reissue: bool) -> Result<Identit
             params.not_before = now - Duration::days(1);
             let expires = now + Duration::days(LEAF_DAYS);
             params.not_after = expires;
-            let issuer = Issuer::new(
-                ca_params(&current.ca_name, OffsetDateTime::from_unix_timestamp(current.ca_expires).unwrap_or(expires)),
-                &ca_key,
-            );
+            let issuer = Issuer::from_ca_cert_der(&pki_types::CertificateDer::from(ca_der.as_slice()), &ca_key)?;
             let cert = params.signed_by(&key, &issuer)?;
             store::save_bytes(&paths.leaf_key, key.serialize_pem().as_bytes())?;
             store::save_bytes(&paths.leaf_cert, cert.der())?;
@@ -315,6 +359,57 @@ mod tests {
             )
             .expect("the recovered chain must authenticate with its advertised authority");
         assert_eq!(load_identity(dir.path(), &names).unwrap().ca_fingerprint, recovered.ca_fingerprint);
+    }
+
+    fn verifies(identity_ca: &[u8], dir: &Path) -> bool {
+        leaf_verifies(&std::fs::read(dir.join("server.der")).unwrap(), identity_ca, &["localhost".to_string()])
+    }
+
+    #[test]
+    fn issues_leaves_from_the_authority_on_disk_when_metadata_disagrees() {
+        let a = tempfile::tempdir().unwrap();
+        let b = tempfile::tempdir().unwrap();
+        let names = server_names("Studio.local", &[]);
+        load_identity(a.path(), &names).unwrap();
+        let other = load_identity(b.path(), &names).unwrap();
+        for file in ["ca-key.pem", "ca.der"] {
+            std::fs::copy(b.path().join(file), a.path().join(file)).unwrap();
+        }
+        let loaded = load_identity(a.path(), &names).unwrap();
+        assert_eq!(loaded.ca_fingerprint, other.ca_fingerprint);
+        assert!(verifies(&other.ca_der, a.path()));
+        assert_eq!(load_identity(a.path(), &names).unwrap().ca_fingerprint, other.ca_fingerprint);
+    }
+
+    #[test]
+    fn reissues_a_saved_leaf_that_misses_a_requested_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let studio = server_names("Studio.local", &[IpAddr::V4(Ipv4Addr::new(192, 168, 1, 5))]);
+        let office = server_names("Office.local", &[IpAddr::V4(Ipv4Addr::new(192, 168, 1, 5))]);
+        let ca = load_identity(dir.path(), &studio).unwrap().ca_der;
+        let aside = tempfile::tempdir().unwrap();
+        let files = ["server.der", "server-key.pem"];
+        for file in files {
+            std::fs::copy(dir.path().join(file), aside.path().join(file)).unwrap();
+        }
+        load_identity(dir.path(), &office).unwrap();
+        for file in files {
+            std::fs::copy(aside.path().join(file), dir.path().join(file)).unwrap();
+        }
+        load_identity(dir.path(), &office).unwrap();
+        let leaf = std::fs::read(dir.path().join("server.der")).unwrap();
+        assert!(leaf_verifies(&leaf, &ca, &office), "the saved leaf must cover every requested name");
+    }
+
+    #[test]
+    fn keeps_the_authority_when_metadata_is_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        let names = server_names("Studio.local", &[]);
+        let first = load_identity(dir.path(), &names).unwrap();
+        std::fs::remove_file(dir.path().join("tls.json")).unwrap();
+        let again = load_identity(dir.path(), &names).unwrap();
+        assert_eq!(first.ca_fingerprint, again.ca_fingerprint);
+        assert!(verifies(&first.ca_der, dir.path()));
     }
 
     #[test]
