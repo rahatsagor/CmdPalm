@@ -31,8 +31,15 @@ enum SystemActions {
     static func open(_ string: String, allowShellLike: Bool = false) -> Bool {
         guard let url = URL(string: string), let scheme = url.scheme?.lowercased(), !scheme.isEmpty else { return false }
         guard !["javascript", "data"].contains(scheme), allowShellLike || !shellLikeSchemes.contains(scheme) else { return false }
-        DispatchQueue.main.async { NSWorkspace.shared.open(url) }
-        return true
+        guard !Thread.isMainThread else { return false }
+        let completion = AppActionCompletion()
+        DispatchQueue.main.async {
+            guard completion.isPending else { return }
+            NSWorkspace.shared.open(url, configuration: NSWorkspace.OpenConfiguration()) { _, error in
+                completion.finish(error == nil)
+            }
+        }
+        return completion.wait(timeout: 10)
     }
 
     static func runShortcut(_ name: String) -> Bool {

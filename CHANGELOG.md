@@ -52,6 +52,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
   then reports that it couldn't finish.
 - Starting screen mirroring while another device refreshes its display list
   no longer fails with “The Mac is still preparing its display list.”
+- Deck links that no app on the Mac can open now report an error instead of
+  appearing to work.
 
 ### Phone client
 
