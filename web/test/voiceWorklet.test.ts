@@ -52,3 +52,22 @@ describe.each([48000, 44100])('voice worklet at %i Hz', (rate) => {
     expect(Math.abs(resample(worklet, rate, sine(1000)).length - 16000)).toBeLessThanOrEqual(2)
   })
 })
+
+describe('voice worklet filter taps', () => {
+  it('evaluates the filter once per output sample at 48 kHz', () => {
+    class Base {
+      port = { postMessage: () => {}, onmessage: null as unknown }
+    }
+    let Worklet!: new (options: unknown) => Processor & { filtered(i: number): number }
+    new Function('AudioWorkletProcessor', 'sampleRate', 'registerProcessor', worklet)(Base, 48000, (_: string, cls: typeof Worklet) => (Worklet = cls))
+    const node = new Worklet({ processorOptions: { rate: 16000 } })
+    const filtered = node.filtered.bind(node)
+    let calls = 0
+    node.filtered = (i) => {
+      calls++
+      return filtered(i)
+    }
+    node.process([[new Float32Array(128)]])
+    expect(calls).toBe(Math.ceil(127 / 3))
+  })
+})

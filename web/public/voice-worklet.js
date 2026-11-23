@@ -63,7 +63,7 @@ class Downsampler extends AudioWorkletProcessor {
       const i = Math.floor(this.pos)
       const frac = this.pos - i
       const a = this.filtered(i)
-      const v = a + (this.filtered(i + 1) - a) * frac
+      const v = frac === 0 ? a : a + (this.filtered(i + 1) - a) * frac
       const s = Math.max(-1, Math.min(1, v))
       this.peak = Math.max(this.peak, Math.abs(s))
       this.buf[this.len++] = s < 0 ? s * 0x8000 : s * 0x7fff
