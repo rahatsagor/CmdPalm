@@ -25,6 +25,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.host.onApprovalsChanged = { ApprovalPanel.update() }
         model.host.start()
         model.updater.start()
+        StatusMenu.install()
 
         #if DEBUG
         if showDebugWindows() { return }

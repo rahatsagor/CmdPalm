@@ -91,7 +91,7 @@ struct MenuPanel: View {
                     .font(.headline)
                 HStack(spacing: 6) {
                     StatusDot(color: statusColor, size: 7)
-                    Text(statusText)
+                    Text(host.statusSummary)
                         .lineLimit(1)
                 }
                 .font(.subheadline)
@@ -188,21 +188,6 @@ struct MenuPanel: View {
             .keyboardShortcut("q")
         }
         .buttonStyle(MenuRowButtonStyle())
-    }
-
-    private var statusText: String {
-        switch host.status {
-        case .starting: return "Starting…"
-        case .stopped: return "Off"
-        case .failed: return "Couldn’t start"
-        case .running:
-            if host.paused { return "Paused" }
-            switch host.connected.count {
-            case 0: return "Ready to connect"
-            case 1: return "\(host.connected[0].name) connected"
-            case let count: return "\(count) devices connected"
-            }
-        }
     }
 
     private var statusColor: Color {

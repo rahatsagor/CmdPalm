@@ -340,3 +340,33 @@ import Testing
         #expect(message.contains("phone’s keyboard"))
     }
 }
+
+@MainActor @Suite struct StatusMenuTests {
+    private func menu(paused: Bool? = false, updates: Bool = true, pause: @escaping () -> Void = {}) -> NSMenu {
+        StatusMenu.makeMenu(status: "Ready to connect", paused: paused, updatesEnabled: updates, pause: pause, settings: {}, updates: {}, quit: {})
+    }
+
+    @Test func listsTheQuickActionsInOrder() {
+        let items = menu().items
+        #expect(items.map { $0.isSeparatorItem ? "-" : $0.title } == ["Ready to connect", "Pause Control and Viewing", "-", "Settings…", "Check for Updates…", "-", "Quit CmdPalm"])
+        #expect(!items[0].isEnabled)
+        #expect(items[3].keyEquivalent == "," && items[6].keyEquivalent == "q")
+        #expect(menu(paused: true).items[1].title == "Resume Control and Viewing")
+    }
+
+    @Test func omitsPauseWhenNotRunning() {
+        #expect(!menu(paused: nil).items.contains { $0.title.contains("Control and Viewing") })
+    }
+
+    @Test func disablesUpdatesWhenTheyCannotRunNow() {
+        #expect(!menu(updates: false).items[4].isEnabled)
+        #expect(menu().items[4].isEnabled)
+    }
+
+    @Test func choosingPauseRunsItsAction() {
+        var paused = 0
+        let menu = menu(pause: { paused += 1 })
+        menu.performActionForItem(at: 1)
+        #expect(paused == 1)
+    }
+}

@@ -472,3 +472,21 @@ final class HostController {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)
     }
 }
+
+extension HostController {
+    /// The one-line state shown in the menu panel and the quick menu.
+    var statusSummary: String {
+        switch status {
+        case .starting: return "Starting…"
+        case .stopped: return "Off"
+        case .failed: return "Couldn’t start"
+        case .running:
+            if paused { return "Paused" }
+            switch connected.count {
+            case 0: return "Ready to connect"
+            case 1: return "\(connected[0].name) connected"
+            case let count: return "\(count) devices connected"
+            }
+        }
+    }
+}
