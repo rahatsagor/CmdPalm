@@ -451,8 +451,12 @@ export function runAction(action: Action): Promise<{ ok: boolean; message?: stri
   })
 }
 
+const ICON_BUCKETS = [64, 128, 256, 512]
+
+/** The size the Mac serves for a request: the first bucket that fits. */
 export function iconPixels(size = 128): number {
-  return Math.round(size * Math.min(devicePixelRatio || 2, 3))
+  const wanted = Math.round(size * Math.min(devicePixelRatio || 2, 3))
+  return ICON_BUCKETS.find(bucket => bucket >= wanted) ?? 512
 }
 
 export function iconUrl(appId: string, size = 128): string {

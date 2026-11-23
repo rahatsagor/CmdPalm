@@ -44,6 +44,16 @@ describe('app icon cache', () => {
     expect(icons.appIcon('x', 48)).toBe(url)
   })
 
+  it('shares one picture between sizes the Mac serves from the same bucket', async () => {
+    vi.stubGlobal('devicePixelRatio', 3)
+    const small = await icons.loadAppIcon('x', 44)
+    const large = await icons.loadAppIcon('x', 56)
+    expect(large).toBe(small)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(String(fetchMock.mock.calls[0]![0])).toContain('size=256')
+    vi.unstubAllGlobals()
+  })
+
   it('shares one request between callers', async () => {
     const [a, b] = await Promise.all([icons.loadAppIcon('x', 48), icons.loadAppIcon('x', 48)])
     expect(a).toBe(b)
