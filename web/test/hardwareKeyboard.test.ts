@@ -113,3 +113,16 @@ describe('hardware Caps Lock', () => {
     expect(socket.sent.some(m => m.t === 'key' && m.code === Key.CapsLock)).toBe(false)
   })
 })
+
+describe('hardware keys after release-all', () => {
+  it('presses a held key again on its next repeat', async () => {
+    const socket = connect()
+    press('keydown', 'KeyA')
+    const downs = () => socket.sent.filter(m => m.t === 'key' && m.code === Key.A && m.down === true).length
+    expect(downs()).toBe(1)
+    const { releaseAll } = await import('../src/lib/input')
+    releaseAll()
+    press('keydown', 'KeyA', undefined, document.body, true)
+    expect(downs()).toBe(2)
+  })
+})

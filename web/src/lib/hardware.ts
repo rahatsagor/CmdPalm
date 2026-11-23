@@ -89,6 +89,10 @@ export function releaseHardwareKeys() {
   down.clear()
 }
 
+export function forgetHardwareKeys() {
+  down.clear()
+}
+
 export function installHardwareKeyboard() {
   const host = globalThis as unknown as { [CLEANUP_KEY]?: () => void }
   host[CLEANUP_KEY]?.()

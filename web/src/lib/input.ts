@@ -2,6 +2,7 @@
 
 import { send, onMessage, pointer, labels, isOpen, notify } from './connection'
 import { haptic } from './haptics'
+import { forgetHardwareKeys } from './hardware'
 import { Key, MODIFIER_CODES } from './keys'
 import { Modifiers } from './modifiers'
 import type { MediaKey, MouseButton, TextMode } from './protocol'
@@ -214,6 +215,7 @@ export function releaseAll() {
   mediaCount.clear()
   modifiers.reset(false)
   pointer.reset()
+  forgetHardwareKeys()
   send({ t: 'release' })
   haptic('medium')
 }
