@@ -50,6 +50,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
   resume devices, open Settings, check for updates or quit.
 - Opening a menu bar app from the phone no longer waits ten seconds and
   then reports that it couldn't finish.
+- Starting screen mirroring while another device refreshes its display list
+  no longer fails with “The Mac is still preparing its display list.”
 
 ### Phone client
 

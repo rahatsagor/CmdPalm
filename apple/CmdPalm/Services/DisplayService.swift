@@ -75,6 +75,11 @@ final class DisplayService: Sendable {
     func displaysChanged() { Task { await controller.refreshDisplay() } }
 }
 
+/// SCShareableContent isn't Sendable, which a Task's result must be.
+private struct Shareable: @unchecked Sendable {
+    let content: SCShareableContent
+}
+
 private actor DisplayController {
     let reference: HostReference
     let gate: DisplayGate
@@ -84,7 +89,7 @@ private actor DisplayController {
     private var wake: NSObjectProtocol?
     private var settings: DisplaySettings?
     private var revision: UInt64 = 0
-    private var querying = false
+    private var query: Task<Shareable, Error>?
     private var refreshRequested = false
 
     init(reference: HostReference, gate: DisplayGate) {
@@ -187,7 +192,7 @@ private actor DisplayController {
         guard let config = settings, gate.contains(config.generation), let active else { return }
         // Monitor changes can arrive together or during another device's
         // source query. Coalesce them instead of ending a healthy viewer.
-        guard !querying else { refreshRequested = true; return }
+        guard query == nil else { refreshRequested = true; return }
         do {
             let content = try await shareableContent()
             guard gate.contains(config.generation) else { return }
@@ -211,17 +216,18 @@ private actor DisplayController {
 
     private func shareableContent() async throws -> SCShareableContent {
         // Actor reentrancy must not turn a slow OS query into an unbounded
-        // collection of simultaneous queries from refresh/start requests.
-        guard !querying else { throw DisplayError.busy }
-        querying = true
+        // collection of simultaneous queries, so overlapping callers share one.
+        if let query { return try await query.value.content }
+        let task = Task { Shareable(content: try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)) }
+        query = task
         defer {
-            querying = false
+            query = nil
             if refreshRequested {
                 refreshRequested = false
                 Task { await refreshDisplay() }
             }
         }
-        return try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+        return try await task.value.content
     }
 
     @MainActor private static func displayNames() -> [CGDirectDisplayID: String] {
@@ -310,13 +316,12 @@ struct IdleRefinement {
 }
 
 private enum DisplayError: Error {
-    case permission, missing, encoder, busy
+    case permission, missing, encoder
     var message: String {
         switch self {
         case .permission: "Allow Screen Recording in CmdPalm Settings → General → Display on the Mac, then reopen CmdPalm if macOS asks."
         case .missing: "The selected display is no longer available. Refresh the display list and choose another."
         case .encoder: "Hardware video encoding is unavailable. Stop other screen-sharing or recording sessions, then try again."
-        case .busy: "The Mac is still preparing its display list. Try again in a moment."
         }
     }
 }
