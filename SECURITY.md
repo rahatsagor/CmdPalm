@@ -85,12 +85,14 @@ port speaks both HTTP and HTTPS.
   connections through a proxy on this Mac** in **Settings → Advanced**. With
   it on, CmdPalm believes the `X-Forwarded-For`, `X-Forwarded-Proto` and
   `X-Forwarded-Host` headers on connections from the Mac itself, so each
-  phone behind the proxy keeps its own address and lockouts. Devices on the
-  network can't use these headers, and browsers can't add them to the
-  requests CmdPalm answers, but another program on the Mac could claim a
-  different address for itself. It still needs the code, the PIN or your
-  approval, within the same limits. If your proxy makes CmdPalm reachable
-  from the internet, turn off **Allow devices to ask to pair**.
+  phone behind the proxy keeps its own address and lockouts. CmdPalm uses the
+  last value of each header, the one your proxy adds, so the proxy should set
+  all three itself. Devices on the network can't use these headers, and
+  browsers can't add them to the requests CmdPalm answers, but another
+  program on the Mac could claim a different address for itself. It still
+  needs the code, the PIN or your approval, within the same limits. If your
+  proxy makes CmdPalm reachable from the internet, turn off
+  **Allow devices to ask to pair**.
 
 There are no accounts, no analytics and no cloud relay. CmdPalm contacts
 GitHub to check for updates, and nothing else. Voice typing is transcribed on

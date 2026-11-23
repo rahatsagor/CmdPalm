@@ -30,11 +30,12 @@ limited to 1 MiB.
 When **Accept connections through a proxy on this Mac** is on, a reverse
 proxy on the Mac itself may connect over loopback. For loopback connections
 with `X-Forwarded-For`, the server
-takes the client address from its last entry (with or without a port), treats `X-Forwarded-Proto:
-https` as encrypted, and checks `X-Forwarded-Host` (or `Host`) in place of
-`Host`, including for the WebSocket `Origin` check. The forwarded headers are
-ignored otherwise, and always on connections from other machines. The app must
-be served from `/`.
+takes the client address from the last entry of the last `X-Forwarded-For`
+header (with or without a port), treats the connection as encrypted when the
+last `X-Forwarded-Proto` header is `https`, and checks the last
+`X-Forwarded-Host` header (or `Host`) in place of `Host`, including for the
+WebSocket `Origin` check. The forwarded headers are ignored otherwise, and
+always on connections from other machines. The app must be served from `/`.
 
 An Origin must use the effective connection's `http` or `https` scheme and
 the same host and port. An omitted default port is equivalent to `:80` for

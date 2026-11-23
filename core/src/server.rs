@@ -330,6 +330,12 @@ impl Request {
         self.headers.iter().find(|(k, _)| k == name).map(|(_, v)| v.as_str())
     }
 
+    /// Repeated lines are one comma-joined list, so the last line holds the
+    /// entry added by the proxy that connected to us.
+    fn last_header(&self, name: &str) -> Option<&str> {
+        self.headers.iter().rfind(|(k, _)| k == name).map(|(_, v)| v.as_str())
+    }
+
     fn query(&self, name: &str) -> Option<&str> {
         self.query.iter().find(|(k, _)| k == name).map(|(_, v)| v.as_str())
     }
@@ -666,7 +672,7 @@ pub(crate) fn client(request: &Request, peer: IpAddr, secure: bool, allow_proxy:
     let host = request.header("host");
     // The last entry is the one added by the proxy that connected to us.
     let forwarded = (allow_proxy && peer.is_loopback())
-        .then(|| request.header("x-forwarded-for"))
+        .then(|| request.last_header("x-forwarded-for"))
         .flatten()
         .and_then(|list| list.rsplit(',').next())
         .map(str::trim)
@@ -677,7 +683,7 @@ pub(crate) fn client(request: &Request, peer: IpAddr, secure: bool, allow_proxy:
     };
     // Last entries here too: a proxy that appends would otherwise let the
     // phone pick the host used for the Host and Origin checks.
-    let last = |value: &'static str| request.header(value).map(|v| v.rsplit(',').next().unwrap_or(v).trim());
+    let last = |value: &'static str| request.last_header(value).map(|v| v.rsplit(',').next().unwrap_or(v).trim());
     Client {
         address: address.to_canonical(),
         secure: secure || last("x-forwarded-proto").is_some_and(|proto| proto.eq_ignore_ascii_case("https")),
@@ -893,6 +899,24 @@ mod tests {
         );
         assert_eq!(percent_decode("%41%2b"), Some("A+".into()));
         assert_eq!(percent_decode("%+1"), None, "a sign is not a hex digit");
+    }
+
+    #[test]
+    fn uses_the_last_forwarded_header_lines_the_proxy_added() {
+        let loopback = IpAddr::from([127, 0, 0, 1]);
+        let head = "GET / HTTP/1.1\r\nHost: 127.0.0.1:8790\r\n\
+            X-Forwarded-For: 203.0.113.9\r\nX-Forwarded-Proto: https\r\nX-Forwarded-Host: evil.example\r\n\
+            X-Forwarded-For: 10.8.0.3\r\nX-Forwarded-Proto: http\r\nX-Forwarded-Host: mac.example.com\r\n";
+        let request = parse_head(head.as_bytes()).unwrap();
+        let forwarded = client(&request, loopback, false, true);
+        assert_eq!(forwarded.address, IpAddr::from([10, 8, 0, 3]));
+        assert!(!forwarded.secure);
+        assert_eq!(forwarded.host, Some("mac.example.com"));
+
+        let head = "GET / HTTP/1.1\r\nHost: 127.0.0.1:8790\r\nX-Forwarded-For: 10.8.0.3\r\n\
+            X-Forwarded-Host: mac.example.com\r\nX-Forwarded-Host: evil.example\r\n";
+        let request = parse_head(head.as_bytes()).unwrap();
+        assert_eq!(client(&request, loopback, false, true).host, Some("evil.example"));
     }
 
     #[test]

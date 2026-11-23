@@ -19,6 +19,9 @@ and versions follow [Semantic Versioning](https://semver.org/).
   requests** in Settings → Devices so a phone can approve requests when the
   Mac's own keyboard and mouse aren't at hand. Turning it on needs the Mac's
   own input.
+- Behind an allowed reverse proxy that adds its own X-Forwarded headers,
+  CmdPalm uses the proxy's values instead of ones a device sent, so a device
+  can't claim another address to get around pairing limits.
 
 ### Mac app
 
