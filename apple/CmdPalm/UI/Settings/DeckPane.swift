@@ -128,8 +128,18 @@ struct DeckPane: View {
             do {
                 // Checked before reading, so picking a huge file can't stall the app.
                 let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
-                let data = size < Int(maxDeckFileBytes()) ? try Data(contentsOf: url) : Data()
-                guard !data.isEmpty, data.count < Int(maxDeckFileBytes()), let json = String(data: data, encoding: .utf8) else {
+                let limit = Int(maxDeckFileBytes())
+                let tooLarge = "That file is too large for a CmdPalm deck. Deck files must be smaller than \(ByteCountFormatter.string(fromByteCount: Int64(limit), countStyle: .memory))."
+                guard size < limit else {
+                    self.error = tooLarge
+                    return
+                }
+                let data = try Data(contentsOf: url)
+                guard data.count < limit else {
+                    self.error = tooLarge
+                    return
+                }
+                guard !data.isEmpty, let json = String(data: data, encoding: .utf8) else {
                     self.error = "That file isn’t a CmdPalm deck."
                     return
                 }

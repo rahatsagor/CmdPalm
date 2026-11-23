@@ -54,6 +54,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
   no longer fails with “The Mac is still preparing its display list.”
 - Deck links that no app on the Mac can open now report an error instead of
   appearing to work.
+- Importing a deck file that's too large says so, instead of saying the file
+  isn't a deck.
 
 ### Phone client
 
