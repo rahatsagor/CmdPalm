@@ -91,6 +91,7 @@ private actor DisplayController {
     private var revision: UInt64 = 0
     private var query: Task<Shareable, Error>?
     private var refreshRequested = false
+    private var pendingConfigure: (generation: UInt64, fps: Int, bitrate: Int)?
 
     init(reference: HostReference, gate: DisplayGate) {
         self.reference = reference
@@ -121,7 +122,11 @@ private actor DisplayController {
             let config = DisplaySettings(session: session, generation: generation, id: displayId, dimension: Int(maxDimension), maximumFPS: Int(fps), fps: Int(fps), bitrate: Int(bitrate), original: original, patches: patches, profile: profile)
             await start(config)
         case let .configure(generation, fps, bitrate):
-            guard gate.contains(generation), active?.generation == generation else { return }
+            guard gate.contains(generation) else { return }
+            guard active?.generation == generation else {
+                pendingConfigure = (generation, Int(fps), Int(bitrate))
+                return
+            }
             settings?.fps = Int(fps)
             settings?.bitrate = Int(bitrate)
             await active?.configure(fps: Int(fps), bitrate: Int(bitrate))
@@ -132,6 +137,7 @@ private actor DisplayController {
             let bounds = CGDisplayBounds(display)
             CGWarpMouseCursorPosition(CGPoint(x: bounds.midX, y: bounds.midY))
         case let .stop(generation):
+            if pendingConfigure?.generation == generation { pendingConfigure = nil }
             guard active?.generation == generation else { return }
             let previous = active
             active = nil
@@ -154,6 +160,12 @@ private actor DisplayController {
             let content = try await shareableContent()
             guard ticket == revision, gate.contains(config.generation) else { return }
             guard let display = content.displays.first(where: { Self.identifier($0.displayID) == config.id }) else { throw DisplayError.missing }
+            var config = config
+            if let pending = pendingConfigure, pending.generation == config.generation {
+                config.fps = pending.fps
+                config.bitrate = pending.bitrate
+            }
+            pendingConfigure = nil
             let capture = DisplayCapture(display: display, settings: config, gate: gate, reference: reference)
             created = capture
             active = capture
