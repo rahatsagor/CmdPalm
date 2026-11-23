@@ -7,7 +7,9 @@ import { MEDIA, SYSTEM } from './actions'
 import { equalJson } from './value'
 import type { Action, Deck, DeckPage, Tile } from './protocol'
 
-export const LIMITS = { pages: 24, tiles: 64, label: 80, text: 4096, name: 512, steps: 64, depth: 3, delayMs: 10_000 }
+export const LIMITS = { pages: 24, tiles: 64, label: 80, text: 4096, name: 512, steps: 64, depth: 3, delayMs: 10_000,
+  // The whole deck as compact JSON; matches the Mac's MAX_DECK_BYTES.
+  bytes: 1024 * 1024 - 4 * 1024 }
 
 export function newId(prefix = 't'): string {
   const bytes = crypto.getRandomValues(new Uint8Array(6))
@@ -145,10 +147,26 @@ watch(() => state.status, (status) => {
   if (status !== 'connected') finishSave(false, 'Lost the connection. Your edit is still here; reconnect and save again.')
 }, { flush: 'sync' })
 
+const overKb = (bytes: number) => Math.max(1, Math.ceil((bytes - LIMITS.bytes) / 1000))
+const sizeOf = (deck: Deck) => encoder.encode(JSON.stringify(deck)).length
+
 /** Resolve only after the Mac accepted the change, keeping drafts on failure. */
 export function saveDeck(deck: Deck, record = true): Promise<boolean> {
   if (pending) {
     notify('Wait for the current Deck change to finish.', 'info', 'deck')
+    return Promise.resolve(false)
+  }
+  const bytes = sizeOf(deck)
+  if (bytes > LIMITS.bytes) {
+    // A deck saved before the limit existed can't be saved while it is over
+    // it. Let it shrink on the phone until it fits, then save it once.
+    if (confirmed && sizeOf(confirmed) > LIMITS.bytes && bytes < sizeOf(state.deck ?? confirmed)) {
+      if (state.deck && same(state.deck, confirmed)) clearHistory()
+      state.deck = clone(deck)
+      notify(`Not saved yet. Remove about ${overKb(bytes)} KB more and the deck saves.`, 'info', 'deck')
+      return Promise.resolve(true)
+    }
+    notify(`This deck is too large to save: it’s ${overKb(bytes)} KB over the limit. Remove some buttons, or shorten long text and sequences.`, 'warning', 'deck')
     return Promise.resolve(false)
   }
   return new Promise((resolve) => {

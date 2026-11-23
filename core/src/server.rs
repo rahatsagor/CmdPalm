@@ -76,6 +76,7 @@ pub(crate) fn save_deck_version(
     revision: Option<u64>,
 ) -> Result<u64, SaveError> {
     deck.validate()?;
+    deck.check_size()?;
     let mut newest = shared.deck_lock.lock().unwrap_or_else(|p| p.into_inner());
     let current = shared.state().deck_revision;
     if revision.is_some_and(|base| base != current) {

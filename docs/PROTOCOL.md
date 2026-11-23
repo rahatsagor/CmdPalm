@@ -292,6 +292,11 @@ and a symbol name to 128. `color` is `#rgb`, `#rgba`, `#rrggbb` or
 `#rrggbbaa`. The Mac rejects a deck that breaks these limits, and the sender
 gets a `notice` explaining why.
 
+The whole deck, as compact JSON, may be up to 1 044 480 bytes (UTF-8), 4 KiB
+under the 1 MiB message limit so a `deckSave` always fits. The Mac refuses a
+larger save or import, but still loads a larger deck saved earlier so it can
+be exported or trimmed.
+
 Page IDs must be unique, and button IDs must be unique within their page.
 
 ## Screen mirroring

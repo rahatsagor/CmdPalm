@@ -17,6 +17,9 @@ const MAX_LABEL: usize = 80;
 const MAX_STEPS: usize = 64;
 const MAX_ID: usize = 128;
 const MAX_NAME: usize = 512;
+/// The most a whole deck may take as compact JSON in UTF-8. It leaves room for
+/// the `deckSave` envelope within the WebSocket message limit.
+pub(crate) const MAX_DECK_BYTES: usize = crate::server::MAX_MESSAGE - 4 * 1024;
 pub(crate) const MAX_DEPTH: usize = 3;
 pub(crate) const MAX_DELAY_MS: u32 = 10_000;
 
@@ -79,9 +82,18 @@ pub enum DeckError {
     TooLarge,
     #[error("{0}")]
     Invalid(String),
+    #[error("This deck is too large to save: it’s {} KB over the limit. Remove some buttons, or shorten long text and sequences.", .0.saturating_sub(MAX_DECK_BYTES).div_ceil(1000).max(1))]
+    Oversized(usize),
 }
 
 impl Deck {
+    /// Checked when saving, not when loading, so a deck saved before this
+    /// limit existed still opens and can be exported or trimmed.
+    pub fn check_size(&self) -> Result<(), DeckError> {
+        let bytes = serde_json::to_vec(self).map_or(0, |json| json.len());
+        if bytes > MAX_DECK_BYTES { Err(DeckError::Oversized(bytes)) } else { Ok(()) }
+    }
+
     pub fn validate(&self) -> Result<(), DeckError> {
         if self.version != DECK_VERSION {
             return Err(DeckError::Version(self.version));

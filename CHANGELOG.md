@@ -28,6 +28,11 @@ and versions follow [Semantic Versioning](https://semver.org/).
   so devices don't have to trust a new certificate.
 - Resetting the deck in Settings shows an error if it can't be saved,
   instead of appearing to succeed.
+- Saving or importing a deck that is too large to send between the phone and
+  the Mac now says how much to trim. Before, a phone save over the limit
+  dropped the connection without an answer. Larger decks saved earlier still
+  open and can be exported, and you can trim them on the phone: remove pages
+  or buttons until the deck fits, and it saves then.
 
 ### Phone client
 

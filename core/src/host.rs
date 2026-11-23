@@ -23,7 +23,7 @@ use crate::{server, store, tls};
 
 /// The saved deck, if it can be used. One that parses but isn't valid, say
 /// from a newer version, is kept aside so the next save can't overwrite it.
-fn load_deck(path: &Path) -> Option<Deck> {
+pub(crate) fn load_deck(path: &Path) -> Option<Deck> {
     let deck = store::load::<Deck>(path)?;
     match deck.validate() {
         Ok(()) => Some(deck),

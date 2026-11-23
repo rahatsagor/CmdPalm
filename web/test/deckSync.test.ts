@@ -35,6 +35,66 @@ function accept(next: Deck, revision: number) {
 }
 
 describe('confirmed Deck saves and history', () => {
+  const deckOfSize = (bytes: number): Deck => {
+    const make = (len: number, extra: number): Deck => ({ version: 1, pages: [{ ...initial.pages[0]!, tiles: Array.from({ length: 64 }, (_, i) => ({ id: `t${i}`, label: 'x', action: { kind: 'text' as const, text: 'a'.repeat(len + (i < extra ? 1 : 0)) } })) }] })
+    const size = (deck: Deck) => new TextEncoder().encode(JSON.stringify(deck)).length
+    const deficit = bytes - size(make(0, 0))
+    return make(Math.floor(deficit / 64), deficit % 64)
+  }
+
+  describe('a deck saved before the size limit', () => {
+    const page = (id: string): Deck['pages'][number] => ({ id, name: id, columns: 4, tiles: [{ id: `${id}-t`, label: 'x', action: { kind: 'text', text: 'a'.repeat(600_000) } }] })
+    const legacy: Deck = { version: 1, pages: [page('a'), page('b'), page('c')] }
+    const sentSaves = () => lastSocket().sent.filter((m) => m.t === 'deckSave')
+
+    beforeEach(() => {
+      lastSocket().receive({ ...welcome, deck: legacy, deckRevision: 4 })
+    })
+
+    it('can be trimmed on the phone until it fits, then saves once', async () => {
+      expect(await deckLib.saveDeck({ ...legacy, pages: legacy.pages.slice(1) })).toBe(true)
+      expect(sentSaves()).toHaveLength(0)
+      expect(conn.state.deck?.pages.map((p) => p.id)).toEqual(['b', 'c'])
+      expect(conn.state.notices.at(-1)).toMatchObject({ level: 'info' })
+      expect(conn.state.notices.at(-1)?.message).toMatch(/^Not saved yet\. Remove about \d+ KB more/)
+
+      const trimmed: Deck = { ...legacy, pages: [legacy.pages[2]!] }
+      const saving = deckLib.saveDeck(trimmed)
+      expect(sentSaves()).toHaveLength(1)
+      expect(sentSaves()[0]).toMatchObject({ t: 'deckSave', revision: 4, deck: trimmed })
+      accept(trimmed, 5)
+      expect(await saving).toBe(true)
+      expect(conn.state.deck).toEqual(trimmed)
+    })
+
+    it('refuses edits that do not shrink the draft and keeps the draft', async () => {
+      await deckLib.saveDeck({ ...legacy, pages: legacy.pages.slice(1) })
+      const draft = JSON.parse(JSON.stringify(conn.state.deck)) as Deck
+      const renamed = { ...draft, pages: draft.pages.map((p, i) => (i === 0 ? { ...p, name: 'Renamed' } : p)) }
+      expect(await deckLib.saveDeck(renamed)).toBe(false)
+      expect(conn.state.deck).toEqual(draft)
+      expect(conn.state.notices.at(-1)).toMatchObject({ level: 'warning' })
+      expect(conn.state.notices.at(-1)?.message).toContain('too large to save')
+      expect(sentSaves()).toHaveLength(0)
+    })
+  })
+
+  it('refuses a deck over the size limit without sending it', async () => {
+    const big = deckOfSize(deckLib.LIMITS.bytes + 1500)
+    expect(new TextEncoder().encode(JSON.stringify(big)).length).toBe(deckLib.LIMITS.bytes + 1500)
+    const sent = lastSocket().sent.length
+    expect(await deckLib.saveDeck(big)).toBe(false)
+    expect(lastSocket().sent.length).toBe(sent)
+    expect(conn.state.notices.at(-1)?.message).toBe('This deck is too large to save: it’s 2 KB over the limit. Remove some buttons, or shorten long text and sequences.')
+    expect(conn.state.deck).toEqual(initial)
+  })
+
+  it('sends a deck just under the size limit', () => {
+    const deck = deckOfSize(deckLib.LIMITS.bytes)
+    void deckLib.saveDeck(deck)
+    expect(lastSocket().sent.at(-1)).toMatchObject({ t: 'deckSave' })
+  })
+
   it('records icon edits when the Mac serializes object properties in a different order', async () => {
     const next: Deck = { version: 1, pages: [{ ...initial.pages[0]!, tiles: [{ id: 'tile', label: 'Example', action: { kind: 'media', key: 'mute' }, icon: { kind: 'symbol', name: 'volume-x' } }] }] }
     const saving = deckLib.saveDeck(next)

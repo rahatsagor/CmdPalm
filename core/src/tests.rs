@@ -1691,6 +1691,72 @@ fn failed_deck_resets_report_the_error_without_changing_the_deck() {
     assert_eq!(f.shared.state().deck_revision, revision);
 }
 
+/// A valid deck whose compact JSON is exactly `bytes` long.
+fn deck_of_size(bytes: usize) -> crate::deck::Deck {
+    const TILES: usize = 5 * 64;
+    let build = |base: usize, extra: usize| -> crate::deck::Deck {
+        let pages: Vec<Value> = (0..5)
+            .map(|p| {
+                let tiles: Vec<Value> = (0..64)
+                    .map(|i| {
+                        let len = base + usize::from(p * 64 + i < extra);
+                        json!({"id": format!("t{p}-{i}"), "label": "x", "action": {"kind": "text", "text": "a".repeat(len)}})
+                    })
+                    .collect();
+                json!({"id": format!("p{p}"), "name": "P", "columns": 4, "tiles": tiles})
+            })
+            .collect();
+        serde_json::from_value(json!({"version": 1, "pages": pages})).unwrap()
+    };
+    let deficit = bytes - serde_json::to_vec(&build(1, 0)).unwrap().len();
+    let deck = build(1 + deficit / TILES, deficit % TILES);
+    assert_eq!(serde_json::to_vec(&deck).unwrap().len(), bytes);
+    deck.validate().unwrap();
+    deck
+}
+
+#[test]
+fn deck_size_limit_is_exact() {
+    use crate::deck::{DeckError, MAX_DECK_BYTES};
+    deck_of_size(MAX_DECK_BYTES).check_size().unwrap();
+    let err = deck_of_size(MAX_DECK_BYTES + 1).check_size().unwrap_err();
+    assert_eq!(err, DeckError::Oversized(MAX_DECK_BYTES + 1));
+    assert!(err.to_string().contains("it’s 1 KB over the limit"), "{err}");
+}
+
+#[test]
+fn oversized_decks_are_refused_on_import_and_phone_saves() {
+    use crate::deck::MAX_DECK_BYTES;
+    let f = fixture();
+    let big = deck_of_size(MAX_DECK_BYTES + 1_500);
+    let json = serde_json::to_string(&big).unwrap();
+    assert!(json.len() < crate::server::MAX_MESSAGE - 1024);
+    let err = f.host.set_deck_json(json).unwrap_err().to_string();
+    assert!(err.contains("too large to save"), "{err}");
+    f.rt.block_on(async {
+        let mut ws = connect(f.port).await;
+        let code = f.host.pairing_info().link.split("#pair=").nth(1).unwrap().to_string();
+        send(&mut ws, hello("phone", json!({"method": "pair", "code": code}))).await;
+        let initial = recv_kind(&mut ws, "welcome").await;
+        send(&mut ws, json!({"t": "deckSave", "deck": big, "id": 5, "revision": 0})).await;
+        let rejected = recv_kind(&mut ws, "deckSaved").await;
+        assert_eq!(rejected["ok"], false);
+        assert_eq!(rejected["revision"], 0);
+        assert!(rejected["message"].as_str().unwrap().contains("2 KB over the limit"), "{rejected}");
+        assert_eq!(serde_json::from_str::<Value>(&f.host.deck_json()).unwrap(), initial["deck"]);
+    });
+}
+
+#[test]
+fn an_oversized_deck_saved_earlier_still_loads() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("deck.json");
+    let big = deck_of_size(crate::deck::MAX_DECK_BYTES + 50_000);
+    std::fs::write(&path, serde_json::to_vec(&big).unwrap()).unwrap();
+    assert_eq!(crate::host::load_deck(&path), Some(big));
+    assert!(path.exists(), "the deck must not be quarantined");
+}
+
 #[test]
 fn queued_voice_starts_cannot_restart_recording_after_pause_and_resume() {
     let f = fixture();
