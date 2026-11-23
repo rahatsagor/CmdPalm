@@ -341,7 +341,10 @@ impl Request {
     }
 
     fn header_has_token(&self, name: &str, token: &str) -> bool {
-        self.header(name).is_some_and(|v| v.split(',').any(|t| t.trim().eq_ignore_ascii_case(token)))
+        self.headers
+            .iter()
+            .filter(|(k, _)| k == name)
+            .any(|(_, v)| v.split(',').any(|t| t.trim().eq_ignore_ascii_case(token)))
     }
 
     fn keep_alive(&self) -> bool {
@@ -422,7 +425,8 @@ pub(crate) fn parse_head(head: &[u8]) -> Option<Request> {
     }
     // A proxy in front could read a different copy of these than this server
     // does, which is how requests get smuggled past it.
-    for name in ["host", "content-length", "transfer-encoding"] {
+    for name in ["host", "content-length", "transfer-encoding", "origin", "sec-websocket-key", "sec-websocket-version"]
+    {
         if headers.iter().filter(|(k, _)| k == name).count() > 1 {
             return None;
         }
@@ -917,6 +921,26 @@ mod tests {
             X-Forwarded-Host: mac.example.com\r\nX-Forwarded-Host: evil.example\r\n";
         let request = parse_head(head.as_bytes()).unwrap();
         assert_eq!(client(&request, loopback, false, true).host, Some("evil.example"));
+    }
+
+    #[test]
+    fn reads_every_connection_line_and_refuses_repeated_websocket_headers() {
+        let base = "GET /ws HTTP/1.1\r\nHost: mac.local\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n";
+        let split = parse_head(format!("{base}Connection: keep-alive\r\nConnection: Upgrade\r\n").as_bytes()).unwrap();
+        assert!(websocket_accept(&split, "mac.local", false).is_ok());
+
+        let closing =
+            parse_head(b"GET / HTTP/1.1\r\nHost: mac.local\r\nConnection: keep-alive\r\nConnection: close\r\n")
+                .unwrap();
+        assert!(!closing.keep_alive());
+
+        for extra in [
+            "Origin: http://mac.local\r\nOrigin: http://evil.example\r\n",
+            "Sec-WebSocket-Key: c2Vjb25kIGtleQ==\r\n",
+            "Sec-WebSocket-Version: 8\r\n",
+        ] {
+            assert!(parse_head(format!("{base}Origin: http://mac.local\r\n{extra}").as_bytes()).is_none(), "{extra:?}");
+        }
     }
 
     #[test]
