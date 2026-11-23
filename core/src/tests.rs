@@ -1676,6 +1676,22 @@ fn failed_deck_writes_are_acknowledged_without_changing_the_deck() {
 }
 
 #[test]
+fn failed_deck_resets_report_the_error_without_changing_the_deck() {
+    let f = fixture();
+    let initial = f.host.deck_json();
+    let mut changed: Value = serde_json::from_str(&initial).unwrap();
+    changed["pages"][0]["name"] = json!("Keep me");
+    f.host.set_deck_json(changed.to_string()).unwrap();
+    let before = f.host.deck_json();
+    let revision = f.shared.state().deck_revision;
+    std::fs::remove_file(std::path::Path::new(&f.config.data_dir).join("deck.json")).ok();
+    std::fs::create_dir(std::path::Path::new(&f.config.data_dir).join("deck.json")).unwrap();
+    assert!(f.host.reset_deck().is_err());
+    assert_eq!(f.host.deck_json(), before);
+    assert_eq!(f.shared.state().deck_revision, revision);
+}
+
+#[test]
 fn queued_voice_starts_cannot_restart_recording_after_pause_and_resume() {
     let f = fixture();
     let (started, entering) = std::sync::mpsc::channel();

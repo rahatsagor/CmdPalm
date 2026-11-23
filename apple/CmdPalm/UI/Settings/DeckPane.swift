@@ -64,9 +64,16 @@ struct DeckPane: View {
         }
         .confirmationDialog("Reset the deck?", isPresented: $confirmReset) {
             Button("Reset Deck", role: .destructive) {
+                error = nil
                 Task {
-                    await host.resetDeck()
-                    refresh()
+                    do {
+                        try await host.resetDeck()
+                        refresh()
+                    } catch let failure as HostError {
+                        if case let .Failed(message) = failure { self.error = "Couldn’t reset the deck: \(message)" }
+                    } catch {
+                        self.error = "Couldn’t reset the deck: \(error.localizedDescription)"
+                    }
                 }
             }
         } message: {

@@ -26,6 +26,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - HTTPS keeps the existing certificate authority if its settings file is
   lost, and issues a matching server certificate after an interrupted update,
   so devices don't have to trust a new certificate.
+- Resetting the deck in Settings shows an error if it can't be saved,
+  instead of appearing to succeed.
 
 ### Phone client
 

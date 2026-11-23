@@ -1046,8 +1046,8 @@ impl CoreHost {
         server::save_deck(&self.shared, deck).map_err(|e| HostError::new(e.to_string()))
     }
 
-    pub fn reset_deck(&self) {
-        let _ = server::save_deck(&self.shared, Deck::default());
+    pub fn reset_deck(&self) -> Result<(), HostError> {
+        server::save_deck(&self.shared, Deck::default()).map_err(|e| HostError::new(e.to_string()))
     }
 
     /// The CA certificate (DER) to install on devices for trusted HTTPS.

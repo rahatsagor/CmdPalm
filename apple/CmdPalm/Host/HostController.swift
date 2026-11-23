@@ -262,9 +262,9 @@ final class HostController {
         try await Task.detached { try host.setDeckJson(json: json) }.value
     }
 
-    func resetDeck() async {
+    func resetDeck() async throws {
         let host = host!
-        await Task.detached { host.resetDeck() }.value
+        try await Task.detached { try host.resetDeck() }.value
     }
 
     func certificate() -> Data { host.caCertificate() }
