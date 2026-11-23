@@ -28,6 +28,19 @@ import Testing
         #expect(!InputOrigin.isFromCmdPalm(nil))
     }
 
+    @MainActor @Test func devicesMayApproveOnlyWhenAllowed() throws {
+        let original = InputOrigin.current
+        defer { InputOrigin.current = original }
+        let marked = try #require(NSEvent(cgEvent: try event(userData: InputOrigin.marker)))
+        InputOrigin.current = { marked }
+        #expect(!InputOrigin.mayGrant(devicesMayApprove: false))
+        #expect(InputOrigin.mayGrant(devicesMayApprove: true))
+        let plain = try #require(NSEvent(cgEvent: try event()))
+        InputOrigin.current = { plain }
+        #expect(InputOrigin.mayGrant(devicesMayApprove: false))
+        #expect(InputOrigin.mayGrant(devicesMayApprove: true))
+    }
+
     @MainActor @Test func currentEventIsChecked() throws {
         let original = InputOrigin.current
         defer { InputOrigin.current = original }

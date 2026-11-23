@@ -16,6 +16,8 @@ enum InputOrigin {
     @MainActor static var current: () -> NSEvent? = { NSApp.currentEvent }
 
     @MainActor static var currentIsFromCmdPalm: Bool { isFromCmdPalm(current()?.cgEvent) }
+
+    @MainActor static func mayGrant(devicesMayApprove: Bool) -> Bool { devicesMayApprove || !currentIsFromCmdPalm }
 }
 
 extension Binding where Value == Bool {

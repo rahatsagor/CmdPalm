@@ -204,7 +204,7 @@ final class HostController {
     /// Whether the input being handled may turn something on. Clicks and keys
     /// CmdPalm generates for a phone must not be able to approve that phone.
     func allowsGrant() -> Bool {
-        guard InputOrigin.currentIsFromCmdPalm else { return true }
+        guard !InputOrigin.mayGrant(devicesMayApprove: preferences.allowDeviceApprovals) else { return true }
         NSSound.beep()
         refusedRemoteGrant = true
         return false

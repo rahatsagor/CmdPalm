@@ -68,6 +68,7 @@ final class Preferences {
         static let allowPin = "allowPin"
         static let allowApproval = "allowApproval"
         static let allowShell = "allowShell"
+        static let allowDeviceApprovals = "allowDeviceApprovals"
         static let voiceEnabled = "voiceEnabled"
         static let displayEnabled = "displayEnabled"
         static let logLevel = "logLevel"
@@ -90,6 +91,7 @@ final class Preferences {
     var allowPin: Bool { didSet { save(allowPin, Key.allowPin) } }
     var allowApproval: Bool { didSet { save(allowApproval, Key.allowApproval) } }
     var allowShell: Bool { didSet { save(allowShell, Key.allowShell) } }
+    var allowDeviceApprovals: Bool { didSet { save(allowDeviceApprovals, Key.allowDeviceApprovals) } }
     var voiceEnabled: Bool { didSet { save(voiceEnabled, Key.voiceEnabled) } }
     var displayEnabled: Bool { didSet { save(displayEnabled, Key.displayEnabled) } }
     var logLevel: LogLevel { didSet { save(logLevel.rawValue, Key.logLevel, notify: false) } }
@@ -111,6 +113,7 @@ final class Preferences {
             Key.allowPin: true,
             Key.allowApproval: true,
             Key.allowShell: false,
+            Key.allowDeviceApprovals: false,
             Key.voiceEnabled: true,
             Key.displayEnabled: false,
             Key.logLevel: LogLevel.info.rawValue,
@@ -123,6 +126,7 @@ final class Preferences {
         allowPin = defaults.bool(forKey: Key.allowPin)
         allowApproval = defaults.bool(forKey: Key.allowApproval)
         allowShell = defaults.bool(forKey: Key.allowShell)
+        allowDeviceApprovals = defaults.bool(forKey: Key.allowDeviceApprovals)
         voiceEnabled = defaults.bool(forKey: Key.voiceEnabled)
         displayEnabled = defaults.bool(forKey: Key.displayEnabled)
         logLevel = Self.storedLogLevel(in: defaults)

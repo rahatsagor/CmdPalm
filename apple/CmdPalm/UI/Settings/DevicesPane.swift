@@ -7,7 +7,16 @@ struct DevicesPane: View {
     @State private var confirmForgetAll = false
 
     var body: some View {
+        @Bindable var preferences = preferences
         Form {
+            Section("Approvals") {
+                DescribedToggle(
+                    "Let paired devices approve requests",
+                    detail: "Paired devices can then use their trackpad and keyboard to approve pairing and screen-mirroring requests, and to turn on screen mirroring or shell commands. Leave this off unless every paired device is yours. Turning it on needs this Mac’s own trackpad, mouse or keyboard.",
+                    isOn: $preferences.allowDeviceApprovals.grantedLocally(host)
+                )
+            }
+
             Section("Screen Mirroring") {
                 VStack(alignment: .leading, spacing: 8) {
                     if !preferences.displayEnabled {

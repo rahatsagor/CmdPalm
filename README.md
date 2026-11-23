@@ -93,10 +93,12 @@ Screen mirroring requires CmdPalm 1.0.0 or later and is **off by default**.
 Enable **Allow screen mirroring** in the Mac’s
 General settings, grant macOS **Screen Recording** permission, and allow screen
 access for the device under **Devices**. Pairing for control does not grant viewing.
-A phone can ask, but you approve on the Mac. One allowed device can view one
-selected display at a time. Media is encrypted over WebRTC; HTTPS also protects
-the browser page, controls and pairing. Leaving Display or pausing, locking or
-sleeping the Mac ends viewing. Audio continues to play on the Mac.
+A phone can ask, but you approve on the Mac with its own trackpad, mouse or
+keyboard, unless you let paired devices approve requests under **Devices**.
+One allowed device can view one selected display at a time. Media is encrypted
+over WebRTC; HTTPS also protects the browser page, controls and pairing. Leaving
+Display or pausing, locking or sleeping the Mac ends viewing. Audio continues to
+play on the Mac.
 
 [Screen mirroring setup →](https://cmdpalm.app/docs/screen-mirroring/)
 

@@ -15,6 +15,10 @@ and versions follow [Semantic Versioning](https://semver.org/).
   screen-mirroring prompts, and the settings that turn on screen mirroring or
   shell commands, ignore clicks and keys CmdPalm sends for a phone. Approve
   them with the Mac's own trackpad, mouse or keyboard.
+- If every paired device is yours, turn on **Let paired devices approve
+  requests** in Settings → Devices so a phone can approve requests when the
+  Mac's own keyboard and mouse aren't at hand. Turning it on needs the Mac's
+  own input.
 
 ### Mac app
 

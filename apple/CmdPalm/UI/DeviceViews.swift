@@ -212,7 +212,7 @@ struct DisplayApprovalRow: View {
 
 struct GrantRefusedCaption: View {
     var body: some View {
-        Text("Use this Mac’s own trackpad, mouse or keyboard to allow access.")
+        Text("Use this Mac’s own trackpad, mouse or keyboard to allow access. You can let paired devices approve in Settings → Devices.")
             .font(.caption)
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
