@@ -71,16 +71,33 @@ final class SpeechService: @unchecked Sendable {
         }
     }
 
+    static let notAllowedMessage = "Speech recognition isn’t allowed on the Mac. Turn it on in System Settings → Privacy & Security → Speech Recognition."
+
+    static func onDeviceMessage(for locale: Locale) -> String {
+        let language = Locale.current.localizedString(forIdentifier: locale.identifier) ?? locale.identifier
+        return "This Mac can’t transcribe \(language) on the device, and CmdPalm doesn’t send speech anywhere else. In System Settings → Keyboard, turn on Dictation and add \(language) so macOS downloads it, or use the microphone on your phone’s keyboard."
+    }
+
     func start(session id: UInt64, locale: String?, requestId: UInt32?) -> Bool {
-        guard Self.mayBeAvailable, let recognizer = Self.recognizer(for: locale) else { return false }
+        let recognizer = Self.recognizer(for: locale)
         // Do not request permission for a language that cannot be transcribed locally.
-        guard recognizer.supportsOnDeviceRecognition else { return false }
-        recognizer.queue = handlerQueue
+        let failure: String? = if !Self.mayBeAvailable {
+            Self.notAllowedMessage
+        } else if let recognizer {
+            recognizer.supportsOnDeviceRecognition ? nil : Self.onDeviceMessage(for: recognizer.locale)
+        } else {
+            "Speech recognition isn’t available on this Mac."
+        }
+        recognizer?.queue = handlerQueue
         queue.async { [self] in
             if let old = sessions.removeValue(forKey: id) {
                 if old.stopping { deliverPending(id, old) }
                 discard(old)
                 send(id, old, .stopped)
+            }
+            guard failure == nil, let recognizer else {
+                update(id, VoiceUpdate(requestId: requestId, state: .unavailable, text: nil, isFinal: false, message: failure))
+                return
             }
             let started = Session(recognizer: recognizer, requestId: requestId)
             sessions[id] = started
@@ -95,7 +112,7 @@ final class SpeechService: @unchecked Sendable {
                             begin(id)
                         } else if let session = sessions.removeValue(forKey: id) {
                             discard(session)
-                            send(id, session, .unavailable, message: "Speech recognition isn’t allowed on the Mac. Turn it on in System Settings → Privacy & Security → Speech Recognition.")
+                            send(id, session, .unavailable, message: Self.notAllowedMessage)
                         }
                     }
                 }
@@ -153,7 +170,7 @@ final class SpeechService: @unchecked Sendable {
         guard session.recognizer.supportsOnDeviceRecognition else {
             sessions[id] = nil
             discard(session)
-            send(id, session, .unavailable, message: "Speech is only transcribed on this Mac, and on-device recognition isn’t available for this language. Try another language, or turn on Dictation in System Settings → Keyboard so macOS can download it.")
+            send(id, session, .unavailable, message: Self.onDeviceMessage(for: session.recognizer.locale))
             return
         }
         guard session.recognizer.isAvailable else {

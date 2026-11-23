@@ -363,9 +363,9 @@ dictate with the microphone button on your phone's own keyboard over either
 connection.
 
 Your Mac recognises the speech itself, so voice typing needs on-device
-recognition for your language. If CmdPalm says it isn't available, turn on
-Dictation in **System Settings → Keyboard** so macOS downloads it, or pick
-another language.
+recognition for your phone's language. If CmdPalm says it isn't available,
+turn on Dictation in **System Settings → Keyboard** and add that language so
+macOS downloads it, or use the microphone on your phone's keyboard.
 
 ## Gestures
 

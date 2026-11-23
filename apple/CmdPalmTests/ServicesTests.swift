@@ -331,3 +331,12 @@ import Testing
         #expect(!result)
     }
 }
+
+@Suite struct SpeechMessageTests {
+    @Test func namesTheLanguageAndOffersTheKeyboardMicrophone() {
+        let language = Locale.current.localizedString(forIdentifier: "fr-FR") ?? "fr-FR"
+        let message = SpeechService.onDeviceMessage(for: Locale(identifier: "fr-FR"))
+        #expect(message.contains(language))
+        #expect(message.contains("phone’s keyboard"))
+    }
+}

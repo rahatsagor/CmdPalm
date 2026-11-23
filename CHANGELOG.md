@@ -16,6 +16,12 @@ and versions follow [Semantic Versioning](https://semver.org/).
   shell commands, ignore clicks and keys CmdPalm sends for a phone. Approve
   them with the Mac's own trackpad, mouse or keyboard.
 
+### Mac app
+
+- Voice typing says when the Mac can't transcribe your phone's language on
+  the device, and how to add it to Dictation or use the microphone on your
+  phone's keyboard instead.
+
 ## [1.0.0] - 2026-11-20
 
 See your Mac's screen on your phone while you use the trackpad or keyboard.
