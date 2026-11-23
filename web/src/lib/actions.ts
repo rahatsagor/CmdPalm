@@ -106,12 +106,15 @@ export function defaultAction(kind: Action['kind']): Action {
   }
 }
 
+/** Own-property lookup, so a deck can't name `constructor` or `valueOf`. */
+const own = <T>(map: Record<string, T>, key: string): T | undefined => (Object.hasOwn(map, key) ? map[key] : undefined)
+
 const APP_OPS: Record<AppOp, string> = { open: 'Open', toggle: 'Show or hide', hide: 'Hide', quit: 'Quit' }
 const CLICKS: Record<MouseButton, string> = { left: 'click', right: 'right-click', middle: 'middle click', back: 'back click', forward: 'forward click' }
 
 /** "Click", "Right-click", "Double-click", "Double right-click"… */
 function mouseLabel(button: MouseButton, clicks: number): string {
-  const name = CLICKS[button] ?? `${button} click`
+  const name = own(CLICKS, button) ?? `${button} click`
   if (clicks <= 1) return name[0]!.toUpperCase() + name.slice(1)
   return `${clicks === 2 ? 'Double' : 'Triple'}${button === 'left' ? '-' : ' '}${name}`
 }
@@ -122,11 +125,11 @@ export function describe(action: Action | null, labels: LabelMap, apps?: Map<str
     case 'keys':
       return comboLabel(action.code, action.mods, labels)
     case 'system':
-      return SYSTEM[action.name]?.label ?? action.name
+      return own(SYSTEM, action.name)?.label ?? action.name
     case 'media':
-      return MEDIA[action.key]?.label ?? action.key
+      return own(MEDIA, action.key)?.label ?? action.key
     case 'app':
-      return `${APP_OPS[action.op ?? 'toggle']} ${apps?.get(action.id) ?? (action.id.split('.').pop() || 'app')}`
+      return `${own(APP_OPS, action.op ?? 'toggle') ?? 'Show or hide'} ${apps?.get(action.id) ?? (action.id.split('.').pop() || 'app')}`
     case 'text':
       return action.text ? `Type “${action.text.length > 18 ? `${action.text.slice(0, 18)}…` : action.text}”` : 'Type text'
     case 'url':
@@ -147,9 +150,9 @@ export function describe(action: Action | null, labels: LabelMap, apps?: Map<str
 export function actionSymbol(action: Action): string {
   switch (action.kind) {
     case 'system':
-      return SYSTEM[action.name]?.symbol ?? 'laptop'
+      return own(SYSTEM, action.name)?.symbol ?? 'laptop'
     case 'media':
-      return MEDIA[action.key]?.symbol ?? 'music'
+      return own(MEDIA, action.key)?.symbol ?? 'music'
     default:
       return ACTION_KINDS.find((k) => k.kind === action.kind)?.symbol ?? 'zap'
   }

@@ -22,6 +22,11 @@ and versions follow [Semantic Versioning](https://semver.org/).
   the device, and how to add it to Dictation or use the microphone on your
   phone's keyboard instead.
 
+### Phone client
+
+- Deck buttons with an unexpected icon, action or click name show the default
+  icon and label instead of breaking the Deck.
+
 ## [1.0.0] - 2026-11-20
 
 See your Mac's screen on your phone while you use the trackpad or keyboard.

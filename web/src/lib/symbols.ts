@@ -39,5 +39,5 @@ export const SYMBOLS: Record<string, Component> = {
 }
 
 export function symbol(name: string | undefined): Component {
-  return (name && SYMBOLS[name]) || Zap
+  return (name && Object.hasOwn(SYMBOLS, name) && SYMBOLS[name]) || Zap
 }
