@@ -25,6 +25,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ### Mac app
 
+- A phone waiting for you to approve it now says the Mac stopped sharing
+  when CmdPalm stops, instead of reporting a lost connection.
 - Starting screen mirroring right after refreshing the display list no
   longer fails with a message to refresh the list.
 - Voice typing says when the Mac can't transcribe your phone's language on

@@ -1019,6 +1019,43 @@ fn approval_flow() {
 }
 
 #[test]
+fn stopping_the_host_tells_a_phone_waiting_for_approval() {
+    let f = fixture();
+    let (mut ws, request) = f.rt.block_on(async {
+        let mut ws = connect(f.port).await;
+        send(&mut ws, hello("waiting", json!({"method": "approve"}))).await;
+        assert_eq!(recv(&mut ws).await["t"], "pending");
+        let request = loop {
+            let found = f.delegate.events.lock().unwrap().iter().find_map(|e| match e {
+                HostEvent::ApprovalRequested { request } => Some(request.clone()),
+                _ => None,
+            });
+            if let Some(request) = found {
+                break request;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        };
+        (ws, request)
+    });
+    // Shutting the host's runtime down inside the test runtime would panic.
+    f.host.stop();
+    f.rt.block_on(async {
+        let bye = recv_kind(&mut ws, "bye").await;
+        assert_eq!(bye["reason"], "The Mac stopped sharing.");
+        assert_eq!(bye["reconnect"], true);
+    });
+    let ended = f
+        .delegate
+        .events
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|e| matches!(e, HostEvent::ApprovalEnded { id } if *id == request.id))
+        .count();
+    assert_eq!(ended, 1);
+}
+
+#[test]
 fn serves_the_web_client_and_guards_icons() {
     let f = fixture();
     f.rt.block_on(async {

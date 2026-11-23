@@ -197,11 +197,12 @@ pub(crate) async fn run<S>(
         return close(&mut sink, deny(DenyReason::Incompatible, None)).await;
     }
 
-    let authorized = match authenticate(&shared, &device, auth, remember, peer, &mut sink, &mut stream).await {
-        Ok(authorized) => authorized,
-        Err(Some(Refusal(reason, retry))) => return close(&mut sink, deny(reason, retry)).await,
-        Err(None) => return,
-    };
+    let authorized =
+        match authenticate(&shared, &device, auth, remember, peer, &mut sink, &mut stream, &mut shutdown).await {
+            Ok(authorized) => authorized,
+            Err(Some(Refusal(reason, retry))) => return close(&mut sink, deny(reason, retry)).await,
+            Err(None) => return,
+        };
 
     let id = shared.next_id();
     let key = auth::random_token(18);
@@ -350,6 +351,7 @@ pub(crate) async fn run<S>(
 }
 
 /// `Err(None)` means the device went away; `Err(Some(m))` is a refusal.
+#[allow(clippy::too_many_arguments)]
 async fn authenticate<S>(
     shared: &Arc<Shared>,
     device: &DeviceInfo,
@@ -358,11 +360,12 @@ async fn authenticate<S>(
     peer: IpAddr,
     sink: &mut WsSink<S>,
     stream: &mut WsStream<S>,
+    shutdown: &mut watch::Receiver<bool>,
 ) -> Result<Authorized, Option<Refusal>>
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
-    let result = authorize(shared, device, request, remember, peer, sink, stream).await;
+    let result = authorize(shared, device, request, remember, peer, sink, stream, shutdown).await;
     // Pairing and reconnecting change the trusted devices. Saving them syncs
     // to disk, so it runs off the network threads.
     let saving = shared.clone();
@@ -370,6 +373,7 @@ where
     result
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn authorize<S>(
     shared: &Arc<Shared>,
     device: &DeviceInfo,
@@ -378,6 +382,7 @@ async fn authorize<S>(
     peer: IpAddr,
     sink: &mut WsSink<S>,
     stream: &mut WsStream<S>,
+    shutdown: &mut watch::Receiver<bool>,
 ) -> Result<Authorized, Option<Refusal>>
 where
     S: AsyncRead + AsyncWrite + Unpin,
@@ -498,11 +503,16 @@ where
                 declined();
                 return Err(None);
             }
+            let mut stopped = false;
             let waited = timeout(APPROVAL_TIMEOUT, async {
                 tokio::pin!(decision);
                 loop {
                     tokio::select! {
                         answer = &mut decision => return Some(answer.unwrap_or(false)),
+                        _ = shutdown.changed() => {
+                            stopped = true;
+                            return None;
+                        }
                         message = next_message(stream) => match message {
                             Some(Ok(ClientMessage::Ping { id })) => {
                                 if !send(sink, &ServerMessage::Pong { id }).await { return None }
@@ -522,7 +532,11 @@ where
                 }
                 Ok(None) => {
                     cancel_approval(shared, id);
-                    declined();
+                    if stopped {
+                        close(sink, bye(STOPPED_SHARING, true)).await;
+                    } else {
+                        declined();
+                    }
                     Err(None)
                 }
                 Err(_) => {
