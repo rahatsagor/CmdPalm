@@ -370,7 +370,7 @@ dependencies = [
  "libc",
  "objc2-core-foundation",
  "objc2-core-graphics",
- "rand 0.10.3",
+ "rand 0.10.4",
  "rcgen",
  "serde",
  "serde_json",
@@ -544,7 +544,7 @@ dependencies = [
  "nom 8.0.0",
  "once_cell",
  "pkcs8",
- "rand 0.10.3",
+ "rand 0.10.4",
  "rcgen",
  "sec1",
  "signature",
@@ -783,9 +783,9 @@ dependencies = [
 
 [[package]]
 name = "is"
-version = "0.12.0"
+version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "72dd0494853a6c3769c87adc610e8b228fd8c65c41cc4d2717ff6151ee2d6c73"
+checksum = "04258fe9dc0a6452010c36db2fd2bb63ab98554aaaac46bd9daa3696ccbfbc00"
 dependencies = [
  "crc",
  "serde",
@@ -1120,9 +1120,9 @@ dependencies = [
 
 [[package]]
 name = "rand"
-version = "0.10.3"
+version = "0.10.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "65c9fb96cbc91e3478eaae79a69fcd3f1ae4ad052e471fe6732fff548984b4af"
+checksum = "8f6fa277c67e6ea590466f04c3fe82cb509f0864fe470643e5570de9514a9b11"
 dependencies = [
  "chacha20",
  "getrandom 0.4.3",
@@ -1285,9 +1285,9 @@ dependencies = [
 
 [[package]]
 name = "sctp-proto"
-version = "0.10.8"
+version = "0.10.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "28aca56f649fa088cbdda778a5121f2227995ed057e77de462112b2e5890d591"
+checksum = "6f052184dccaad4d50eaf4f748a9c732da07a9adbdce584128747fe588009622"
 dependencies = [
  "bytes",
  "crc",
@@ -1461,9 +1461,9 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
 name = "str0m"
-version = "0.25.0"
+version = "0.26.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "357c7e453c033c8bb59e912312f9f9ff07c2a9ce7268bcb94f0c828a5b47e58f"
+checksum = "83d8ae460e1e5b327b60abc80ac8ef9c97f0ed8148d92df4c6e1294d9b8a58e0"
 dependencies = [
  "arrayvec",
  "base64ct",
@@ -1777,7 +1777,7 @@ dependencies = [
  "http",
  "httparse",
  "log",
- "rand 0.10.3",
+ "rand 0.10.4",
  "sha1",
  "thiserror",
 ]
