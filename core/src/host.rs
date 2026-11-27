@@ -476,6 +476,15 @@ impl CoreHost {
         }
     }
 
+    /// Tells every session what it can do now, after a setting or permission changed.
+    fn send_features(&self) {
+        let sessions: Vec<_> = self.shared.state().sessions.values().map(|s| (s.tx.clone(), s.info.secure)).collect();
+        for (tx, secure) in sessions {
+            let features = self.shared.features(secure);
+            let _ = tx.send(Outgoing::Message(ServerMessage::Features { features }));
+        }
+    }
+
     fn close_device(&self, device_id: &str, reason: &str) {
         let ids: Vec<_> = self
             .shared
@@ -639,21 +648,7 @@ impl CoreHost {
             || previous.voice_available != config.voice_available
             || previous.display_enabled != config.display_enabled
         {
-            let permission = (self.shared.permission)();
-            let sessions: Vec<_> =
-                self.shared.state().sessions.values().map(|s| (s.tx.clone(), s.info.secure)).collect();
-            for (tx, secure) in sessions {
-                let features = Features {
-                    voice: config.voice_available,
-                    shell: config.allow_shell,
-                    secure,
-                    permission,
-                    display: config.display_enabled,
-                    display_requests: true,
-                    display_original: true,
-                };
-                let _ = tx.send(Outgoing::Message(ServerMessage::Features { features }));
-            }
+            self.send_features();
         }
         if previous.link_host != config.link_host || previous.host_name != config.host_name {
             self.shared.emit(HostEvent::PairingChanged);
@@ -857,21 +852,7 @@ impl CoreHost {
 
     /// Accessibility permission was granted or revoked.
     pub fn permission_changed(&self) {
-        let permission = (self.shared.permission)();
-        let config = self.shared.config();
-        let sessions: Vec<_> = self.shared.state().sessions.values().map(|s| (s.tx.clone(), s.info.secure)).collect();
-        for (tx, secure) in sessions {
-            let features = Features {
-                voice: config.voice_available,
-                shell: config.allow_shell,
-                secure,
-                permission,
-                display: config.display_enabled,
-                display_requests: true,
-                display_original: true,
-            };
-            let _ = tx.send(Outgoing::Message(ServerMessage::Features { features }));
-        }
+        self.send_features();
     }
 
     /// Only native Mac settings can grant this capability. An unremembered

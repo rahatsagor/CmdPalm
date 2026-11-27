@@ -1607,6 +1607,27 @@ async fn wait_for_voice(delegate: &MockDelegate, count: usize) {
 }
 
 #[test]
+fn feature_updates_describe_the_session_like_its_welcome() {
+    let f = fixture();
+    let code = f.host.pairing_info().link.split("#pair=").nth(1).unwrap().to_string();
+    f.rt.block_on(async {
+        let mut ws = connect(f.port).await;
+        send(&mut ws, hello("phone", json!({"method": "pair", "code": code}))).await;
+        let welcome = recv_kind(&mut ws, "welcome").await["features"].clone();
+
+        let mut config = f.config.clone();
+        config.allow_shell = !config.allow_shell;
+        f.host.update_config(config);
+        let mut expected = welcome.clone();
+        expected["shell"] = json!(!welcome["shell"].as_bool().unwrap());
+        assert_eq!(recv_kind(&mut ws, "features").await["features"], expected);
+
+        f.host.permission_changed();
+        assert_eq!(recv_kind(&mut ws, "features").await["features"], expected);
+    });
+}
+
+#[test]
 fn disabling_dictation_cancels_recognition_and_refuses_later_audio_and_results() {
     let f = fixture();
     let code = f.host.pairing_info().link.split("#pair=").nth(1).unwrap().to_string();
