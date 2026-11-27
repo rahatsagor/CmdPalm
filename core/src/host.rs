@@ -487,26 +487,16 @@ impl CoreHost {
     }
 
     fn close_device(&self, device_id: &str, reason: &str) {
-        let ids: Vec<_> = self
-            .shared
-            .state()
-            .sessions
-            .values()
-            .filter(|s| s.info.device_id == device_id)
-            .map(|s| s.info.session)
-            .collect();
-        for id in ids {
-            self.shared.displays.forget(&self.shared, id);
-        }
         let sessions: Vec<_> = self
             .shared
             .state()
             .sessions
             .values()
             .filter(|s| s.info.device_id == device_id)
-            .map(|s| s.tx.clone())
+            .map(|s| (s.info.session, s.tx.clone()))
             .collect();
-        for tx in sessions {
+        for (id, tx) in sessions {
+            self.shared.displays.forget(&self.shared, id);
             let _ = tx.send(Outgoing::Close { reason: reason.into(), reconnect: false });
         }
     }
@@ -1020,10 +1010,11 @@ impl CoreHost {
     }
 
     pub fn deck_json(&self) -> String {
-        let deck = &self.shared.state().deck;
-        let pretty = serde_json::to_string_pretty(deck).unwrap_or_default();
+        // Formatted outside the state lock, which every device's session needs.
+        let deck = self.shared.state().deck.clone();
+        let pretty = serde_json::to_string_pretty(&deck).unwrap_or_default();
         // Deeply nested decks grow several times when indented; keep the export importable.
-        if pretty.len() < MAX_DECK_FILE_BYTES { pretty } else { serde_json::to_string(deck).unwrap_or_default() }
+        if pretty.len() < MAX_DECK_FILE_BYTES { pretty } else { serde_json::to_string(&deck).unwrap_or_default() }
     }
 
     pub fn deck_summary(&self) -> DeckSummary {
