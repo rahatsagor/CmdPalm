@@ -8,7 +8,7 @@ exclude = ["vendor/askama_derive"]
 askama_derive = { path = "vendor/askama_derive" }
 
 [workspace.package]
-version = "1.0.0"
+version = "1.1.0"
 edition = "2024"
 rust-version = "1.90"
 license = "AGPL-3.0-only"
