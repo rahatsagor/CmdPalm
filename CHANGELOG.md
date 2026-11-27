@@ -56,6 +56,9 @@ and versions follow [Semantic Versioning](https://semver.org/).
   appearing to work.
 - Importing a deck file that's too large says so, instead of saying the file
   isn't a deck.
+- Problems with an imported or saved deck are explained in plain words and
+  name the page and button to fix, instead of showing technical errors. A
+  deck from a newer version of CmdPalm says to update CmdPalm.
 
 ### Phone client
 

@@ -1901,6 +1901,8 @@ fn oversized_decks_are_refused_on_import_and_phone_saves() {
     assert!(json.len() < crate::server::MAX_MESSAGE - 1024);
     let err = f.host.set_deck_json(json).unwrap_err().to_string();
     assert!(err.contains("too large to save"), "{err}");
+    let err = f.host.set_deck_json("{not json".into()).unwrap_err().to_string();
+    assert!(err.ends_with("That file isn’t a CmdPalm deck, or it’s damaged."), "{err}");
     f.rt.block_on(async {
         let mut ws = connect(f.port).await;
         let code = f.host.pairing_info().link.split("#pair=").nth(1).unwrap().to_string();

@@ -78,14 +78,69 @@ pub enum TileIcon {
 
 #[derive(Debug, thiserror::Error, PartialEq)]
 pub enum DeckError {
-    #[error("unsupported deck version {0}")]
+    #[error("{}", version_message(*.0))]
     Version(u32),
-    #[error("the deck has too many pages or buttons")]
+    #[error("That file isn’t a CmdPalm deck, or it’s damaged.")]
+    Unreadable,
+    #[error(
+        "This deck has something this version of CmdPalm can’t read. If it came from a newer CmdPalm, update CmdPalm on this Mac and try again."
+    )]
+    Unsupported,
+    #[error("A deck can have up to {MAX_PAGES} pages, each with up to {MAX_TILES} buttons.")]
     TooLarge,
     #[error("{0}")]
     Invalid(String),
     #[error("This deck is too large to save: it’s {} KB over the limit. Remove some buttons, or shorten long text and sequences.", .0.saturating_sub(MAX_DECK_BYTES).div_ceil(1000).max(1))]
     Oversized(usize),
+}
+
+fn version_message(version: u32) -> &'static str {
+    if version > DECK_VERSION {
+        "This deck was made by a newer version of CmdPalm. Update CmdPalm on this Mac, then try again."
+    } else {
+        "That file isn’t a deck this version of CmdPalm can read."
+    }
+}
+
+fn invalid(message: impl Into<String>) -> DeckError {
+    DeckError::Invalid(message.into())
+}
+
+/// A page or button name to quote in a message, shortened if it's long.
+fn quoted(name: &str, unnamed: &str) -> String {
+    let name = name.trim();
+    if name.is_empty() {
+        return unnamed.into();
+    }
+    let mut shown: String = name.chars().take(40).collect();
+    if shown.len() < name.len() {
+        shown.push('…');
+    }
+    format!("“{shown}”")
+}
+
+/// Says where in the deck a problem is, so a person can find and fix it.
+fn within(err: DeckError, place: impl FnOnce() -> String) -> DeckError {
+    match err {
+        DeckError::Invalid(message) => DeckError::Invalid(format!("{message} Check {}.", place())),
+        other => other,
+    }
+}
+
+/// Reads a deck file, explaining in plain words why it can't be used.
+pub fn parse(json: &str) -> Result<Deck, DeckError> {
+    let value: serde_json::Value = serde_json::from_str(json).map_err(|_| DeckError::Unreadable)?;
+    let Some(fields) = value.as_object().filter(|fields| fields.contains_key("pages")) else {
+        return Err(DeckError::Unreadable);
+    };
+    // A newer deck may use actions this version doesn't know; say so before
+    // failing on one of them.
+    if let Some(version) = fields.get("version").and_then(serde_json::Value::as_u64)
+        && version != u64::from(DECK_VERSION)
+    {
+        return Err(DeckError::Version(u32::try_from(version).unwrap_or(u32::MAX)));
+    }
+    serde_json::from_value(value).map_err(|_| DeckError::Unsupported)
 }
 
 impl Deck {
@@ -101,40 +156,47 @@ impl Deck {
             return Err(DeckError::Version(self.version));
         }
         if self.pages.is_empty() {
-            return Err(DeckError::Invalid("the deck needs at least one page".into()));
+            return Err(invalid("The deck needs at least one page."));
         }
         if self.pages.len() > MAX_PAGES {
             return Err(DeckError::TooLarge);
         }
         let mut pages = HashSet::new();
         for page in &self.pages {
-            check_id(&page.id)?;
+            let page_name = || quoted(&page.name, "an unnamed page");
+            let on_page = || format!("the page {}", page_name());
+            check_id(&page.id).map_err(|err| within(err, on_page))?;
             if !pages.insert(&page.id) {
-                return Err(DeckError::Invalid("page IDs must be unique".into()));
+                return Err(within(invalid("Two pages have the same ID, so CmdPalm can’t tell them apart."), on_page));
             }
-            check_label(&page.name)?;
+            check_label(&page.name).map_err(|err| within(err, on_page))?;
             if !(1..=8).contains(&page.columns) {
-                return Err(DeckError::Invalid("columns must be between 1 and 8".into()));
+                return Err(within(invalid("Pages can have 1 to 8 columns."), on_page));
             }
             if page.tiles.len() > MAX_TILES {
                 return Err(DeckError::TooLarge);
             }
             let mut tiles = HashSet::new();
             for tile in &page.tiles {
-                check_id(&tile.id)?;
+                let on_tile =
+                    || format!("the button {} on the page {}", quoted(&tile.label, "without a label"), page_name());
+                check_id(&tile.id).map_err(|err| within(err, on_tile))?;
                 if !tiles.insert(&tile.id) {
-                    return Err(DeckError::Invalid("button IDs must be unique within a page".into()));
+                    return Err(within(
+                        invalid("Two buttons on one page have the same ID, so CmdPalm can’t tell them apart."),
+                        on_tile,
+                    ));
                 }
-                check_label(&tile.label)?;
+                check_label(&tile.label).map_err(|err| within(err, on_tile))?;
                 if let Some(icon) = &tile.icon {
-                    check_icon(icon)?;
+                    check_icon(icon).map_err(|err| within(err, on_tile))?;
                 }
                 if let Some(color) = &tile.color
                     && !is_css_color(color)
                 {
-                    return Err(DeckError::Invalid(format!("invalid color {color:?}")));
+                    return Err(within(invalid("Button colors must be hex colors, like #3b82f6."), on_tile));
                 }
-                validate_action(&tile.action, 0)?;
+                validate_action(&tile.action, 0).map_err(|err| within(err, on_tile))?;
             }
         }
         Ok(())
@@ -143,17 +205,17 @@ impl Deck {
 
 fn check_label(label: &str) -> Result<(), DeckError> {
     if label.chars().count() > MAX_LABEL {
-        return Err(DeckError::Invalid("label is too long".into()));
+        return Err(invalid(format!("Names and labels can be up to {MAX_LABEL} characters.")));
     }
     Ok(())
 }
 
 fn check_id(id: &str) -> Result<(), DeckError> {
     if id.is_empty() {
-        return Err(DeckError::Invalid("id must not be empty".into()));
+        return Err(invalid("Every page and button needs an ID."));
     }
     if id.len() > MAX_ID {
-        return Err(DeckError::Invalid("id is too long".into()));
+        return Err(invalid(format!("Page and button IDs can be up to {MAX_ID} characters.")));
     }
     Ok(())
 }
@@ -166,7 +228,7 @@ fn check_icon(icon: &TileIcon) -> Result<(), DeckError> {
         TileIcon::Emoji { text } => (text, 64),
     };
     if text.len() > max {
-        return Err(DeckError::Invalid("icon is too long".into()));
+        return Err(invalid("The button’s icon is too long. Choose another icon."));
     }
     Ok(())
 }
@@ -180,37 +242,53 @@ pub fn validate_action(action: &Action, depth: usize) -> Result<(), DeckError> {
     match action {
         Action::Keys { code, mods: m, char } => {
             if *code > keycodes::MAX_KEYCODE || m & !mods::ALL != 0 || char.as_ref().is_some_and(|c| c.len() > 16) {
-                return Err(DeckError::Invalid("invalid key".into()));
+                return Err(invalid(
+                    "The shortcut uses a key or modifier CmdPalm doesn’t know. Choose the keys again.",
+                ));
             }
         }
         Action::Text { text, .. } | Action::Shell { command: text } => {
             if text.len() > MAX_TEXT {
-                return Err(DeckError::Invalid("text is too long".into()));
+                return Err(invalid("Text to type and shell commands can be up to 4 KB."));
             }
         }
         Action::Url { url } => {
-            if url.len() > MAX_TEXT || !url.contains(':') {
-                return Err(DeckError::Invalid("invalid URL".into()));
+            if url.len() > MAX_TEXT {
+                return Err(invalid("Links can be up to 4 KB."));
+            }
+            if !url.contains(':') {
+                return Err(invalid("Enter a full link, like https://example.com."));
             }
         }
-        Action::App { id, .. } | Action::Shortcut { name: id } => {
+        Action::App { id, .. } => {
             if id.is_empty() || id.len() > MAX_NAME {
-                return Err(DeckError::Invalid("missing name".into()));
+                return Err(invalid("Choose an app for the button to use."));
+            }
+        }
+        Action::Shortcut { name } => {
+            if name.is_empty() {
+                return Err(invalid("Enter the name of a shortcut from the Shortcuts app."));
+            }
+            if name.len() > MAX_NAME {
+                return Err(invalid("The shortcut name is too long."));
             }
         }
         Action::Delay { ms } => {
             if *ms > MAX_DELAY_MS {
-                return Err(DeckError::Invalid("delays are limited to 10 seconds".into()));
+                return Err(invalid("Waits can be up to 10 seconds."));
             }
         }
         Action::Mouse { clicks, .. } => {
             if !(1..=3).contains(clicks) {
-                return Err(DeckError::Invalid("clicks must be 1–3".into()));
+                return Err(invalid("Clicks can be single, double or triple."));
             }
         }
         Action::Sequence { steps } => {
-            if depth >= MAX_DEPTH || steps.len() > MAX_STEPS {
-                return Err(DeckError::Invalid("sequence is too long or nested too deeply".into()));
+            if steps.len() > MAX_STEPS {
+                return Err(invalid(format!("Sequences can have up to {MAX_STEPS} steps.")));
+            }
+            if depth >= MAX_DEPTH {
+                return Err(invalid(format!("Sequences can be nested up to {MAX_DEPTH} levels deep.")));
             }
             for step in steps {
                 validate_action(step, depth + 1)?;
@@ -324,7 +402,47 @@ mod tests {
         assert_eq!(deck.validate(), Err(DeckError::Version(99)));
 
         let deck = Deck { version: DECK_VERSION, pages: vec![] };
-        assert_eq!(deck.validate(), Err(DeckError::Invalid("the deck needs at least one page".into())));
+        assert_eq!(deck.validate(), Err(DeckError::Invalid("The deck needs at least one page.".into())));
+    }
+
+    #[test]
+    fn deck_files_say_why_they_cant_be_imported() {
+        let deck = Deck::default();
+        assert_eq!(parse(&serde_json::to_string_pretty(&deck).unwrap()), Ok(deck));
+        for unreadable in ["", "{not json", "[]", r#"{"version": 1}"#] {
+            assert_eq!(parse(unreadable), Err(DeckError::Unreadable), "{unreadable:?}");
+        }
+        let newer = r#"{"version": 2, "pages": [{"id": "p", "name": "P", "tiles": [{"kind": "hologram"}]}]}"#;
+        let err = parse(newer).unwrap_err();
+        assert_eq!(err, DeckError::Version(2));
+        assert!(err.to_string().contains("newer version of CmdPalm"), "{err}");
+        let unknown = r#"{"version": 1, "pages": [{"id": "p", "name": "P", "tiles": [
+            {"id": "t", "label": "T", "action": {"kind": "teleport"}}]}]}"#;
+        assert_eq!(parse(unknown), Err(DeckError::Unsupported));
+    }
+
+    #[test]
+    fn problems_name_the_page_and_button_to_fix() {
+        let mut deck = Deck::default();
+        deck.pages[0].tiles[0].color = Some("red".into());
+        assert_eq!(
+            deck.validate().unwrap_err().to_string(),
+            "Button colors must be hex colors, like #3b82f6. Check the button “Mission Control” on the page “Essentials”."
+        );
+
+        let mut deck = Deck::default();
+        deck.pages[1].tiles[0].label.clear();
+        deck.pages[1].tiles[0].action =
+            Action::Sequence { steps: vec![Action::Mouse { button: crate::protocol::MouseButton::Left, clicks: 4 }] };
+        assert_eq!(
+            deck.validate().unwrap_err().to_string(),
+            "Clicks can be single, double or triple. Check the button without a label on the page “Apps”."
+        );
+
+        let mut deck = Deck::default();
+        deck.pages[0].name = "x".repeat(81);
+        let message = deck.validate().unwrap_err().to_string();
+        assert!(message.ends_with(&format!("Check the page “{}…”.", "x".repeat(40))), "{message}");
     }
 
     #[test]

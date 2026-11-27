@@ -27,8 +27,9 @@ pub(crate) fn load_deck(path: &Path) -> Option<Deck> {
     let deck = store::load::<Deck>(path)?;
     match deck.validate() {
         Ok(()) => Some(deck),
-        Err(err) => {
-            tracing::error!(%err, "ignoring a saved deck that isn't valid");
+        Err(_) => {
+            // The reason can quote page and button names.
+            tracing::error!(version = deck.version, "ignoring a saved deck that isn't valid");
             store::quarantine(path);
             None
         }
@@ -1032,7 +1033,7 @@ impl CoreHost {
     }
 
     pub fn set_deck_json(&self, json: String) -> Result<(), HostError> {
-        let deck: Deck = serde_json::from_str(&json).map_err(|e| HostError::new(format!("invalid deck: {e}")))?;
+        let deck = crate::deck::parse(&json).map_err(|e| HostError::new(e.to_string()))?;
         server::save_deck(&self.shared, deck).map_err(|e| HostError::new(e.to_string()))
     }
 
